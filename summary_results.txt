@@ -1,0 +1,2 @@
+FFN:parity | STE train=1.000 test=0.491 | Convex train=1.000 test=0.494 | Primal=0.006918 Dual=0.002523 Gap=0.004395 zero_gap=False
+FFN:gaussian | STE train=1.000 test=1.000 | Convex train=1.000 test=1.000 | Primal=0.002280 Dual=0.002000 Gap=0.000280 zero_gap=False

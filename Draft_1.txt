@@ -1,0 +1,1434 @@
+A research draft for a convex training framework of
+parallel reccurrent threshold networks
+Proof of zero duality gap for parallel feedforward and recurrent threshold networks with
+path-regularization
+Himanshu Udupi (hudupi2@illinois.edu)
+Junior, CS department
+November 2025
+1 Introduction
+[18] described the first mathematical model of a neuron as a threshold activation function. Early
+primitives in Artificial Intelligence built on this idea, the most notable example being the per-
+ceptron, which used a Heaviside step function as its non-linearity [3]. However, the inherent
+non-differentiability and discontinuity of threshold activations made these models difficult to train.
+As a result, most of the community gradually shifted toward smooth or piecewise-smooth activations
+such as sigmoid [19], tanh , and eventually ReLU [1], all of which provided desirable analytical
+properties while loosely approximating the behaviour of biological neurons.
+After the formulation and widespread adoption of Back Propogation [23], the fields of Artificial
+Intelligence and Neuroscience progressed almost independently for several decades. This separation
+persisted until [14] reintroduced spiking neurons into modern AI. Yet, despite their biological
+relevance, the non-differentiability and discrete event-driven nature of spiking neurons made them
+incompatible with standard gradient-based optimization, and numerous heuristic training method-
+ologies were proposed [20, 6]. In parallel, the rise of LLMs and large-scale models brought enormous
+training energy costs [2] and a gradual erosion of interpretability [15], creating bottlenecks in the
+development of reliable and resource-efficient AI systems. These challenges have renewed interest in
+bio-plausible AI [5], inspiring new benchmarks , training paradigms [20, 14, 16], and applications in
+robotics [?].
+However,acentralproblemremainsunresolved: thedominanttrainingalgorithmsforbio-inspired
+models rely on approximations of the true activation functions. Surrogate gradients smooth the
+threshold or spike non-linearity to enable backpropagation [20], and ANN–SNN conversion pipelines
+train a continuous network before mapping it onto a discrete one [6]. Both approaches introduce
+discrepancies between the trained and deployed models, which may contribute to the comparatively
+poorer performance of bio-inspired networks on conventional benchmarks [22, 28, 29]. Furthermore,
+recent studies indicate that ANN–SNN conversion does not reliably reduce training energy costs
+and may only offer inference-time improvements. However, most contemporary work in this area,
+including LLM-like architectures [31, 27], ResNet-inspired SNNs [22], and novel designs such as
+Continuous Thought Machines [4],continues to rely on these approximation-based training schemes,
+without guaranty of optimality.
+In parallel, recent work on convexifying ReLU-based networks using path-regularization has
+shown that several feedforward architectures admit zero-duality gap formulations under parallel
+parametrizations [10, 26, 12]. These results are exact and do not rely on approximations of the
+activation. Thisraisesanaturalquestion: whetherananalogousconvexstructureexistsforthreshold
+1
+
+activations, which exhibit the same non-differentiability that motivates surrogate methods. The
+goal of this paper is to extend the path-regularized framework to parallel feedforward and recurrent
+threshold networks and to show that these models also satisfy zero-duality gap under suitable
+assumptions. We choose to study Threshold Activations before moving on to Spiking dynamics
+since they are easier to formalise and behave in a similar manner to the spiking neurons.
+Related Work. Our work is an extension of a long line of research on convexifying neural models,
+beginningwith[10]andsubsequentlyexpandedtoCNNs[11], Transformers[8], neuralnetworkbased
+generative models [30], and a general framework for feedforward parallel networks [13]. The core
+foundations of our approach build on [24], which introduced the path-regularizer; [21], which applied
+this regularizer to train vanilla ReLU RNNs; and [9], which established global optimality guarantees
+for path-regularized feedforward parallel ReLU networks and proposed an improved algorithm that
+accelerates the original procedure of [7] for training parallel feedforward threshold networks to
+global optimality. Except for [9], all prior works rely on standard weight-decay regularization during
+training. In the bio-inspired side of research , [17] recently showed that all QP and LP problems
+can be cast as an shallow-SNN training problem. They do not show that we can go in the opposite
+direction for deep-SNNs.
+Contributions. In our work, we extend the [24] framework of path-regularizers to threshold
+activationsforallcomponentsexcepttheirnorm-basedcapacitymeasures, sincethresholdactivations
+are not Lipschitz. We nonetheless outline possible relaxations that yield an analogous notion of
+capacity. Building on the [9] framework for training path-regularized models, we show that parallel
+feedforward threshold networks admit a zero-duality gap. We then construct an analogous time-
+unrolled formulation for parallel RNN threshold networks and demonstrate that they also exhibit a
+zero-duality gap.
+2 Theory
+In this section we introduce notations and define the threshold activation function and its properties,
+before proving lemmas that allow us to establish that we can use path-regularizer in threshold
+network training like [24] does for ReLU networks. We close out the theory section with a brief
+note about norm-based capacities introduced in [24] for threshold activations.
+2.1 Feedforward Networks and Threshold Activation
+We use similar notations as in [24], where a feedforward neural network is defined as a function
+f : RD → R. It can be represented as a directed acyclic graph (DAG) G = (V,E,w), in which we
+have special input nodes V [1],...,V [D] ∈ V with no incoming edges and a special output node
+in in
+V ∈ V with no outgoing edges. Additionally, we have a weight function w : E → R, which assigns
+out
+a weight to each edge. Hence, for a network with activation function σ(·), we can calculate the
+output of any v ∈ V as
+!
+o(v) = σ X w(u → v)o(u) .
+u→v∈E
+In [24], the bias term is represented by an additional node V [0] that can add bias. We follow the
+in
+same convention and also assume that for all v ∈ V \V , there exists an edge (u → v) ∈ E such
+in
+that w(u → v) = b, where b represents the bias term for each vertex. The output of the network is
+2
+
+then
+ 
+o(v
+out
+) = σ X w(u → v
+out
+)o(u) .
+u→vout∈E
+Hence, the network computes the function
+f (x) = o(v ).
+G,σ out
+We study fully connected neural networks, which are a special case of feedforward networks. We
+consider weight matrices
+W ∈ RH×D, W ,...,W ∈ RH×H, W ∈ R1×H,
+1 2 d−1 d
+where d denotes the number of layers of the network. The network can be written as
+f (x) = W σ (cid:0) W σ(W ···σ(W x))(cid:1) .
+Wi d d−1 d−2 1
+We define our threshold activation function as
+σ (x) = s1{x ≥ 0}.
+s
+This function is invariant to non-negative scaling of its input, i.e.,
+σ (cx) = σ (x) ∀c > 0.
+s s
+Hence, in our neural network we can scale W for all i ∈ [d−1] by some constant c > 0 without
+i
+changing the output:
+σ (cW x) = σ (W x).
+s i s i
+Additionally, if we impose that s > 0, then the function is idempotent, i.e.,
+σ (σ (x)) = σ (x).
+s s s
+2.2 Norm-Based Quantities and Path-Regularizer
+Following [24], we know that
+µd,H,σ(f)!d
+γd,H,σ(f) ≤ p,q ,
+p,q 1
+dq
+where
+µd,H,σ(f) = µ (W)
+p,q p,q
+  q1 q
+d H H p
+=   XX  X |W k [i,j]|p   
+k=1i=1 j=1
+d
+!1
+q
+= X ∥W ∥q ,
+k p,q
+k=1
+and
+d
+γd,H,σ(f) = γ (W) = Y ∥W ∥ .
+p,q p,q k p,q
+k=1
+We now show that for σ (x), equality holds, i.e.,
+s
+q
+d 1 q d γ p d , , q H,σ(f) = µd p, , q H,σ(f).
+3
+
+Lemma 2.1. Let f be realized by weights W = (W ,...,W ) and activation σ . Then
+1 d s
+q
+d 1 q d γ p d , , q H,σs(f) = µd p, , q H,σs(f).
+Proof. Assume that W represents the function f, i.e., γ (W) = γ (f). Consider the scaled
+p,q p,q
+weights
+W ¯ = q d γd,H,σs(W) W k .
+k p,q
+∥W ∥
+k p,q
+Since σ (cx) = σ (x) for all c > 0 and
+s s
+γd,H,σs (W)
+p,q > 0,
+∥W ∥
+k p,q
+we have
+γd,H,σs (W) !
+σ p,q (W x) = σ (W x).
+s k s k
+∥W ∥
+k p,q
+Now,
+µd,H,σs(f) ≤ µd,H,σs(W ¯ )
+p,q p,q
+d
+!1
+q
+= X ∥W ¯ ∥q
+k p,q
+k=1
+= (cid:18) d (cid:16) γd,H,σs(W) (cid:17) d q(cid:19)1 q
+p,q
+q
+= d 1 q d γ p d , , q H,σs(f).
+Therefore, equality holds.
+[24] define the path-regularizer as
+(cid:12) (cid:12)1
+(cid:12) (cid:12)p
+ϕ p (w) = (cid:12) (cid:12) X Y |w(e)|p(cid:12) (cid:12) ,
+(cid:12) (cid:12)
+(cid:12)q∈Pe∈q (cid:12)
+where P denotes the set of all paths in G(V,E,w) from V to V , and show the equivalence of
+in out
+ϕ (w) to γ (w) for p ≥ 1 and any depth d, with finite or infinite H. Since σ (x) is invariant to
+p p,∞ s
+input scaling, the scaling of all internal weights to have norm 1 can be done without changing the
+output, allowing us to show equivalence using their proof in [24].
+Lemma 2.2. Let ϕ (W) be the path-regularizer of subnetwork k. If all hidden weights are scaled
+pk
+such that for every internal node v,
+X |w(u → v)|p = 1,
+(u→v)∈E
+then
+ϕ (W) = ∥w ∥ .
+pk dk p
+4
+
+Proof. Assume that for every internal node v ∈ V we have
+m
+(l−1)k
+X |w(u → v)|p = 1 =⇒ X |W [i : v]|p = 1
+lk (l−1)k
+(u→v)∈E i (l−1)k =1
+for all l ∈ [d−1]. Then
+ 1
+p
+ϕ pk (W) =  X |w(v d−1 → v out )|p X ··· X |w(v iin → v 1 )|p 
+v d−1 →vout∈E v d−2 →v d−1 ∈E (viin →v1)∈E
+ 1
+= 
+m
+X
+d−1
+|w dk [i d−1 ]|p
+m
+X
+d−2
+|W (d−1)k [i d−2 : i d−1 ]|p··· X
+m1
+|W 1k [i 1 : i 0 ]|p 
+p
+.
+i
+d−1
+=1 i
+d−2
+=1 i1=1
+By the normalization assumption
+m
+(l−1)k
+X |W [i : v]|p = 1 ∀v ∈ V , ∀l ∈ [d−1],
+lk (l−1)k l
+i =1
+(l−1)k
+each inner sum evaluates to 1. Therefore,
+ 1
+m d−1 p
+ϕ pk (W) =  X |w dk [i d−1 ]|p  = ∥w dk ∥ p .
+i =1
+d−1
+This shows that for an appropriate scaling of θ ∈ Θ, we can decompose the path-norm into a group
+ℓ norm of the output-layer weights of each subnetwork.
+p
+Lemma 2.3. Let fd,σs denote the network with parameters Θ. Define
+Θ
+Θ¯ = ( W ¯ [: i] = W lk [: i] : ∀i ∈ [m ], ∀W ∈ Θ, ∀l ∈ [d−1], ∀k ∈ [K] ) .
+lk ∥W [: i]∥ l lk
+lk p
+Then
+fd,σs(X) = fd,σs(X) ∀X ∈ Rn×t.
+Θ Θ¯
+Proof. We assume ϕ (W) > 0. If ϕ (W) = 0, then the corresponding subnetwork does not
+pk pk
+contribute to the output and need not be rescaled. Since ϕ (W) > 0, we have ∥W [: i]∥ > 0 for
+pk lk p
+all i ∈ [m ] and all W ∈ Θ. Because σ (·) is invariant to positive scaling of its input, it follows that
+l lk s
+σ (W Q) = σ (W ¯ Q)
+s lk s lk
+for any appropriate input Q. Hence,
+fd,σs(X) = fd,σs(X),
+Θ Θ¯
+since the output-layer weights w remain unchanged in Θ¯.
+dk
+5
+
+2.3 Capacity and Lipschitz Relaxations
+Before we move to specific architectures, we note that for threshold networks it is not possible to
+obtain a norm-based capacity bound, since the threshold function is not Lipschitz continuous and
+hence the Rademacher complexity depends purely on the number of parameters. Refer to [25] for a
+detailed discussion on how the number of parameters affects capacity.
+We can derive norm-based capacity bounds if we relax threshold functions to be Lipschitz
+continuous; several relaxations exist (e.g., using two ReLU clippings, sigmoid functions, or linear
+relaxations plus clipping). All of these allow us to use the contraction lemma, which yields a
+recursive definition of complexity, similar to the argument in [24].
+3 Parallel Feedforward Threshold Networks
+We define parallel threshold networks as in [26, 24]. Let
+K
+fd,σs(X) = X(cid:0) σ (XW )···W (cid:1) w ,
+s 1k 1k (d−1)k dk
+k=1
+where K ≥ K∗ for some K∗ ≤ n + 1, X ∈ Rn×t, W lk ∈ Rm l−1 ×m l for all l ∈ [d − 1] with
+w dk ∈ Rm (d−1)k ×1, W 1k ∈ Rt×m 1k , and
+|s | = 1 ∀i ∈ [d], ∀j ∈ [m ], ∀k ∈ [K].
+(i,j)k dk
+We can implicitly introduce trainable bias terms by adding an extra dimension in all layers. The
+scaling invariance of the threshold function allows us to scale the s using the output weights
+(i,j)k
+by some non-negative scalar c without changing the output of the network. For the output layer,
+however, scaling w [i] will affect the output of the network. For now, we continue with this
+dk
+representation of parallel networks.
+For a fixed subnetwork k, assuming depth d and that each subnetwork is fully connected, we
+can represent it as a DAG G(V,E,w) with V [1],...,V [t] ∈ V for all i ∈ [m ], and V ∈ V,
+iink iink 1 dk
+with w : E → R. The path regularizer for subnetwork k is defined as
+ 1  1
+p p
+ϕ pk (W) =  X Y |w(e)|p  =  X |w(v d−1 → v out )|p... X |w(v iin → v 1 )|p  .
+q∈Pe∈q v d−1 →vout∈E (viin →v1)∈E
+Using the above regularizer, our training problem is
+K
+p = min L (cid:0) fd,σs(X),Y (cid:1)+β X ϕ (Θ),
+d pk
+Θ∈Θ
+k=1
+where Y ∈ Rn, L(·) is a scalar-valued convex loss function with Lipschitz constant R, and β > 0 is
+the weight of the path regularizer. The parameter set is
+Θ = {W : ∀l ∈ [d], ∀k ∈ [K]}.
+lk
+By Lemma 2.2 and Lemma 2.3, we can rescale the hidden layers and reduce the problem p to
+d
+K
+p = minL (cid:0) fd,σs(X),Y (cid:1)+β X ∥W ∥ ,
+d dk p
+Θ∈Θ¯
+k=1
+where
+Θ¯ = {W : ∥W [: i]∥ ≤ 1, ∀i ∈ [m ], ∀W ∈ Θ, ∀l ∈ [d−1], ∀k ∈ [K]}∪{w : ∀k ∈ [K]}.
+lk lk p l lk dk
+6
+
+Lagrangian Dual
+We now consider the Lagrangian dual and analyze the duality gap of p . We fix the internal
+d
+parameters to have norm ≤ 1 and take the Lagrangian of the resulting minimization problem:
+K K
+p = min L(y¯,Y)+β X ∥W ∥ , y¯= X(cid:0) σ (XW )···W (cid:1) W .
+d y¯,W dk p s 1k 1k (d−1)k dk
+dk k=1 k=1
+The Lagrangian is
+K K
+g(y¯,W ,λ) = L(y¯,Y)+λ⊤y¯−λ⊤X(cid:0) σ (XW )···W (cid:1) W +β X ∥W ∥ .
+dk s 1k 1k (d−1)k dk dk p
+k=1 k=1
+Taking the infimum over y¯ and W gives
+dk
+K
+infg(y¯,W ,λ) = inf(cid:0) L(y¯,Y)+λ⊤y¯(cid:1)+X inf (cid:16) −λ⊤(cid:0) σ (XW )···W (cid:1) W +β∥W ∥ (cid:17)
+dk y¯ W s 1k 1k (d−1)k dk dk p
+k=1 dk
+K
+= −sup(cid:0) −L(y¯,Y)−λ⊤y¯(cid:1)+X inf (cid:16) −λ⊤(cid:0) σ (XW )···W (cid:1) W +β∥W ∥ (cid:17) .
+y¯ k=1 W dk s 1k 1k (d−1)k dk dk p
+The conjugate of the norm term is given by
+(0,
+∥A∥ ≤ β,
+sup(cid:0) A⊤W −β∥W ∥ (cid:1) = p∗
+W dk dk p ∞, otherwise,
+dk
+where p∗ is the dual exponent. Thus,
+infg(y¯,W ,λ) = −L∗(−λ) subject to ∥λ⊤(cid:0) σ (XW )···W (cid:1) ∥ ≤ β.
+dk s 1k 1k (d−1)k p∗
+Hence the dual problem is
+d = minmaxg(λ) subject to ∥λ⊤(cid:0) σ (XW )···W (cid:1) ∥ ≤ β,
+d Θ∈Θ λ s 1k 1k (d−1)k p∗
+or equivalently
+d = maxmin−L∗(−λ) subject to ∥λ⊤(cid:0) σ (XW )···W (cid:1) ∥ ≤ β.
+d λ Θ∈Θ s 1k 1k (d−1)k p∗
+d = max −L∗(−λ)subject tomax ||λT(σ (XW )...W ))|| ≤ β.
+d λ θ∈Θ s 1k 1k (d−1)k p∗
+Bidual of d
+d
+We now take the bidual of
+d = max−L∗(−λ) subject to max∥λ⊤(cid:0) σ (XW )···W (cid:1) ∥ ≤ β.
+d λ Θ∈Θ s 1k 1k (d−1)k p∗
+The constraint can be written as
+max∥λ⊤(cid:0) σ (XW )···W (cid:1) ∥ −β ≤ 0.
+Θ∈Θ s 1k 1k (d−1)k p∗
+7
+
+Introducing a Lagrange multiplier v ≥ 0 for this constraint, the Lagrangian is
+(cid:18) (cid:18) (cid:19)(cid:19)
+g(λ,v) = inf −L∗(−λ)+v max∥λ⊤(cid:0) σ (XW )···W (cid:1) ∥ −β .
+λ Θ∈Θ s 1k 1k (d−1)k p∗
+Using the dual norm representation,
+∥λ⊤A∥ = sup a⊤λ⊤A,
+p∗
+∥a∥p≤1
+we obtain
+!!
+g(λ,v) = inf −L∗(−λ)+v sup sup a⊤λ⊤(cid:0) σ (XW )···W (cid:1) −β .
+λ Θ∈Θ∥a∥p≤1 s 1k 1k (d−1)k
+Using the definition of the conjugate of L, we can rewrite
+−L∗(−λ) = inf(cid:0) λ⊤y¯+L(y¯,Y)(cid:1) ,
+y¯
+and thus
+!
+g(λ,v) = inf L(y¯,Y)−vβ +inf (cid:16) λ⊤y¯+v sup sup λ⊤(cid:0) σ (XW )···W a (cid:1)(cid:17) .
+y¯ λ Θ∈Θ∥a∥p≤1 s 1k 1k (d−1)k
+Let
+n o
+C = σ (XW )···W a : W ∈ Θ, ∥a∥ ≤ 1 .
+s 1k 1k (d−1)k i p
+Then, for each λ, the inner supremum can be written as S(λ) = sup λ⊤c. Hence
+c∈C
+(cid:18) (cid:19)
+g(λ,v) = inf L(y¯,Y)−vβ +inf(cid:0) λ⊤y¯+vS(λ)(cid:1) .
+y¯ λ
+S(λ) is the support function of the set C. If S(λ) = ∞, there exists a direction d with λ⊤d > 0
+such that we can extend indefinitely in that direction. Now consider
+inf(cid:0) λ⊤y¯+vS(λ)(cid:1)
+.
+λ
+If y¯lies outside the convex cone generated by C, we can construct a decomposition y¯= P a c +a
+k k k
+with c ∈ C and a ∈/ C, a ̸= 0, so that inf (λ⊤a) = −∞. Hence, to obtain a finite value we require
+k λ
+y¯∈ −vconv(C), in which case the infimum evaluates to 0. Therefore,
+g(v) = inf (cid:0) L(y¯,Y)−vβ (cid:1) .
+y¯∈−vconv(C)
+We can equivalently write
+y¯= −v X α c , c ∈ C, α ≥ 0, X α = 1.
+k k k k k
+k k
+Equivalently, there exists a finite signed measure µ on C with ∥µ∥ ≤ v such that
+TV
+Z
+y¯= cdµ(c),
+c∈C
+8
+
+and
+(cid:18) (cid:18)Z (cid:19) (cid:19)
+g(v) = inf L cdµ(c),Y −vβ .
+∥µ∥TV≤v c∈C
+Thus,
+(cid:18) (cid:18)Z (cid:19) (cid:19)
+p = supg(v) = min min L cdµ(c),Y +βv .
+∞
+v≥0 v≥0 ∥µ∥TV≤v c∈C
+Absorbing v into µ by letting ν = µ and v = ∥ν∥ , we obtain
+TV
+(cid:18) (cid:18)Z (cid:19) (cid:19)
+p = min L cdν(c),Y +β∥ν∥ .
+∞ TV
+ν c∈C
+Since
+c = σ (XW )···W a,
+s 1k 1k (d−1)k
+we can write
+Z Z (cid:16) (cid:17)
+cdν(c) = σ (XW )···W w (θ)dµ(θ),
+s 1k 1k (d−1)k 3
+c∈C θ∈Θ
+and thus
+(cid:18) (cid:18)Z (cid:19) (cid:19)
+p = min L σ (XW )···W w (θ) dµ(θ), Y +β∥µ∥ .
+∞ µ θ∈Θ s 1k 1k (d−1)k 3 TV
+Now, consider Slater’s condition for d . At λ = 0 the constraint is satisfied since β > 0, and
+d
+hence the relative interior is non-empty, proving strong duality, i.e., d = p . Additionally, [26, 10]
+d ∞
+use Carathéodory’s theorem to show that p = p if K ≥ K∗ ≤ n+1, which we assume. Hence,
+d ∞
+p = p = d .
+d ∞ d
+4 Recurrent Threshold Networks
+We now extend the above framework and the results of Lemma 2.2 and Lemma 2.3 to the recurrent
+setting. We assume that we have a network N(G,π,p) where G = (V,E) is a directed acyclic
+graph that has special subsets of vertices V ,V ⊂ V, p is a set of parameters of the RNN, and
+in out
+π : E → {1,...,|p|} is a function that assigns the index of a parameter p′ to each edge e. Following
+[21], we fix the graph G and the mapping π, which implies that we only handle fixed-length input
+sequences (fixed T). We assume that we have a d-layered network with a fixed timestep t. We may
+either have a loss function that calculates loss at every time-step t or one that calculates loss only at
+the last time-step. For now, we deal with the case where we calculate the loss at the last time-step t.
+Like [21], let hi be the state of the neurons at layer i in time-step t. We calculate the output by
+t
+looking at hd. Using the same notations as before, our internal nodes at layer i are given by
+t
+hi = σ (Pi hi−1+Pi hi ),
+t s in t rec t−1
+where Pi denotes the input-to-hidden weights and Pi denotes the recurrent weights at layer i.
+in rec
+We now define a parallel RNN for d layers that is given by
+K
+fd,σs,T,H0(X) = X P σ (cid:0) h (d−2)k P (d−1)k +h (d−1)k P(d−1)k(cid:1) .
+(out)k s T in T−1 rec
+k=1
+9
+
+We show a simplified example of a T = 2,d = 3 network:
+K
+f3,σs,2,H0(X) = X P σ (σ (X P1k +σ (X P1k +[h1k]∗nP1k)P1k)P2k
+(out)k s s 2 in s 1 in 0 rec rec in
+k=1
++σ (σ (X P1k +[h1k]∗nP1k)P2k +[h2k]∗nP2k)P2k).
+s s 1 in 0 rec in 0 rec rec
+Here X = {X
+t
+∈ Rn×d : t ∈ [T]} and H0 = {hi
+0
+k ∈ R1×mi : i ∈ [d],k ∈ [K]}.
+Although scaling invariance follows as in the feedforward case, for RNNs this occurs iff we scale
+both Pi and Pi jointly by a positive scalar c > 0. Since σ (cx) = σ (x) for all c > 0, scaling both
+in rec s s
+incoming weights preserves the activation and hence the output. Thus, the invariance property used
+in Lemma 2.3 still holds, but now at the level of joint scaling of the input and recurrent connections.
+Lemma 4.1. For every layer i and every scalar c > 0,
+P ¯i = cPi , P ¯i = cPi ,
+in in rec rec
+implies
+σ (P ¯i hi−1+P ¯i hi ) = σ (Pi hi−1+Pi hi ) ∀t,
+s in t rec t−1 s in t rec t−1
+and hence fd,σs,T,H0(X) is unchanged.
+Since Lemma 2.3 did not assume anything about the mapping π, we can treat the RNN as its
+unrolled version G = (V ,E ), which is a DAG. The path-regularizer for the RNN is defined over
+T T T
+all paths in G exactly as in [21], and since all recurrent edges are repeated through parameter
+T
+sharing via π, nothing changes in the definition of ϕ (P) except that we now have additional time
+p,q
+indices.
+To extend Lemma 2.2 to the RNN case, we need to show that for every hidden neuron v (across
+all time-steps) we can enforce the same p-norm normalization condition as in the feedforward case.
+At any hidden neuron we have two sets of incoming weights: Pi [: v] and Pi [: v]. If we set
+in rec
+(cid:16) (cid:17)1
+c = ∥Pi [: v]∥p+∥Pi [: v]∥p p ,
+in p rec p
+and rescale both Pi [: v] and Pi [: v] by 1/c, then
+in rec
+X |w(u → v t )|p = 1,
+∥Pi [: v]∥p+∥Pi [: v]∥p
+u→vt∈ET in p rec p
+for every time-step t. This shows that the same normalization used in Lemma 2.2 applies to RNNs
+when we treat the network as an unrolled DAG.
+Lemma 4.2. After normalizing all hidden neurons across all time-steps so that
+X |w(u → v )|p = 1, ∀v ∈ V ,
+t t T
+u→vt∈ET
+we have
+K
+ϕ (P) = X ∥P ∥ .
+p,q (out)k p
+k=1
+10
+
+Using the above lemma and the same reasoning as in the parallel feedforward threshold network
+case, we can now define the RNN analogue of Θ¯. We denote the RNN parameter set by
+Θ = (cid:8) Pi ,Pi : i ∈ [d−1](cid:9) ∪ (cid:8) P : k ∈ [K](cid:9) .
+RNN in rec (out)k
+By joint scaling invariance, we can restrict ourselves to the normalized parameter set
+Θ¯ = (cid:8) Pi ,Pi : ∥Pi [: v]∥p+∥Pi [: v]∥p ≤ 1 ∀v,i (cid:9) ∪{P : k ∈ [K]},
+RNN in rec in p rec p (out)k
+without changing the function computed by the network.
+The RNN training problem with path-regularization can now be written as
+K
+pRNN = min L(fd,σs,T,H0(X),Y)+β X ∥P ∥ .
+T (out)k p
+P∈Θ¯
+RNN k=1
+We note that this formulation is structurally identical to the parallel feedforward threshold
+network problem p in the previous section, with the only difference being that the normalization
+d
+at each hidden neuron now involves both the feedforward and recurrent incoming connections. In
+particular, the dependence on the internal parameters appears only through the constraint set Θ¯ ,
+RNN
+while the regularizer is a sum of ℓ norms on the output weights, exactly as in the feedforward case.
+p
+Lagrangian Dual for RNNs
+Using the normalization argument and the path-regularizer decomposition, the RNN training
+problem reduces to
+K
+pRNN = min L (cid:0) fd,σs,T,H0(X),Y (cid:1)+β X ∥P ∥ ,
+T (out)k p
+P∈Θ¯
+RNN k=1
+where
+Θ¯ = (cid:8) Pi ,Pi : ∥Pi [: v]∥p+∥Pi [: v]∥p ≤ 1 ∀v,i (cid:9) ∪{P : k ∈ [K]}.
+RNN in rec in p rec p (out)k
+We now consider the Lagrangian dual and analyze the duality gap of pRNN. As before, we fix
+T
+the internal parameters to have norm ≤ 1 and take the Lagrangian of the resulting minimization
+problem. We introduce an auxiliary variable
+K
+y¯= fd,σs,T,H0(X) = XΦ (P)P ,
+k (out)k
+k=1
+where Φ (P) denotes the recurrent feature vector produced by the k-th subnetwork before the
+k
+output layer (this plays the same role as σ (XW )···W in the feedforward case). We can
+s 1k 1k (d−1)k
+write
+K K
+pRNN = min L(y¯,Y)+β X ∥P ∥ , y¯= XΦ (P)P .
+T (out)k p k (out)k
+y¯,P
+(out)k k=1 k=1
+The Lagrangian is
+K K
+g(y¯,P ,P,λ) = L(y¯,Y)+λ⊤y¯−λ⊤XΦ (P)P +β X ∥P ∥ .
+(out)k k (out)k (out)k p
+k=1 k=1
+11
+
+Taking the infimum over y¯ and P gives
+(out)k
+K
+infg(y¯,P ,P,λ) = inf(cid:0) L(y¯,Y)+λ⊤y¯(cid:1)+X inf (cid:16) −λ⊤Φ (P)P +β∥P ∥ (cid:17)
+(out)k k (out)k (out)k p
+y¯ P
+k=1 (out)k
+K
+= −sup(cid:0) −L(y¯,Y)−λ⊤y¯(cid:1)+X inf (cid:16) −λ⊤Φ (P)P +β∥P ∥ (cid:17) .
+k (out)k (out)k p
+y¯ k=1 P (out)k
+The conjugate of the norm term is given by
+(0,
+∥A∥ ≤ β,
+sup(cid:0) A⊤u−β∥u∥ (cid:1) = p∗
+u p ∞, otherwise,
+where p∗ is the dual exponent. Thus,
+inf (cid:16) −λ⊤Φ (P)P +β∥P ∥ (cid:17) = (0, ∥λ⊤Φ k (P)∥ p∗ ≤ β,
+P k (out)k (out)k p −∞, otherwise.
+(out)k
+Hence,
+infg(y¯,P ,P,λ) = −L∗(−λ) subject to ∥λ⊤Φ (P)∥ ≤ β ∀k.
+(out)k k p∗
+Since the constraint must hold uniformly over all subnetworks, and P ranges over the admissible
+parameter set, we can equivalently write the dual problem as
+dRNN = min maxg(λ) subject to ∥λ⊤Φ(P)∥ ≤ β,
+T p∗
+P∈ΘRNN λ
+or, exchanging the order and making the dependence on Θ explicit,
+RNN
+dRNN = max min −L∗(−λ) subject to ∥λ⊤Φ(P)∥ ≤ β.
+T p∗
+λ P∈ΘRNN
+Taking the dual we obtain the compact form
+dRNN = max−L∗(−λ) subject to max ∥λ⊤Φ(P)∥ ≤ β.
+T p∗
+λ P∈ΘRNN
+Bidual of dRNN
+T
+We now have
+dRNN = max−L∗(−λ) subject to max ∥λ⊤Φ(P)∥ ≤ β.
+T p∗
+λ P∈ΘRNN
+We now take the dual of this expression. The constraint can be written as
+max ∥λ⊤Φ(P)∥ −β ≤ 0.
+p∗
+P∈ΘRNN
+Introducing a Lagrange multiplier v ≥ 0 for this constraint, the Lagrangian is
+(cid:18) (cid:18) (cid:19)(cid:19)
+g(λ,v) = inf −L∗(−λ)+v max ∥λ⊤Φ(P)∥ −β .
+p∗
+λ P∈ΘRNN
+Using the dual norm representation
+∥λ⊤Φ(P)∥ = sup a⊤λ⊤Φ(P),
+p∗
+∥a∥p≤1
+12
+
+we obtain
+!!
+g(λ,v) = inf −L∗(−λ)+v sup sup a⊤λ⊤Φ(P)−β .
+λ P∈ΘRNN∥a∥p≤1
+As before, we use the representation of −L∗(−λ):
+−L∗(−λ) = inf(λ⊤y¯+L(y¯,Y)).
+y¯
+Thus
+!!
+g(λ,v) = inf L(y¯,Y)+λ⊤y¯+v sup sup a⊤λ⊤Φ(P)−β
+y¯ P∈ΘRNN∥a∥p≤1
+!
+(cid:16) (cid:17)
+= inf L(y¯,Y)−vβ +inf λ⊤y¯+v sup sup λ⊤Φ(P)a .
+y¯ λ P∈ΘRNN∥a∥p≤1
+Let
+C = {Φ(P)a : P ∈ Θ , ∥a∥ ≤ 1}.
+RNN RNN p
+Then, for each λ, the inner supremum can be written as
+S (λ) = sup λ⊤c.
+RNN
+c∈CRNN
+Hence
+(cid:18) (cid:19)
+g(λ,v) = inf L(y¯,Y)−vβ +inf(cid:0) λ⊤y¯+vS (λ)(cid:1) .
+RNN
+y¯ λ
+The function S (λ) is the support function of the set C . If S (λ) = ∞, there exists a
+RNN RNN RNN
+direction d with λ⊤d > 0 along which we can extend indefinitely. Now consider
+inf(cid:0) λ⊤y¯+vS (λ)(cid:1) .
+RNN
+λ
+If y¯ lies outside the convex cone generated by C , we can write y¯ = P α c +a with c ∈
+RNN k k k k
+C , a ∈/ C , a ≠ 0, and then inf (λ⊤a) = −∞. Hence, to obtain a finite value we require
+RNN RNN λ
+y¯∈ −vconv(C ), in which case the infimum evaluates to 0. Therefore,
+RNN
+g(v) = inf (cid:0) L(y¯,Y)−vβ (cid:1) .
+y¯∈−vconv(CRNN)
+Equivalently, we can write
+y¯= −v X α c , c ∈ C , α ≥ 0, X α = 1.
+k k k RNN k k
+k k
+Equivalently, there exists a finite signed measure µ on C with ∥µ∥ ≤ v such that
+RNN TV
+Z
+y¯= cdµ(c),
+c∈CRNN
+and
+(cid:18) (cid:18)Z (cid:19) (cid:19)
+g(v) = inf L cdµ(c),Y −vβ .
+∥µ∥TV≤v c∈CRNN
+Thus the bidual is
+(cid:18) (cid:18)Z (cid:19) (cid:19)
+pRNN = supg(v) = min min L cdµ(c),Y +βv .
+∞
+v≥0 v≥0 ∥µ∥TV≤v c∈CRNN
+13
+
+Absorbing v into µ by letting ν = µ and v = ∥ν∥ , we obtain
+TV
+(cid:18) (cid:18)Z (cid:19) (cid:19)
+pRNN = min L cdν(c),Y +β∥ν∥ .
+∞ TV
+ν c∈CRNN
+Under the same conditions on K (in particular K ≥ K∗ ≤ n+1 and using the Carathéodory
+argument in [26, 10]), we obtain
+pRNN = pRNN = dRNN.
+T ∞ T
+5 Discussion
+Thissectioncontainstheroadmapforthenextsteps,wefirstdiscussthenextstepsoftheformulation
+of the finite bidual of d and then how we could maybe structure the computational algorithm for
+d
+both the feedforward and the recurrent case. We also discussed norm-based capacity control of
+relaxed threshold networks. Both these sections focus on what is left to do, so that we can get a
+publication out of the current work. Additionally, the third subsection discussed implications of
+either being true and what it could mean for future work.
+5.1 Three-layer parallel feedforward threshold networks
+We now specialize the previous general results to the three-layer (d = 3) parallel feedforward
+threshold network and derive an explicit finite-dimensional convex formulation.
+Three-layer architecture and path regularization. For each subnetwork k ∈ {1,...,K} we
+have
+W ∈ Rt×m 1k, W ∈ Rm 1k ×m 2k, w ∈ Rm 2k ×1,
+1k 2k 3k
+with threshold activation σ (x) = s1{x ≥ 0} as in Section 2. Let w denote the j -th column of
+s 1kj1 1
+W and w the (j ,j ) entry of W . For d = 3 and p = 2, the path-regularizer of subnetwork
+1k 2kj1j2 1 2 2k
+k has the form
+s
+ϕ (Θ) = X ∥w ∥2w2 w2 .
+2k 1kj1 2 2kj1j2 3kj2
+j1,j2
+The three-layer parallel network is
+K
+f3,σs(X) = X(cid:0) σ (σ (XW )W (cid:1))w ,
+s s 1k 2k 3k
+k=1
+and the corresponding training problem is
+( K s )
+p∗ = min L (cid:0) f3,σs(X),Y (cid:1)+β X X ∥w ∥2w2 w2 . (5.1)
+3
+Θ∈Θ
+1kj1 2 2kj1j2 3kj2
+k=1 j1,j2
+By Lemma 2.2, after normalizing incoming weights at each hidden node, the path regularizer of
+each subnetwork reduces to the ℓ norm of its output weights, and by Lemma 2.3, this normalization
+2
+does not change the network output. Hence, for d = 3 and p = 2, we can equivalently work with
+Θ¯ = {W ,W : ∥W [: i]∥ ≤ 1, ∥W [: j]∥ ≤ 1, ∀i,j,k}∪{w : k ∈ [K]},
+1k 2k 1k 2 2k 2 3k
+and the problem (5.1) becomes
+K
+p∗ = min n L (cid:0) f3,σs(X),Y (cid:1)+β X ∥w ∥ o . (5.2)
+3 3k 2
+Θ∈Θ¯
+k=1
+14
+
+Dual problem for d = 3. The general Lagrangian dual derived in the previous section yields, for
+d = 3 and p = 2,
+d 3 = m λ ax−L∗(−λ) s.t. m Θ∈ a Θ¯ x(cid:13) (cid:13)λ⊤σ s (σ s (XW 1k )W 2k )(cid:13) (cid:13) 2 ≤ β.
+Since by construction p = d = p (using the Carathéodory argument as in [26, 10]), we may write
+3 3 ∞
+d∗ 3 = λ m ∈ a R x n (cid:0) −L∗(λ)(cid:1) s.t. m Θ∈ a Θ¯ x(cid:13) (cid:13)λ⊤σ s (σ s (XW 1 )W 2 )(cid:13) (cid:13) 2 ≤ β, (5.3)
+where (W ,W ) collect all subnetworks.
+1 2
+Writing W = [w ,...,w ] column-wise, we have
+2 2,1 2,m2
+v
+(cid:13) (cid:13)λ⊤σ s (σ s (XW 1 )W 2 )(cid:13) (cid:13) 2 =
+u
+u t X
+m2
+(cid:0) λ⊤σ s (σ s (XW 1 )w 2,j2 )(cid:1)2 .
+j2=1
+Since σ is a threshold map, each vector
+s
+d = σ (σ (XW )w ) ∈ {0,1}n
+s s 1 2
+is a binary second-layer activation pattern. Let
+D(2) = {d ,...,d } ⊂ {0,1}n
+1 P2
+denote the set of all such second-layer patterns. Maximizing over (W ,W ) in (5.3) is therefore
+1 2
+equivalent to maximizing over d ∈ D(2), so the constraint becomes
+i
+√
+max m |λ⊤d | ≤ β.
+2 i
+di∈D(2)
+This holds if and only if, for each i ∈ {1,...,P },
+2
+√ √
+m λ⊤d −β ≤ 0, − m λ⊤d −β ≤ 0.
+2 i 2 i
+Hence the dual can be written as
+d∗ = max −L∗(λ)
+3 λ∈Rn (5.4)
+√ √
+s.t. m λ⊤d −β ≤ 0, − m λ⊤d −β ≤ 0, i = 1,...,P .
+2 i 2 i 2
+Slater’s condition for d∗. For λ = 0 we have, for every i,
+3
+√ √
+m λ⊤d −β = −β < 0, − m λ⊤d −β = −β < 0.
+2 i 2 i
+Thus 0 strictly satisfies all constraints in (5.4). Since −L∗(λ) is concave and finite at λ = 0, Slater’s
+condition holds, and by strong duality,
+p∗ = d∗.
+3 3
+15
+
+Lagrangian simplification and finite convex program. To obtain a finite convex formulation,
+introduce multipliers γ+,γ− ≥ 0 for the constraints in (5.4), and consider the Lagrangian
+i i
+L(λ,γ+,γ−) = −L∗(λ)− X P2 γ+(cid:0) √ m λ⊤d −β (cid:1) − X P2 γ−(cid:0) − √ m λ⊤d −β (cid:1) .
+i 2 i i 2 i
+i=1 i=1
+Expanding gives
+L = −L∗(λ)− √ m λ⊤X P2 (γ+−γ−)d +β X P2 (γ++γ−).
+2 i i i i i
+i=1 i=1
+Define
+v := √ m X P2 (γ+−γ−)d ∈ Rn,
+2 i i i
+i=1
+so that
+L(λ,γ+,γ−) = −L∗(λ)−λ⊤v+β X
+P2
+(γ++γ−).
+i i
+i=1
+The dual function is
+g(γ+,γ−) = sup (cid:8) −L∗(λ)−λ⊤v (cid:9)+β X
+P2
+(γ++γ−).
+i i
+λ∈Rn
+i=1
+Using the Fenchel representation of L(·,Y),
+L(u,Y) = sup (cid:8) λ⊤u−L∗(λ)(cid:9) ,
+λ∈Rn
+we recognize
+sup{−L∗(λ)−λ⊤v} = L(−v,Y).
+λ
+Therefore
+ 
+g(γ+,γ−) = L− √ m
+2
+X P2 (γ
+i
++−γ
+i
+−)d
+i
+, Y +β X P2 (γ
+i
+++γ
+i
+−).
+i=1 i=1
+Introduce
+((γ+−γ−)/α , α > 0,
+α := γ++γ− ≥ 0, s := i i i i
+i i i i 0, α = 0,
+i
+so that s ∈ [−1,1] and γ+−γ− = s α . Then
+i i i i i
+ 
+d∗
+3
+= min L− √ m
+2
+X P2 s
+i
+α
+i
+d
+i
+, Y +β X P2 α
+i
+.
+αi≥0,si∈[−1,1]
+i=1 i=1
+Finally, define w
+i
+:= s
+i
+α
+i
+and let D(2) = [d
+1
+,...,d
+P2
+] ∈ {0,1}n×P2 . Then
+− √ m X P2 s α d = − √ m D(2)w, X P2 α = X P2 |w | = ∥w∥ .
+2 i i i 2 i i 1
+i=1 i=1 i=1
+Thus we obtain the finite-dimensional convex program
+√
+d∗ = min L (cid:0) − m D(2)w, Y (cid:1)+β∥w∥ . (5.5)
+3 2 1
+w∈RP2
+16
+
+Absorbing the scaling and squared loss. Define w˜ = − √ m w and β ˜= β/ √ m . Then (5.5)
+2 2
+is equivalent to
+p∗ = d∗ = min L (cid:0) D(2)w˜, Y (cid:1)+β ˜ ∥w˜∥ . (5.6)
+3 3 1
+w˜∈RP2
+For the squared loss L(u,Y) = ∥u−Y∥2, we have L∗(λ) = 1∥λ∥2+λ⊤Y, and the three-layer
+2 4 2
+primal, dual, and convex formulations become
+K
+Primal: min∥f3,σs(X)−Y∥2+β X ∥w ∥ ,
+2 3k 2
+Θ∈Θ¯
+k=1
+Dual: max−1∥λ∥2−λ⊤Y s.t. max |λ⊤d | ≤ β ˜ ,
+4 2 i
+λ di∈D(2)
+Convex program: min∥D(2)w˜−Y∥2+β ˜ ∥w˜∥ .
+2 1
+w˜
+By Lemma 2.2, Lemma 2.3, and the biduality argument yielding p = p = d , solving the
+3 ∞ 3
+convex program (5.6) provides a globally optimal solution to the original nonconvex three-layer
+parallel feedforward threshold network training problem (5.1).
+Experiments. For the L–layer feedforward simulations, we use the same datasets as the reference
+work, including synthetic parity, Gaussian mixture, checkerboard, two–spirals, and small UCI
+benchmarks. We compare against (i) Nonconvex–STE training of threshold networks and we use
+convex-LASSO as our solving algorithm. All experiments follow the same protocol and metrics as
+the reference, enabling direct comparison.
+5.2 3-layer, 2-timestep Parallel Recurrent Threshold Network
+From the definition of a recurrent neural network, we consider a d-layer, T-timestep parallel network
+and the training objective
+p = min L (cid:0) f (X),Y (cid:1)+βΦ(P).
+(d,T) P
+P∈Θ(P)
+For the threshold activation σ (x) = s1{x ≥ 0}, the parallel architecture can be written as
+s
+K
+fd,σs,T,H0(X) = X P σ (cid:16) h (d−2)k P (d−1)k +h (d−1)k P(d−1)k (cid:17) .
+(out)k s T in T−1 rec
+k=1
+Hyperplane arrangement recursion. We define the hyperplane arrangement operator A(·) in
+the same sense as [7]. For any design matrix Z ∈ Rn×p, define
+h i
+A(Z) := 1{Zu ≥ 0} : u ∈ Rp ∈ {0,1}n×P(Z).
+uniquecolumns
+That is, A(Z) enumerates all distinct threshold activation patterns induced by hyperplanes acting
+on the rows of Z.
+We then define the recursive arrangement matrices Di,t by applying A to the concatenated design
+matrix at (i,t):
+Di,t := A
+(cid:16)(cid:2)
+Di−1,t
+Di,t−1(cid:3)(cid:17)
+, i ≥ 2, t ≥ 1, (5.7)
+with base cases
+D1,0 := [0], D1,t := A
+(cid:16)(cid:2)
+Xt
+D1,t−1(cid:3)(cid:17)
+, t ≥ 1, Di,0 := [0], i ≥ 2. (5.8)
+Here [0] denotes the n×1 all-zero column which encodes the t = 0 “null” recurrent input.
+17
+
+3-layer, 2-timestep specialization. Assumed = 3andT = 2. Forasinglesubnetwork(dropping
+k for clarity), let
+P1 ∈ Rd×m1, P2 ∈ Rm1×m2, P2 ∈ Rm2×m2, P3 ∈ Rm2.
+in in rec out
+The hidden dynamics are
+h1 = σ (XtP1), h2 = σ (cid:0) h1P2 +h2 P2 (cid:1) , t = 1,2,
+t s in t s t in t−1 rec
+and the output at T = 2 is
+K
+f (X) = X h2kP3 ∈ Rn.
+P 2 (out)k
+k=1
+After applying the path-normalization argument (as in the feedforward case), we may restrict
+internal parameters to a normalized set and write the primal as
+K
+p∗ = min L (cid:0) f (X),Y (cid:1)+β X ∥P3 ∥ .
+(3,2) P (out)k 2
+P∈Θ¯(P)
+k=1
+Dual (given). By the same primal→dual derivation as in the feedforward case, the dual is
+(cid:13) (cid:13)
+d∗ = max−L∗(λ) s.t. max (cid:13)λ⊤h2(P)(cid:13) ≤ β,
+(3,2) λ∈Rn P∈Θ¯(P) (cid:13) 2 (cid:13) 2
+where h2(P) ∈ Rn×m2 denotes the layer-2 activation matrix at time t = 2 under parameters P.
+2
+Reduction to D(2,2). By construction of the arrangement set D(2,2) := D2,2, every column of
+h2(P) is a threshold pattern from D(2,2), i.e.,
+2
+h2(P)[:,j ] ∈ {d ,...,d } for all j ∈ [m ].
+2 2 1 P (2,2) 2 2
+Hence the constraint becomes
+v
+P
+m
+∈Θ¯
+a
+(
+x
+P)
+(cid:13) (cid:13) (cid:13) λ⊤h2 2 (P) (cid:13) (cid:13) (cid:13)
+2
+=
+dj2
+m
+∈D
+ax
+(2,2)
+u u t
+j
+X m
+2=
+2
+1
+(cid:0) λ⊤d j2 (cid:1)2 .
+j2∈[m2]
+To simplify further, we use the inequality
+v
+u u t
+j
+X m
+2=
+2
+1
+a2 j2 ≤ √ m 2 m
+j
+a
+2
+x|a j2 |.
+Applying it with a = λ⊤d yields the sufficient constraint
+j2 j2
+√
+max m |λ⊤d| ≤ β.
+2
+d∈D(2,2)
+(When the maximizing pattern can be repeated across j , this bound is tight.)
+2
+Thus we write
+√
+d∗ = max−L∗(λ) s.t. max m |λ⊤d | ≤ β. (5.9)
+(3,2) λ∈Rn di∈D(2,2) 2 i
+18
+
+Linearization and Slater. The constraint (5.9) is equivalent to
+√ √
+m λ⊤d −β ≤ 0, − m λ⊤d −β ≤ 0, ∀i ∈ [P ].
+2 i 2 i (2,2)
+Slater’s condition holds since λ = 0 satisfies both sets of inequalities strictly whenever β > 0. Hence
+strong duality holds and the duality gap is zero.
+Lagrangian and finite convex program. Introduce multipliers γ+,γ− ≥ 0 and define the
+i i
+Lagrangian
+P P
+L(λ,γ+,γ−) = −L∗(λ)− X (2,2) γ+(cid:0) √ m λ⊤d −β (cid:1) − X (2,2) γ−(cid:0) − √ m λ⊤d −β (cid:1) .
+i 2 i i 2 i
+i=1 i=1
+Expanding gives
+P P
+L = −L∗(λ)− √ m λ⊤ X (2,2) (γ+−γ−)d +β X (2,2) (γ++γ−).
+2 i i i i i
+i=1 i=1
+Define
+P
+v := √ m X (2,2) (γ+−γ−)d ∈ Rn,
+2 i i i
+i=1
+so that
+P
+(2,2)
+L(λ,γ+,γ−) = −L∗(λ)−λ⊤v+β X (γ++γ−).
+i i
+i=1
+The dual function is
+P
+(2,2)
+g(γ+,γ−) = sup (cid:8) −L∗(λ)−λ⊤v (cid:9)+β X (γ++γ−).
+i i
+λ∈Rn
+i=1
+Using Fenchel duality,
+L(u,Y) = sup{λ⊤u−L∗(λ)},
+λ∈Rn
+we identify
+sup{−L∗(λ)−λ⊤v} = L(−v,Y).
+λ
+Therefore
+ P  P
+g(γ+,γ−) = L− √ m
+2
+X (2,2) (γ
+i
++−γ
+i
+−)d
+i
+, Y +β X (2,2) (γ
+i
+++γ
+i
+−).
+i=1 i=1
+Introduce
+((γ+−γ−)/α , α > 0,
+α := γ++γ− ≥ 0, s := i i i i
+i i i i 0, α = 0,
+i
+so that s ∈ [−1,1] and γ+−γ− = s α . Then
+i i i i i
+ P  P
+d∗
+(3,2)
+= min L− √ m
+2
+X (2,2) s
+i
+α
+i
+d
+i
+, Y +β X (2,2) α
+i
+.
+αi≥0,si∈[−1,1]
+i=1 i=1
+19
+
+Finally define w := s α and note that P α = P |w | = ∥w∥ . Let D(2,2) = [d ,...,d ] ∈
+i i i i i i i 1 1 P (2,2)
+{0,1}n×P
+(2,2)
+. Then
+P
+− √ m X (2,2) s α d = − √ m D(2,2)w,
+2 i i i 2
+i=1
+and we obtain the finite-dimensional convex program
+√
+d∗ = min L (cid:0) − m D(2,2)w, Y (cid:1)+β∥w∥ . (5.10)
+(3,2) 2 1
+w∈RP(2,2)
+√ √ √
+Absorbing the factor m into w. Define w˜ := − m w. Then − m D(2,2)w = D(2,2)w˜ and
+√ 2 2 2
+∥w∥ = ∥w˜∥ / m . Hence (5.10) is equivalent to
+1 1 2
+β
+d∗ = min L (cid:0) D(2,2)w˜, Y (cid:1)+ √ ∥w˜∥ . (5.11)
+(3,2) w˜∈RP(2,2) m 2 1
+5.3 Weight Reconstruction via Joint SVM
+We now show how to reconstruct a set of shared recurrent parameters from the optimal convex
+solution. The key idea is to treat each neuron as a single separating hyperplane acting on a joint
+feature vector that aggregates all timesteps, and to fit this hyperplane by solving a single SVM-type
+convex problem.
+Setup and notation. For the 3-layer, 2-timestep network, we have
+h1 = σ (XtP1), h2 = σ (cid:0) h1P2 +h2 P2 (cid:1) , t = 1,2.
+t s in t s t in t−1 rec
+Assume that, from the hyperplane arrangement D(i,t) and the optimal convex solution, we have
+fixed a finite set of active patterns and thus know the binary activations
+{h1,h1,h2,h2},
+1 2 1 2
+for all training samples. Our goal is to recover a set of shared parameters
+P1, P2, P2
+in in rec
+such that the above recurrences reproduce exactly the same activation patterns.
+We reconstruct parameters neuron-by-neuron.
+Reconstruction for the first layer. For the purely feedforward first layer we require that, for
+each neuron j ∈ [m ] and timestep t ∈ {1,2},
+1
+h1[:,j] = 1{Xtp1 ≥ 0},
+t j
+where p1 ∈ Rd is the j-th column of P1. To enforce sharing across timesteps, we solve a single
+j in
+convex problem over all (t,r) jointly.
+For each sample r ∈ [n] and timestep t ∈ {1,2} define
+x(1,t) := Xt ∈ Rd, y (1,t) := 2h1[r,j]−1 ∈ {−1,+1}.
+r r,: j,r t
+20
+
+We then solve, for each j,
+1 n
+min ∥p∥2+C X X ξ(t),
+2 2 r
+p,ξ≥0 (5.12)
+t∈{1,2}r=1
+s.t. y (1,t)(cid:0) x(1,t)(cid:1)⊤ p ≥ 1−ξ(t), ∀r ∈ [n], t ∈ {1,2}.
+j,r r r
+Any optimal solution p⋆ is used as the j-th column of P1:
+j in
+P1[:,j] := p⋆.
+in j
+Under the separability assumption induced by the hyperplane arrangement, and for sufficiently
+large C, the solution of (5.12) recovers a hyperplane that induces exactly the desired activation
+patterns at both timesteps.
+Reconstruction for the recurrent layer. For the second (recurrent) layer we require, for each
+neuron j ∈ [m ],
+2
+h2[:,j] = 1(cid:8) h1p2 +h2 p2 ≥ 0(cid:9) , t = 1,2,
+t t in,j t−1 rec,j
+where p2 ∈ Rm1 and p2 ∈ Rm2 are the j-th columns of P2 and P2 , respectively.
+in,j rec,j in rec
+Define the joint feature vector for sample r and timestep t:
+h i
+x(2,t) := h1[r,:] h2 [r,:] ∈ Rm1+m2,
+r t t−1
+and stack the parameters into
+" #
+p2
+w2 := in,j ∈ Rm1+m2.
+j p2
+rec,j
+The recurrence constraint at neuron j becomes
+h2[r,j] = 1(cid:8)(x(2,t))⊤w2 ≥ 0(cid:9) , t = 1,2, r ∈ [n].
+t r j
+Introduce binary labels
+y (2,t) := 2h2[r,j]−1 ∈ {−1,+1}.
+j,r t
+We then solve, for each j ∈ [m ], the joint SVM
+2
+1 n
+min ∥w∥2+C X X ξ(t),
+2 2 r
+w,ξ≥0 (5.13)
+t∈{1,2}r=1
+s.t. y (2,t)(cid:0) x(2,t)(cid:1)⊤ w ≥ 1−ξ(t), ∀r ∈ [n], t ∈ {1,2}.
+j,r r r
+Any optimal solution w⋆ is decomposed as
+j
+" p2,⋆ #
+w⋆ = in,j ,
+j p2,⋆
+rec,j
+and we set
+P2[:,j] := p2,⋆, P2 [:,j] := p2,⋆ .
+in in,j rec rec,j
+This yields a single set of shared recurrent parameters that explain all activations at both timesteps.
+21
+
+Algorithmic summary. We summarize the reconstruction as a simple procedure.
+Algorithm 1 Reconstruction of Shared Weights from Activations (3-layer, T = 2)
+Require: Activations {h1,h1,h2,h2} for all n samples.
+1 2 1 2
+Ensure: Reconstructed weights P1,P2,P2 .
+in in rec
+1: Layer 1 reconstruction:
+2: for j = 1 to m 1 do
+3: Build feature-label pairs (x ( r 1,1) ,y j ( , 1 r ,1)) and (x ( r 1,2) ,y j ( , 1 r ,2)) for all r ∈ [n]:
+x(1,t) := Xt , y (1,t) := 2h1[r,j]−1.
+r r,: j,r t
+4:
+Solve the convex problem (5.12) to obtain p⋆.
+j
+5: Set P1[:,j] ← p⋆.
+in j
+6: end for
+7: Layer 2 reconstruction (recurrent):
+8: for j = 1 to m 2 do
+9: Build joint features for t = 1,2 and all r:
+x(2,t) := [h1[r,:] h2 [r,:]], y (2,t) := 2h2[r,j]−1.
+r t t−1 j,r t
+10:
+Solve the convex problem (5.13) to obtain w⋆.
+j
+11:
+Split w⋆ into (p2,⋆,p2,⋆ ) and set
+j in,j rec,j
+P2[:,j] ← p2,⋆, P2 [:,j] ← p2,⋆ .
+in in,j rec rec,j
+12: end for
+13: return P1,P2,P2 .
+in in rec
+Under the assumption that the activation patterns are realizable by some shared parameters
+(which holds at the global optimum of the convex program), and for sufficiently large C, Algorithm 1
+recovers a set of shared weights that exactly reproduces the observed hyperplane configurations at
+both timesteps.
+5.4 Specialization to Hinge Loss
+For classification problems we specialize L(·,Y) to the hinge loss. Let Y ∈ {−1,+1}n and u ∈ Rn
+denote the vector of network scores on the n training samples. The empirical hinge loss is
+1 n
+L (u,Y) = Xmax(cid:0)0, 1−Y u (cid:1) .
+hinge r r
+n
+r=1
+Substituting u = D(2,2)w˜ into the convex formulation (5.11) yields
+d∗ = min 1 X n max(cid:0)0, 1−Y (D(2,2)w˜) (cid:1)+ √ β ∥w˜∥ . (5.14)
+(3,2) w˜∈RP(2,2) n r=1 r r m 2 1
+22
+
+Thisisastandardℓ -regularizedhinge-lossproblem(aLASSO-SVM)overthehyperplane-arrangement
+1
+dictionaryD(2,2). Inparticular,thesolutionw˜∗ issparseandselectsatmostO(n)activehyperplanes,
+which then define the finite number of active subnetworks used in the reconstruction procedure.
+5.5 Experimental Protocol for T = 2 Recurrent Models
+We briefly outline an experimental setup to evaluate the 3-layer, 2-timestep parallel recurrent
+threshold network and the proposed convex formulation.
+Baselines. We compare the following training strategies:
+• Nonconvex-STE: a standard recurrent network with hard threshold activations trained by
+backpropagation and a straight-through estimator (STE) for the non-differentiable σ .
+s
+• Convex-LASSO (ours): the convex formulation (5.14) solved over the arrangement dictionary
+D(2,2) with hinge loss and ℓ regularization, followed by SVM-based weight reconstruction as in
+1
+Algorithm 1.
+Datasets with T = 2. We propose simple sequence classification tasks with exactly two timesteps:
+1. Two-stepXORsequence. Generatepairs(X1,X2) ∈ R2whereeachtimestepisa2-dimensional
+binary vector and the label depends on a temporal XOR pattern (e.g., Y = 1 iff exactly one of
+the two timesteps satisfies a given linear predicate). This tests the ability to exploit temporal
+memory.
+2. Rotated MNIST pairs. Sample two consecutive frames per example: X1 is an MNIST digit,
+X2 is the same digit rotated by a small random angle. The label is the digit class. Here T = 2
+and the recurrence must integrate information from both frames.
+3. Moving Gaussian blobs. Generate 2D points drawn from one of two Gaussian clusters at
+t = 1 and let the cluster centers move slightly at t = 2. The label is the identity of the generating
+cluster. This tests robustness to small temporal deformations.
+For each dataset we construct X1,X2 (and optionally initial states h1,h2), train Nonconvex-STE
+0 0
+and Convex-LASSO, and compare:
+• training and test accuracy,
+• sparsity of the hyperplane representation (∥w˜∗∥ ),
+0
+• number of active subnetworks K∗ ≤ n+1 used after reconstruction.
+This protocol mirrors the feedforward experiments in [7] but in the simplest recurrent setting T = 2,
+and emphasizes the effect of convex training and explicit weight reconstruction on both performance
+and interpretability.
+References
+[1] Agarap, A. F. Deep learning using rectified linear units (relu). arXiv preprint
+arXiv:1803.08375 (2018).
+[2] Baquero, C. the energy footprint of humans and large language models: Comparing the
+energy expenditure of people with that of large language models. Commun. ACM (2024).
+[3] Block, H.-D. The perceptron: A model for brain functioning. i. Reviews of Modern Physics
+34, 1 (1962), 123.
+23
+
+[4] Darlow, L., Regan, C., Risi, S., Seely, J., and Jones, L. Continuous Thought Machines,
+Oct. 2025.
+[5] Dehghani, N., and Levin, M. Bio-inspired AI: Integrating Biological Complexity into
+Artificial Intelligence, Nov. 2024.
+[6] Ding, J., Yu, Z., Tian, Y., and Huang, T. Optimal ANN-SNN Conversion for Fast and
+Accurate Inference in Deep Spiking Neural Networks, May 2021.
+[7] Ergen, T., Gulluk, H. I., Lacotte, J., and Pilanci, M. Globally Optimal Training of
+Neural Networks with Threshold Activation Functions, Mar. 2023.
+[8] Ergen, T., Neyshabur, B., and Mehta, H. Convexifying Transformers: Improving
+optimization and understanding of transformer networks, Nov. 2022. arXiv:2211.11052 [cs].
+[9] Ergen, T., and Pilanci, M. Path Regularization: A Convexity and Sparsity Inducing
+Regularization for Parallel ReLU Networks.
+[10] Ergen, T., and Pilanci, M. Convex Geometry and Duality of Over-parameterized Neural
+Networks, Aug. 2021. arXiv:2002.11219 [cs].
+[11] Ergen, T., and Pilanci, M. ImplicitConvexRegularizersofCNNArchitectures: ConvexOp-
+timizationofTwo-andThree-LayerNetworksinPolynomialTime, Mar.2021. arXiv:2006.14798
+[cs].
+[12] Ergen, T., and Pilanci, M. The Convex Landscape of Neural Networks: Characterizing
+Global Optima and Stationary Points via Lasso Models, Dec. 2023.
+[13] Ergen, T., and Pilanci, M. The Convex Landscape of Neural Networks: Characterizing
+Global Optima and Stationary Points via Lasso Models. IEEE Transactions on Information
+Theory 71, 5 (May 2025), 3854–3870.
+[14] Lee, J. H., Delbruck, T., and Pfeiffer, M. Training Deep Spiking Neural Networks
+Using Backpropagation. Frontiers in Neuroscience 10 (Nov. 2016).
+[15] Linardatos, P., Papastefanopoulos, V., and Kotsiantis, S. Explainable ai: A review
+of machine learning interpretability methods. Entropy 23, 1 (2020), 18.
+[16] Liu, C., Shen, J., Ran, X., Xu, M., Xu, Q., Xu, Y., and Pan, G. Efficient ANN-SNN
+Conversion with Error Compensation Learning, May 2025.
+[17] Mancoo, A., Keemink, S., and Machens, C. K. Understanding spiking networks through
+convex optimization. Advances in neural information processing systems 33 (2020), 8824–8835.
+[18] McCulloch, W. S., and Pitts, W. A logical calculus of the ideas immanent in nervous
+activity. The bulletin of mathematical biophysics 5, 4 (1943), 115–133.
+[19] Narayan, S. The generalized sigmoid activation function: Competitive supervised learning.
+Information sciences 99, 1-2 (1997), 69–82.
+[20] Neftci, E. O., Mostafa, H., and Zenke, F. Surrogate Gradient Learning in Spiking Neural
+Networks: Bringing the Power of Gradient-Based Optimization to Spiking Neural Networks.
+IEEE Signal Processing Magazine 36, 6 (Nov. 2019), 51–63.
+24
+
+[21] Neyshabur, B., Wu, Y., Salakhutdinov, R. R., and Srebro, N. Path-Normalized
+Optimization of Recurrent Neural Networks with ReLU Activations. In Advances in Neural
+Information Processing Systems (2016), vol. 29, Curran Associates, Inc.
+[22] Nunes, J. D., Carvalho, M., Carneiro, D., and Cardoso, J. S. SpikingNeuralNetworks:
+A Survey. IEEE Access 10 (2022), 60738–60764.
+[23] Rumelhart, D. E., Hinton, G. E., and Williams, R. J. Learning representations by
+back-propagating errors. nature 323, 6088 (1986), 533–536.
+[24] Tomioka, R., and Srebro, N. Norm-Based Capacity Control in Neural Networks.
+[25] Vershynin, R. Memory capacity of neural networks with threshold and rectified linear unit
+activations. SIAM Journal on Mathematics of Data Science 2, 4 (2020), 1004–1033.
+[26] Wang, Y., Ergen, T., and Pilanci, M. PARALLEL DEEP NEURAL NETWORKS HAVE
+ZERO DUALITY GAP.
+[27] Wang, Z., Fang, Y., Cao, J., Zhang, Q., Wang, Z., and Xu, R. Masked Spiking
+Transformer, July 2023.
+[28] Yamazaki, K., Vo-Ho, V.-K., Bulsara, D., and Le, N. Spiking Neural Networks and
+Their Applications: A Review. Brain Sciences 12, 7 (June 2022), 863.
+[29] Zanatta, L., Barchi, F., Manoni, S., Tolu, S., Bartolini, A., and Acquaviva, A.
+Exploring spiking neural networks for deep reinforcement learning in robotic tasks. Scientific
+Reports 14, 1 (Dec. 2024), 30648.
+[30] Zhang, F., and Pilanci, M. Analyzing neural network-based generative diffusion models
+through convex optimization. arXiv preprint arXiv:2402.01965 (2024).
+[31] Zhou, Z., Zhu, Y., He, C., Wang, Y., Yan, S., Tian, Y., and Yuan, L. Spikformer:
+When Spiking Neural Network Meets Transformer, Nov. 2022.
+25

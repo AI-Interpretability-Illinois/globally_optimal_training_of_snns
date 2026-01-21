@@ -1,0 +1,1439 @@
+PublishedasaconferencepaperatICLR2023
+GLOBALLY OPTIMAL TRAINING OF NEURAL NET-
+WORKS WITH THRESHOLD ACTIVATION FUNCTIONS
+TolgaErgen,HalilIbrahimGulluk,JonathanLacotte&MertPilanci
+DepartmentofElectricalEngineering
+StanfordUniversity
+Stanford,CA94305,USA
+{ergen,gulluk,lacotte,pilanci}@stanford.edu
+ABSTRACT
+Threshold activation functions are highly preferable in neural networks due to
+theirefficiencyinhardwareimplementations. Moreover,theirmodeofoperation
+is moreinterpretableand resemblesthat ofbiological neurons. However, tradi-
+tionalgradientbasedalgorithmssuchasGradientDescentcannotbeusedtotrain
+theparametersofneuralnetworkswiththresholdactivationssincetheactivation
+functionhaszerogradientexceptatasinglenon-differentiablepoint. Tothisend,
+we study weight decay regularized training problems of deep neural networks
+withthresholdactivations. Wefirstshowthatregularizeddeepthresholdnetwork
+trainingproblemscanbeequivalentlyformulatedasastandardconvexoptimization
+problem,whichparallelstheLASSOmethod,providedthatthelasthiddenlayer
+widthexceedsacertainthreshold. Wealsoderiveasimplifiedconvexoptimization
+formulationwhenthedatasetcanbeshatteredatacertainlayerofthenetwork. We
+corroborateourtheoreticalresultswithvariousnumericalexperiments.
+1 INTRODUCTION
+Inthepastdecade,deepneuralnetworkshaveprovenremarkablyusefulinsolvingchallengingprob-
+lemsandbecomepopularinmanyapplications. Thechoiceofactivationplaysacrucialroleintheir
+performanceandpracticalimplementation. Inparticular,eventhoughneuralnetworkswithpopular
+activationfunctionssuchasReLUaresuccessfullyemployed,theyrequireadvancedcomputational
+resourcesintrainingandevaluation,e.g.,GraphicalProcessingUnits(GPUs)(Coatesetal.,2013).
+Consequently,trainingsuchdeepnetworksischallengingespeciallywithoutsophisticatedhardware.
+Ontheotherhand,thethresholdactivationoffersamultitudeofadvantages: (1)computationaleffi-
+ciency,(2)compression/quantizationtobinarylatentdimension,(3)interpretability. Unfortunately,
+gradientbasedoptimizationmethodsfailinoptimizingthresholdactivationnetworksduetothefact
+thatthegradientiszeroalmosteverywhere. Toclosethisgap,weanalyzethetrainingproblemof
+deepneuralnetworkswiththethresholdactivationfunctiondefinedas
+(cid:26)
+s ifx≥0
+σ (x):=s1{x≥0}= , (1)
+s 0 otherwise
+where s ∈ R is a trainable amplitude parameter for the neuron. Our main result is that globally
+optimaldeepthresholdnetworkscanbetrainedbysolvingaconvexoptimizationproblem.
+1.1 WHYSHOULDWECAREABOUTTHRESHOLDNETWORKS?
+Neuralnetworkswiththresholdactivationsarehighlydesirableduetothefollowingreasons:
+• Sincethethresholdactivation(1)isrestrictedtotakevaluesin{0,s},thresholdneuralnetwork
+modelsarefarmoresuitableforhardwareimplementations(Bartlett&Downs,1992;Corwinetal.,
+1994). Specifically,thesenetworkshavesignificantlylowermemoryfootprint,lesscomputational
+complexity,andconsumelessenergy(Helwegenetal.,2019).
+• Modernneuralnetworkshaveextremelylargenumberoffullprecisiontrainableparametersso
+thatseveralcomputationalbarriersemergeduringhardwareimplementations. Oneapproachto
+1
+3202
+raM
+6
+]GL.sc[
+1v28330.3032:viXra
+
+PublishedasaconferencepaperatICLR2023
+(a)(n,d)=(20,100) (b)(n,d)=(50,50) (c)(n,d)=(100,20)
+Figure1: Trainingcomparisonofourconvexprogramin(7)withthenon-convextrainingheuristic
+STE.Wealsoindicatethetimetakentosolvetheconvexprogramswithmarkers.Fornon-convexSTE,
+werepeatthetrainingwith5differentinitializations. Ineachcase,ourconvextrainingalgorithms
+achievelowerobjectivethanallthenon-convexheuristics(seeAppendixB.5fordetails).
+mitigatetheseissuesisreducingthenetworksizebygroupingtheparametersviaahashfunction
+(Hubaraetal.,2017;Chenetal.,2015). However,thisstillrequiresfullprecisiontrainingbefore
+theapplicationofthehashfunctionandthusfailstoremedythecomputationalissues. Ontheother
+hand,neuralnetworkswiththresholdactivationsneedaminimalamountofbits.
+• Anotherapproachtoreducethecomplexityistoquantizetheweightsandactivationsofthenetwork
+(Hubaraetal.,2017)andthethresholdactivationisinherentlyinatwolevelquantizedform.
+• Thethresholdactivationisavalidmodeltosimulatethebehaviourofabiologicalneuronasdetailed
+inJainetal.(1996). Therefore,progressinthisresearchfieldcouldshedlightintotheconnection
+betweenbiologicalandartificialneuralnetworks.
+1.2 RELATEDWORK
+Althoughthresholdnetworksareessentialforseveralpracticalapplicationsasdetailedintheprevious
+section,trainingtheirparametersisadifficultnon-differentiableoptimizationproblemduetothe
+discretenaturein(1). Fortrainingofdeepneuralnetworkswithpopularactivations,thecommon
+practice is to use first order gradient based algorithms such as Gradient Descent (GD) since the
+wellknownbackpropagationalgorithmefficientlycalculatesthegradientwithrespecttoparameters.
+However,thethresholdactivationin(1)haszerogradientexceptatasinglenon-differentiablepoint
+zero,andtherefore,onecannotdirectlyusegradientbasedalgorithmstotraintheparametersofthe
+network. Inordertoremedythisissuenumerousheuristicalgorithmshavebeenproposedinthe
+literatureasdetailedbelowbuttheystillfailtogloballyoptimizethetrainingobjective(seeFigure1).
+TheStraight-ThroughEstimator(STE)isawidelyusedheuristicstotrainthresholdnetworks(Bengio
+et al., 2013; Hinton, 2012). Since the gradient is zero almost everywhere, Bengio et al. (2013);
+Hinton(2012)proposedreplacingthethresholdactivationwiththeidentityfunctionduringonlythe
+backwardpass. Lateron,thisapproachisextendedtoemployvariousformsoftheReLUactivation
+function,e.g.,clippedReLU,vanillaReLU,LeakyReLU(Yinetal.,2019b;Caietal.,2017;Xiao
+etal.),duringthebackwardpass. Additionally,clippedversionsoftheidentityfunctionwerealso
+usedasanalternativetoSTE(Hubaraetal.,2017;Courbariauxetal.,2016;Rastegarietal.,2016).
+1.3 CONTRIBUTIONS
+• Weintroducepolynomial-timetrainableconvexformulationsofregularizeddeepthresholdnetwork
+trainingproblemsprovidedthatalayerwidthexceedsathresholddetailedinTable1.
+• InTheorem2.2,weprovethattheoriginalnon-convextrainingproblemfortwo-layernetworksis
+equivalenttostandardconvexoptimizationproblems.
+• Weshowthatdeepthresholdnetworktrainingproblemsareequivalenttostandardconvexoptimiza-
+tionproblemsinTheorem3.2. Instarkcontrasttotwo-layernetworks,deepthresholdnetworks
+canhavearichersetofhyperplanearrangementsduetomultiplenonlinearlayers(seeLemma3.5).
+• InSection3.1,wecharacterizetheevolutionofthesetofhyperplanearrangementsandconsequently
+hiddenlayerrepresentationspaceasarecursiveprocess(seeFigure3)asthenetworkgetsdeeper.
+√
+• WeprovethatwhenacertainlayerwidthexceedsO( n/L),theregularizedL-layerthreshold
+networktrainingfurthersimplifiestoaproblemthatcanbesolvedinO(n)time.
+2
+
+PublishedasaconferencepaperatICLR2023
+Table1: Summaryofourresultsfortheoptimizationofweightdecayregularizedthresholdnetwork
+trainingproblems(n: #ofdatasamples,d: featuredimension,m : #ofhiddenneuronsinlayerl,r:
+l
+rankofthetrainingdatamatrix,m∗: criticalwidth,i.e.,#ofneuronsthatobeys0≤m∗ ≤n+1)
+Result Depth Complexity Minimumwidth Globallyoptimal
+Theorem2.2 2 O(n3r) m≥m∗ (cid:51)(convexopt)
+Theorem2.3 2 O(n) m≥n+2 (cid:51)(convexopt)
+Theorem3.2 L O(n3r(cid:81)L l= − 1 2ml) m L−1 ≥ √ m∗ (cid:51)(convexopt)
+Corollary3.4 L O(n) ∃l:m ≥O( n/L) (cid:51)(convexopt)
+l
+Notationandpreliminaries: Weuselowercaseanduppercaseboldletterstodenotevectorsand
+matrices,respectively. Wealsouse[n]todenotetheset{1,2,...,n}. Wedenotethetrainingdata
+matrixconsistingofddimensionalnsamplesasX ∈ Rn×d,labelvectorasy ∈ Rn,andthelth
+layerweightsofaneuralnetworkasW(l) ∈Rml−1×ml,wherem
+0
+=d,m
+L
+=1.
+2 TWO-LAYER THRESHOLD NETWORKS
+Wefirstconsiderthefollowingtwo-layerthresholdnetwork
+m
+f (X)=σ (XW(1))w(2)= (cid:88) s 1{Xw(1)≥0}w(2), (2)
+θ,2 s j j j
+j=1
+wherethesetofthetrainableparametersareW(1) ∈Rd×m,s∈Rm,w(2) ∈Rmandθisacompact
+representationfortheparameters, i.e., θ:= {W(1),s,w(2)}. Notethatweincludebiastermsby
+concatenatingavectorofonestoX. Next,considertheweightdecayregularizedtrainingobjective
+m
+Pnoncvx:= min
+1
+(cid:107)f (X)−y(cid:107)2+
+β (cid:88)(cid:16)
+(cid:107)w(1)(cid:107)2+|s |2+|w(2)|2
+(cid:17)
+. (3)
+2 W(1),s,w(2) 2 θ,2 2 2 j 2 j j
+j=1
+Now,weapplyascalingbetweenvariabless andw(2)toreachanequivalentoptimizationproblem.
+j j
+Lemma2.1(Optimalscaling). Thetrainingproblemin(3)canbeequivalentlystatedas
+1
+Pnoncvx = min (cid:107)f (X)−y(cid:107)2+β(cid:107)w(2)(cid:107) , (4)
+2 θ∈Θs 2 θ,2 2 1
+whereΘ :={θ :|s |=1,∀j ∈[m]}.
+s j
+WenextdefinethesetofhyperplanearrangementpatternsofthedatamatrixXas
+H(X):={1{Xw≥0}:w∈Rd}⊂{0,1}n. (5)
+WedenotethedistinctelementsofthesetH(X)byd ,...,d ∈ {0,1}n,whereP:= |H(X)|is
+1 P
+thenumberofhyperplanearrangements. Usingthisfixedsetofhyperplanearrangements{d }P ,
+i i=1
+wenextprovethat(4)isequivalenttothestandardLassomethod(Tibshirani,1996).
+Theorem2.2. Letm≥m∗,thenthenon-convexregularizedtrainingproblem(4)isequivalentto
+1
+Pcvx = min (cid:107)Dw−y(cid:107)2+β(cid:107)w(cid:107) , (6)
+2 w∈RP 2 2 1
+whereD=[d d ... d ]isafixedn×P matrix. Here,m∗isthecardinalityoftheoptimal
+1 2 P
+solution,whichsatisfiesm∗ ≤n+1. Also,itholdsthatPnoncvx =Pcvx.
+2 2
+Theorem2.2provesthattheoriginalnon-convextrainingproblemin(3)canbeequivalentlysolvedas
+astandardconvexLassoproblemusingthehyperplanearrangementpatternsasfeatures. Surprisingly,
+the non-zero support of the convex optimizer in (6) matches to that of the optimal weight-decay
+regularizedthresholdactivationneuronsinthenon-convexproblem(3). Thisbringsustwomajor
+advantagesoverthestandardnon-convextraining:
+• Since(6)isastandardconvexproblem,itcanbegloballyoptimizedwithoutresortingtonon-convex
+optimizationheuristics,e.g.,initializationschemes,learningrateschedulesetc.
+• Since(6)isaconvexLassoproblem,thereexistsmanyefficientsolvers(Efronetal.,2004).
+3
+
+PublishedasaconferencepaperatICLR2023
+2.1 SIMPLIFIEDCONVEXFORMULATIONFORCOMPLETEARRANGEMENTS
+WenowshowthatifthesetofhyperplanearrangementsofXiscomplete,i.e.,H={0,1}ncontains
+allbooleansequencesoflengthn,thenthenon-convexoptimizationproblemin(3)canbesimplified.
+Wecalltheseinstancescompletearrangements.Inthecaseoftwo-layerthresholdnetworks,complete
+arrangementsemergewhenthewidthofthenetworkexceedsathreshold,specificallym≥n+2.
+Wenotethatthem ≥ nregime,alsoknownasmemorization,hasbeenextensivelystudiedinthe
+recentliterature(Bubecketal.,2020;deDios&Bruna,2020;Pilanci&Ergen,2020;Rossetetal.,
+2007). Particularly,thesestudiesshowedthataslongasthewidthexceedsthenumberofsamples,
+thereexistsaneuralnetworkmodelthatcanexactlyfitanarbitrarydataset. Vershynin(2020);Bartlett
+etal.(2019)furtherimprovedtheconditiononthewidthbyutilizingtheexpressivepowerofdeeper
+networksanddevelopedmoresophisticatedweightconstructionalgorithmstofitthedata.
+Theorem2.3. WeassumethatthesetofhyperplanearrangementsofXiscomplete,i.e.,equaltothe
+setofalllength-nBooleansequences”H={0,1}n. Supposem≥n+2,then(4)isequivalentto
+1
+Pcvx:= min (cid:107)δ−y(cid:107)2+β((cid:107)(δ) (cid:107) +(cid:107)(−δ) (cid:107) ). (7)
+v2 δ∈Rn 2 2 + ∞ + ∞
+anditholdsthatPnoncvx =Pcvx. Also,onecanconstructanoptimalnetworkwithn+2neuronsin
+2 v2
+timeO(n)basedontheoptimalsolutiontotheconvexproblem(7).
+Based on Theorem 2.3, when the data matrix can be shattered, i.e., all 2n possible y ∈ {0,1}n
+labelingsofthedatapointscanbeseparatedviaalinearclassifier,itfollowsthatthesetofhyperplane
+arrangementsiscomplete. Consequently,thenon-convexproblemin(3)furthersimplifiesto(7).
+2.2 TRAININGCOMPLEXITY
+Wefirstbrieflysummarizeourcomplexityresultsforsolving(6)and(7),andthenprovidethedetails
+ofthederivationsbelow. Ouranalysisrevealstwointerestingregimes:
+• (incompletearrangements)Whenn+1≥m≥m∗,wecansolve(6)inO(n3r)complexity,where
+r :=rank(X). Noticethisispolynomial-timewhenevertherankrisfixed.
+• (completearrangements)Whenm≥n+2,wecansolve(7)inclosed-form,andthereconstruction
+ofthenon-convexparametersW(1)andw(2)onlyO(n)timeindependentofd.
+Computational complexity of (6): To solve the optimization problem in (6), we first enumerate
+allpossiblehyperplanearrangements{d }P . Itiswellknownthatgivenarank-rdatamatrixthe
+i i=1
+numberofhyperplanearrangementsP isupperboundedby(Stanleyetal.,2004;Cover,1965)
+(cid:88)
+r−1(cid:18)
+n−1
+(cid:19) (cid:18)
+e(n−1)
+(cid:19)r
+P ≤2 ≤2r , (8)
+k r
+k=0
+wherer = rank(X) ≤ min(n,d). Furthermore,thesecanbeenumeratedinO(nr)(Edelsbrunner
+etal.,1986). Then,thecomplexityforsolving(6)isO(P3)≈O(n3r)(Efronetal.,2004).
+Computationalcomplexityof(7):Theproblemin(7)istheproximaloperatorofapolyhedralnorm.
+Sincetheproblemisseparableoverthepositiveandnegativepartsoftheparametervectorδ,the
+optimalsolutioncanbeobtainedbyapplyingtwoproximalsteps(Parikh&Boyd,2014). Asnotedin
+Theorem2.3,thereconstructionofthenon-convexparametersW(1)andw(2)requiresO(n)time.
+2.3 AGEOMETRICINTERPRETATION
+Toprovideageometricinterpretation,weconsidertheweaklyregularizedcasewhereβ →0. Inthis
+case,(6)reducestothefollowingminimumnorminterpolationproblem
+min (cid:107)w(cid:107) s.t. Dw=y. (9)
+1
+w∈RP
+Proposition2.4. Theminimum(cid:96) norminterpolationproblemin(9)canbeequivalentlystatedas
+1
+mint s.t. y∈tConv{±d ,∀j ∈[P]},
+j
+t≥0
+4
+
+PublishedasaconferencepaperatICLR2023
+whereConv(A)denotestheconvexhullofasetA. Thiscorrespondstothegaugefunction(seeRock-
+afellar(2015))ofthehyperplanearrangementpatternsandtheirnegatives. Weprovidevisualizations
+oftheconvexsetConv{±d ,∀j ∈[P]}inFigures3and4(seeAppendix)forExample3.1.
+j
+Proposition 2.4 implies that the non-convex threshold network training problem in (3) implicitly
+representsthelabelvectoryastheconvexcombinationofthehyperplanearrangementsdetermined
+bythedatamatrixX. Therefore,weexplicitlycharacterizetherepresentationspaceofthreshold
+networks. WealsoremarkthatthisinterpretationextendstoarbitrarydepthasshowninTheorem3.2.
+2.4 HOWTOOPTIMIZETHEHIDDENLAYERWEIGHTS?
+After training via the proposed convex programs in (6) and (7), we need to reconstruct the layer
+weightsofthenon-convexmodelin(2). Wefirstconstructtheoptimalhyperplanearrangements
+d for(7)asdetailedinAppendixA.4. Then,wehavethefollowingpredictionmodel(2). Notice
+i
+changingw(1)toanyothervectorw(cid:48) withsamenormandsuchthat1{Xw(1) ≥0}=1{Xw(cid:48) ≥0}
+j j j j
+doesnotchangetheoptimaltrainingobjective. Therefore,therearemultipleglobaloptimaandthe
+onewechoosemightimpactthegeneralizationperformanceasdiscussedinSection5.
+3 DEEP THRESHOLD NETWORKS
+WenowanalyzeL-layerparalleldeepthresholdnetworksmodelwithm subnetworksdefinedas
+L−1
+f (X)=
+m (cid:88)L−1
+σ (X(L−2)w(L−1))w(L), (10)
+θ,L s(L−1) k k k
+k=1
+whereθ:= {{W(l),s(l)}L }mL−1,θ ∈Θ:={θ :W(l) ∈Rml−1×ml,s(l) ∈Rml,∀l,k},
+k k l=1 k=1 k k
+X(0):=X, X(l):=σ (X(l−1)W(l)),∀l∈[L−1],
+k k s(l) k k
+k
+and the subscript k is the index for the subnetworks (see Ergen & Pilanci (2021a;b); Wang et al.
+(2023) for more details about parallel networks). We next show that the standard weight decay
+regularizedtrainingproblemcanbecastasan(cid:96) -normminimizationproblemasinLemma2.1.
+1
+Lemma3.1. ThefollowingL-layerregularizedthresholdnetworktrainingproblem
+Pnoncvx=min
+1
+(cid:107)f (X)−y(cid:107)2+
+β m (cid:88)L−1(cid:88) L
+((cid:107)W(l)(cid:107)2+(cid:107)s(l)(cid:107)2) (11)
+L θ∈Θ2 θ,L 2 2 k F k 2
+k=1 l=1
+canbereformulatedas
+1
+Pnoncvx = min (cid:107)f (X)−y(cid:107)2+β(cid:107)w(L)(cid:107) , (12)
+L θ∈Θs 2 θ,L 2 1
+whereΘ :={θ ∈Θ:|s(L−1)|=1}.
+s k
+3.1 CHARACTERIZINGTHESETOFHYPERPLANEARRANGEMENTSFORDEEPNETWORKS
+WefirstdefinehyperplanearrangementsforL-layernetworkswithasinglesubnetwork(i.e.,m =
+L−1
+1,thus,wedroptheindexk). Wedenotethesetofhyperplanearrangementsas
+H (X):={1{X(L−2)w(L−1) ≥0}:θ ∈Θ}.
+L
+WealsodenotetheelementsofthesetH (X)byd ,...,d ∈{0,1}n andP =|H (X)|
+L 1 PL−1 L−1 L
+isthenumberofhyperplanearrangementsinthelayerL−1.
+ToconstructthehyperplanearrangementmatrixD(l),wedefineamatrixvaluedoperatorasfollows
+D(1):=A(X)=[d d ... d ] , D(l+1):= (cid:71) A (cid:16) D(l) (cid:17) ,∀l∈[L−2].
+1 2 P1 S (13)
+|S|=ml
+5
+
+PublishedasaconferencepaperatICLR2023
+Here,theoperatorA(·)outputsamatrixwhosecolumnscontainallpossiblehyperplanearrangements
+corresponding to its input matrix as in (5). In particular, D(1) denotes the arrangements for the
+first layer given the input matrix X. The notation D(l) ∈ {0,1}n×ml denotes the submatrix of
+S
+D(l) ∈{0,1}n×Pl indexedbythesubsetS ofitscolumns,wheretheindexS runsoverallsubsetsof
+sizem . Finally,(cid:116)isanoperatorthattakesaunionofthesecolumnvectorsandoutputsamatrixof
+l
+sizen×P containingtheseascolumns. Notethatwemayomitrepeatedcolumnsanddenotethe
+l+1
+totalnumberofuniquecolumnsasP ,sincethisdoesnotchangethevalueofourconvexprogram.
+l+1
+WenextprovideananalyticalexampledescribingtheconstructionofthematrixD(l).
+Example 3.1. We illustrate an example with the training data X = [−1 1;0 1;1 1] ∈ R3×2.
+Inspectingthedatasamples(rowsofX),weobservethatallpossiblearrangementpatternsare
+(cid:34)0 0 0 1 1 1(cid:35)
+D(1) =A(X)= 0 0 1 1 1 0 =⇒ P =6. (14)
+1
+0 1 1 1 0 0
+Forthesecondlayer,wefirstspecifythenumberofneuronsinthefirstlayerasm =2. Thus,we
+1
+needtoconsiderallpossiblecolumnpairsin(14). Wehave
+(cid:34)0 0(cid:35) (cid:32)(cid:34)0 0(cid:35)(cid:33) (cid:34)0 0 1 1(cid:35)
+D(1) = 0 0 =⇒ A 0 0 = 0 0 1 1
+{1,2}
+0 1 0 1 0 1 1 0
+(cid:34)0 0(cid:35) (cid:32)(cid:34)0 0(cid:35)(cid:33) (cid:34)0 0 1 1(cid:35)
+D(1) = 0 1 =⇒ A 0 1 = 0 1 1 0
+{1,3}
+0 1 0 1 0 1 1 0
+.
+.
+.
+Wethenconstructthehyperplanearrangementmatrixas
+(cid:34)0 0 0 0 1 1 1 1(cid:35)
+D(2) = (cid:71) A (cid:16) D(1) (cid:17) = 0 0 1 1 0 0 1 1 ,
+S
+0 1 0 1 0 1 0 1
+|S|=2
+whichshowsthatP = 8. Consequently,weobtainthemaximumpossiblearrangementpatterns,
+2
+i.e.,{0,1}3,inthesecondlayereventhoughwearenotabletoobtainsomeofthesepatternsinthe
+firstlayerin(14). WealsoprovideathreedimensionalvisualizationofthisexampleinFigure3.
+3.2 POLYNOMIAL-TIMETRAINABLECONVEXFORMULATION
+BasedontheproceduredescribedinSection3.1tocomputethearrangementmatrixD(l),wenow
+deriveanexactformulationforthenon-convextrainingproblemin(12).
+Theorem3.2. Supposethatm ≥m∗,thenthenon-convextrainingproblem(12)isequivalentto
+L−1
+1(cid:13) (cid:13)2
+Pcvx = min (cid:13)D(L−1)w−y(cid:13) +β(cid:107)w(cid:107) , (15)
+L
+w∈RPL−1
+2(cid:13) (cid:13)
+2
+1
+whereD(L−1) ∈{0,1}n×PL−1 isafixedmatrixconstructedvia(13)andm∗denotesthecardinality
+oftheoptimalsolution,whichsatisfieswherem∗ ≤n+1. Also,itholdsthatPnoncvx =Pcvx.
+L L
+Theorem3.2showsthattwo-layeranddeepnetworkssimplifytoverysimilarconvexLassoproblems
+(i.e. (6) and (15)). However, the set of hyperplane arrangements is larger for deep networks as
+analyzedinSection3.1. Thus,thestructureofthediagonalmatrixDandtheproblemdimensionality
+aresignificantlydifferentfortheseproblems.
+3.3 SIMPLIFIEDCONVEXFORMULATION
+Here,weshowthatthedataXcanbeshatteredatacertainlayer,i.e.,H (X)={0,1}nforacertain
+l √
+l ∈ [L], ifthenumberofhiddenneuronsinacertainlayerm satisfiesm ≥ C n/L. Thenwe
+l l
+canalternativelyformulate(11)asasimplerconvexproblem. Therefore,comparedtothetwo-layer
+networksinSection2.1,wesubstantiallyimprovetheconditiononlayerwidthbybenefitingfrom
+thedepthL,whichalsoconfirmsthebenignimpactofthedepthontheoptimization.
+6
+
+PublishedasaconferencepaperatICLR2023
+√
+Lemma3.3. If∃l,C suchthatm ≥C n/L,thenthesetofhyperplanearrangementsiscomplete,
+l
+i.e.,H (X)={0,1}n.
+L
+WenextuseLemma3.3toderiveasimplerformof(11).
+Corollary 3.4. As a direct consequence of Theorem 2.3 and Lemma 3.3, the non-convex deep
+thresholdnetworktrainingproblemin(12)canbecastasthefollowingconvexprogram
+1
+Pnoncvx =Pcvx = min (cid:107)δ−y(cid:107)2+β((cid:107)(δ) (cid:107) +(cid:107)(−δ) (cid:107) ).
+L v2 δ∈Rn 2 2 + ∞ + ∞
+Surprisingly, both two-layer and deep networks share the same convex formulation in this case.
+However, notice that two-layer networks require a condition on the data matrix in Theorem 2.3
+whereastheresultinCorollary3.4requiresamilderconditiononthelayerwidths.
+3.4 TRAININGCOMPLEXITY
+Here,wefirstbrieflysummarizeourcomplexityresultsfortheconvextrainingofdeepnetworks.
+Basedontheconvexproblemsin(15)andCorollary3.4,wehavetworegimes:
+• Whenn+1≥m L−1 ≥m∗,wesolve(15)withO(n3r(cid:81)L k= − 1 2mk)complexity,wherer :=rank(X).
+Notethatthisispolynomial-timewhenrandthenumberofneuronsineachlayer{m }L−2are
+l l=1
+constants.
+√
+• When∃l,C :m ≥C n/L,wesolve(7)inclosed-form,andthereconstructionofthenon-convex
+l
+parametersrequiresO(n)timeasproveninAppendixA.9.
+Computationalcomplexityfor(15): Wefirstneedtoobtainanupperboundontheproblemdimen-
+sionalityP ,whichisstatedinthenextresult.
+L−1
+Lemma 3.5. The cardinality of the hyperplane arrangement set for an L-layer network H (X)
+L
+canbeboundedas|H L (X)| = P L−1 (cid:46) O(nr(cid:81)L k= − 1 2mk),wherer = rank(X)andm l denotesthe
+numberofhiddenneuronsinthelthlayer.
+Lemma 3.5 shows that the set of hyperplane arrangements gets significantly larger as the depth
+ofthenetworkincreases. However,thecardinalityofthissetisstillapolynomialtermsincethat
+r <min{n,d}and{m }L−2arefixedconstants.
+l l=1
+Tosolve(15),wefirstenumerateallpossiblearrangements{d }PL−1 toconstructthematrixD(L−1).
+i i=1
+Then,wesolveastandardconvexLassoproblem,whichrequiresO(P3 )complexity(Efronetal.,
+L−1
+2004). Thus,basedonLemma3.5,theoverallcomplexityisO(P L 3 −2 )≈O(n3r(cid:81)L k= − 1 2mk).
+Computationalcomplexityfor(7): SinceCorollary3.4yields(7),thecomplexityisO(n)time.
+4 EXTENSIONS TO ARBITRARY LOSS FUNCTIONS
+Intheprevioussections,weconsideredsquarederrorasthelossfunctiontogiveacleardescription
+ofourapproach. However,allthederivationsextendtoarbitraryconvexloss. Now,weconsiderthe
+regularizedtrainingproblemwithaconvexlossfunctionL(·,y),e.g.,hingeloss,crossentropy,
+minL(f (X),y)+
+β m (cid:88)L−1(cid:88) L
+((cid:107)W(l)(cid:107)2 +(cid:107)s(l)(cid:107)2). (16)
+θ∈Θ θ,L 2 k F k 2
+k=1 l=1
+Then,wehavethefollowinggenericlossresults.
+Corollary4.1. Theorem3.2impliesthatwhenm ≥m∗,(16)canbeequivalentlystatedas
+L−1
+(cid:16) (cid:17)
+Pcvx = min L D(L−1)w,y +β(cid:107)w(cid:107) . (17)
+L 1
+w∈RPL−1
+AlternativelywhenH (X)={0,1}n,basedonCorollary3.4,theequivalentconvexproblemis
+L
+min L(δ,y)+β((cid:107)(δ) (cid:107) +(cid:107)(−δ) (cid:107) ). (18)
++ ∞ + ∞
+δ∈Rn
+Corollary4.1showsthat(17)and(18)areequivalenttothenon-convextrainingproblemin(16).
+Moreimportantly,theycanbegloballyoptimizedviaefficientconvexoptimizationsolvers.
+7
+
+PublishedasaconferencepaperatICLR2023
+(a)(n,d,m ,m )=(100,20,1000,100)
+1 2
+(b)(n,d,m ,m )=(50,50,1000,50)
+1 2
+(c)(n,d,m ,m )=(20,100,1000,20)
+1 2
+Figure2: Inthisfigure,wecomparetheclassificationperformanceofthree-layerthresholdnetworks
+trainedwiththesetupdescribedinFigure1forasingleinitializationtrial. Thisexperimentshows
+thatourconvextrainingapproachnotonlyprovidesthegloballyoptimaltrainingperformancebut
+alsogeneralizeremarkablywellonthetestdata(seeAppendixB.5fordetails).
+5 EXPERIMENTS
+Inthissection1,wepresentnumericalexperimentsverifyingourtheoreticalresultsintheprevious
+sections. AsdiscussedinSection2.4,aftersolvingtheproposedconvexproblemsin(15)and(7),
+there exist multiple set of weight matrices yielding the same optimal objective value. Therefore,
+to have a good generalization performance on test data, we use some heuristic methods for the
+construction of the non-convex parameters {W(l)}L . Below, we provide details regarding the
+l=1
+weightconstructionandreviewsomebaselinenon-convextrainingmethods.
+Convex-Lasso: Tosolvetheproblem(15),wefirstapproximatearrangementpatternsofthedata
+matrixXbygeneratingi.i.d. GaussianweightsG∈Rd×P˜ andsubsamplethearrangementpatterns
+via1[XG ≥ 0]. Then,weuseGasthehiddenlayerweightstoconstructthenetwork. Werepeat
+thisprocessforeverylayer. Noticethatherewesampleafixedsubsetofarrangementsinsteadof
+enumeratingallpossibleP arrangements. Thus,thisapproximatelysolves(15)bysubsamplingits
+decisionvariables,however,itstillperformssignificantlybetterthanstandardnon-convextraining.
+Convex-PI:Aftersolving(7),torecoverthehiddenlayerweightsof(2),wesolve1{Xw(1) ≥0}=
+j
+d asw(1) =X†d ,whereX†denotesthepseudo-inverseofX. Theresultingweightsw(1)enforce
+j j j j
+thepreactivationsXw(1)tobezeroorone. Thus,ifanentryisslightlyhigherorlessthanzerodueto
+j
+precisionissuesduringthepseudo-inverse,itmightgivewrongoutputafterthethresholdactivation.
+Toavoidsuchcases,weuse0.5thresholdinthetestphase,i.e.,1{X w(1) ≥0.5}.
+test j
+Convex-SVM:Anotherapproachtosolve1{Xw(1) ≥0}=d istouseSupportVectorMachines
+j j
+1WeprovideadditionalexperimentsanddetailsinAppendixB.
+8
+
+PublishedasaconferencepaperatICLR2023
+Table2: TestperformancecomparisononCIFAR-10(Krizhevskyetal.,2014),MNIST(LeCun),
+andUCI(Dua&Graff,2017)datasets. Werepeatsimulationsovermultipleseedswithtwo-layer
+networksandcomparethemean/stdofthetestaccuraciesofnon-convexheuristicstrainedwithSGD
+withourconvexprogramin(6). Ourconvexapproachachieveshighesttestaccuracyfor9of13
+datasetswhereasthebestnon-convexheuristicachievesthehighesttestaccuracyonlyfor4datasets.
+Dataset Convex-Lasso(Ours) Nonconvex-STE Nonconvex-ReLU Nonconvex-LReLU Nonconvex-CReLU
+Accuracy Time(s) Accuracy Time(s) Accuracy Time(s) Accuracy Time(s) Accuracy Time(s)
+CIFAR-10 0.816±0.008 8.9±0.3 0.81±0.004 83.5±4.9 0.803±0.004 85.8±4.7 0.798±0.004 92.1±4.9 0.808±0.004 87.1±4.5
+MNIST 0.9991±1.9e−4 39.4±0.1 0.9986±3.5e−4 61.3±0.04 0.9984±4.6e−4 63.4±0.1 0.9985±2.9e−4 75.5±0.1 0.9985±2.9e−4 64.9±0.07
+bank 0.895±0.007 7.72±1.02 0.892±0.008 5.83±0.06 0.900±0.008 5.96±0.12 0.899±0.008 8.41±0.12 0.897±0.008 6.35±0.11
+chess-krvkp 0.945±0.005 5.34±0.38 0.937±0.008 6.78±0.20 0.934±0.007 6.17±0.21 0.945±0.007 7.44±0.10 0.941±0.013 6.15±0.47
+mammographic 0.818±0.014 2.64±0.52 0.808±0.011 5.40±0.63 0.803±0.014 6.51±0.64 0.801±0.013 5.76±0.185 0.817±0.019 5.29±0.13
+oocytes-4d 0.787±0.020 2.23±0.09 0.787±0.038 5.61±0.26 0.756±0.021 7.09±0.27 0.723±0.006 6.22±0.12 0.732±0.030 5.79±0.04
+oocytes-2f 0.799±0.022 1.99±0.06 0.776±0.035 5.24±0.05 0.774±0.022 6.97±0.05 0.775±0.027 5.89±0.04 0.783±0.023 5.46±0.04
+ozone 0.967±0.006 3.65±0.18 0.967±0.005 6.30±0.30 0.967±0.005 6.89±0.15 0.967±0.005 7.86±0.06 0.967±0.005 6.20±0.10
+pima 0.719±0.019 1.67±0.11 0.727±0.018 5.20±0.29 0.730±0.031 6.54±0.21 0.734±0.025 5.72±0.07 0.729±0.015 5.23±0.02
+spambase 0.919±0.007 6.91±0.34 0.924±0.004 7.41±0.04 0.925±0.005 6.17±0.07 0.921±0.003 8.78±0.20 0.926±0.005 6.61±0.11
+statlog-german 0.761±0.030 2.22±0.09 0.755±0.021 5.84±0.70 0.756±0.037 6.39±0.69 0.753±0.039 5.89±0.07 0.758±0.037 5.48±0.12
+tic-tac-toe 0.980±0.010 1.89±0.25 0.954±0.009 4.97±0.03 0.932±0.025 6.63±0.04 0.926±0.016 5.61±0.04 0.951±0.012 5.18±0.03
+titanic 0.778±0.041 0.35±0.03 0.790±0.024 5.06±0.04 0.784±0.026 6.30±0.26 0.796±0.017 6.24±0.23 0.784±0.026 5.19±0.01
+Accuracy/Time 9/13 11/13 2/13 1/13 2/13 1/13 4/13 0/13 2/13 0/13
+(SVMs),whichfindthemaximummarginvector. Particularly,wesetthezeroentriesofd as−1
+i
+andthendirectlyruntheSVMtogetthemaximummarginhiddenneuronscorrespondingtothis
+arrangement. Since the labels are in the form {+1,−1} in this case, we do not need additional
+thresholdingasinthepreviousapproach.
+Nonconvex-STE(Bengioetal.,2013): Thisisthestandardnon-convextrainingalgorithm,where
+thethresholdactivationsisreplacedwiththeidentityfunctionduringthebackwardpass.
+STEVariants: WealsobenchmarkagainstvariantsofSTE.Specifically,wereplacethethreshold
+activationwithReLU(Nonconvex-ReLU(Yinetal.,2019a)),LeakyReLU(Nonconvex-LReLU
+(Xiaoetal.)),andclippedReLU(Nonconvex-CReLU(Caietal.,2017))duringthebackwardpass.
+SyntheticDatasets: WecomparetheperformancesofConvex-PIandConvex-SVMtrainedvia(7)
+withthenon-convexheuristicmethodsmentionedabove. Wefirstruneachnon-convexheuristic
+forfivedifferentinitializationsandthenplotthebestperformingoneinFigure1. Thisexperiment
+clearlyshowsthatthenon-convexheuristicsfailtoachievethegloballyoptimaltrainingperformance
+provided by our convex approaches. For the same setup, we also compare the training and test
+accuraciesforthreedifferentregimes,i.e.,n>d,n=d,andn<d. AsseeninFigure2,ourconvex
+approachesnotonlygloballyoptimizethetrainingobjectivebutalsogeneralizewellonthetestdata.
+RealDatasets: InTable2,wecomparethetestaccuraciesoftwo-layerthresholdnetworktrainedvia
+ourconvexformulationin(15),i.e.,Convex-Lassoandthenon-convexheuristicsmentionedabove.
+Forthisexperiment,weuseCIFAR-10(Krizhevskyetal.,2014),MNIST(LeCun),andthedatasets
+intheUCIrepository(Dua&Graff,2017)whicharepreprocessedasinFerna´ndez-Delgadoetal.
+(2014). Here,ourconvextrainingapproachachievesthehighesttestaccuracyformostofthedatasets
+whilethenon-convexheuristicsperformwellonlyforafewdatasets. Therefore,wealsovalidates
+thegoodgeneralizationcapabilitiesoftheproposedconvextrainingmethodsonrealdatasets.
+6 CONCLUSION
+We proved that the training problem of regularized deep threshold networks can be equivalently
+formulatedasastandardconvexoptimizationproblemwithafixeddatamatrixconsistingofhyper-
+planearrangementsdeterminedbythedatamatrixandlayerweights. Sincetheproposedformulation
+parallelsthewellstudiedLassomodel,wehavetwomajoradvantagesoverthestandardnon-convex
+trainingmethods: 1)Wegloballyoptimizethenetworkwithoutresortingtoanyoptimizationheuris-
+ticorextensivehyperparametersearch(e.g.,learningratescheduleandinitializationscheme); 2)
+WeefficientlysolvethetrainingproblemusingspecializedsolversforLasso. Wealsoprovideda
+computationalcomplexityanalysisandshowedthattheproposedconvexprogramcanbesolvedin
+polynomial-time. Moreover,whenalayerwidthexceedsacertainthreshold,asimpleralternative
+convexformulationcanbesolvedinO(n). Lastly,asabyproductofouranalysis,wecharacterize
+therecursiveprocessbehindthesetofhyperplanearrangementsfordeepnetworks. Eventhough
+thissetrapidlygrowsasthenetworkgetsdeeper,globallyoptimizingtheresultingLassoproblem
+stillrequirespolynomial-timecomplexityforfixeddatarank. Wealsonotethattheconvexanalysis
+proposedinthisworkisgenericinthesensethatitcanbeappliedtovariousarchitecturesincluding
+batchnormalization(Ergenetal.,2022b),vectoroutputnetworks(Sahineretal.,2020;2021),poly-
+nomialactivations(Bartan&Pilanci,2021),GANs(Sahineretal.,2022a),autoregressivemodels
+(Guptaetal.,2021),andTransformers(Ergenetal.,2022a;Sahineretal.,2022b).
+9
+
+PublishedasaconferencepaperatICLR2023
+7 ACKNOWLEDGEMENTS
+ThisworkwaspartiallysupportedbytheNationalScienceFoundation(NSF)undergrantsECCS-
+2037304,DMS-2134248,NSFCAREERawardCCF-2236829,theU.S.ArmyResearchOfficeEarly
+CareerAwardW911NF-21-1-0242,StanfordPrecourtInstitute,andtheACCESS–AIChipCenter
+forEmergingSmartSystems,sponsoredbyInnoHKfunding,HongKongSAR.
+REFERENCES
+Burak Bartan and Mert Pilanci. Neural spectrahedra and semidefinite lifts: Global convex op-
+timization of polynomial activation neural networks in fully polynomial-time. arXiv preprint
+arXiv:2101.02429,2021.
+Peter L. Bartlett and Tom Downs. Using random weights to train multilayer networks of hard-
+limitingunits. IEEETrans.NeuralNetworks,3(2):202–210,1992. doi: 10.1109/72.125861. URL
+https://doi.org/10.1109/72.125861.
+PeterL.Bartlett,NickHarvey,ChristopherLiaw,andAbbasMehrabian. Nearly-tightvc-dimension
+andpseudodimensionboundsforpiecewiselinearneuralnetworks. JournalofMachineLearning
+Research,20(63):1–17,2019. URLhttp://jmlr.org/papers/v20/17-612.html.
+YoshuaBengio,NicholasLe´onard,andAaronCourville. Estimatingorpropagatinggradientsthrough
+stochasticneuronsforconditionalcomputation. arXivpreprintarXiv:1308.3432,2013.
+StephenBoydandLievenVandenberghe. Convexoptimization. Cambridgeuniversitypress,2004.
+Se´bastien Bubeck, Ronen Eldan, Yin Tat Lee, and Dan Mikulincer. Network size and size of
+theweightsinmemorizationwithtwo-layersneuralnetworks. AdvancesinNeuralInformation
+ProcessingSystems,33:4977–4986,2020.
+ZhaoweiCai,XiaodongHe,JianSun,andNunoVasconcelos. Deeplearningwithlowprecisionby
+half-wavegaussianquantization. ComputerVisionandPatternRecognition,2017.
+WenlinChen,JamesWilson,StephenTyree,KilianWeinberger,andYixinChen. Compressingneural
+networkswiththehashingtrick. InInternationalconferenceonmachinelearning,pp.2285–2294.
+PMLR,2015.
+AdamCoates,BrodyHuval,TaoWang,DavidWu,BryanCatanzaro,andNgAndrew. Deeplearning
+withcotshpcsystems. InInternationalconferenceonmachinelearning,pp.1337–1345.PMLR,
+2013.
+EdwardM.Corwin,AntonetteM.Logar,andWilliamJ.B.Oldham. Aniterativemethodfortraining
+multilayernetworkswiththresholdfunctions. IEEETrans.NeuralNetworks,5(3):507–508,1994.
+doi: 10.1109/72.286926. URLhttps://doi.org/10.1109/72.286926.
+MatthieuCourbariaux,ItayHubara,DanielSoudry,RanEl-Yaniv,andYoshuaBengio. Binarized
+neuralnetworks: Trainingneuralnetworkswithweightsandactivationsconstrainedto+1or-1.
+arXivpreprintarXiv:1602.02830,2016.
+Thomas M Cover. Geometrical and statistical properties of systems of linear inequalities with
+applicationsinpatternrecognition. IEEEtransactionsonelectroniccomputers,(3):326–334,1965.
+Jaume de Dios and Joan Bruna. On sparsity in overparametrised shallow relu networks. arXiv
+preprintarXiv:2006.10225,2020.
+DheeruDuaandCaseyGraff. UCImachinelearningrepository,2017. URLhttp://archive.
+ics.uci.edu/ml.
+HerbertEdelsbrunner,JosephO’Rourke,andRaimundSeidel. Constructingarrangementsoflines
+andhyperplaneswithapplications. SIAMJournalonComputing,15(2):341–363,1986.
+BradleyEfron,TrevorHastie,IainJohnstone,andRobertTibshirani. Leastangleregression. The
+Annalsofstatistics,32(2):407–499,2004.
+10
+
+PublishedasaconferencepaperatICLR2023
+TolgaErgenandMertPilanci. Convexgeometryanddualityofover-parameterizedneuralnetworks.
+arXivpreprintarXiv:2002.11219,2020.
+TolgaErgenandMertPilanci. Globaloptimalitybeyondtwolayers: Trainingdeeprelunetworksvia
+convexprograms. InMarinaMeilaandTongZhang(eds.),Proceedingsofthe38thInternational
+ConferenceonMachineLearning,volume139ofProceedingsofMachineLearningResearch,pp.
+2993–3003.PMLR,18–24Jul2021a. URLhttps://proceedings.mlr.press/v139/
+ergen21a.html.
+TolgaErgenandMertPilanci. Pathregularization: Aconvexityandsparsityinducingregularization
+forparallelrelunetworks. arXivpreprintarXiv: Arxiv-2110.09548,2021b.
+TolgaErgenandMertPilanci. Revealingthestructureofdeepneuralnetworksviaconvexduality. In
+MarinaMeilaandTongZhang(eds.),Proceedingsofthe38thInternationalConferenceonMachine
+Learning,volume139ofProceedingsofMachineLearningResearch,pp.3004–3014.PMLR,
+18–24Jul2021c. URLhttp://proceedings.mlr.press/v139/ergen21b.html.
+TolgaErgen,BehnamNeyshabur,andHarshMehta. Convexifyingtransformers: Improvingoptimiza-
+tionandunderstandingoftransformernetworks,2022a. URLhttps://arxiv.org/abs/
+2211.11052.
+Tolga Ergen, Arda Sahiner, Batu Ozturkler, John M. Pauly, Morteza Mardani, and Mert Pilanci.
+DemystifyingbatchnormalizationinreLUnetworks: Equivalentconvexoptimizationmodelsand
+implicitregularization. InInternationalConferenceonLearningRepresentations,2022b. URL
+https://openreview.net/forum?id=6XGgutacQ0B.
+ManuelFerna´ndez-Delgado,EvaCernadas,Sene´nBarro,andDinaniAmorim. Doweneedhundreds
+ofclassifierstosolverealworldclassificationproblems? JournalofMachineLearningResearch,
+15(90):3133–3181,2014. URLhttp://jmlr.org/papers/v15/delgado14a.html.
+VikulGupta,BurakBartan,TolgaErgen,andMertPilanci. Convexneuralautoregressivemodels:
+Towards tractable, expressive, and theoretically-backed models for sequential forecasting and
+generation. InICASSP2021-2021IEEEInternationalConferenceonAcoustics, Speechand
+SignalProcessing(ICASSP),pp.3890–3894,2021. doi: 10.1109/ICASSP39728.2021.9413662.
+KoenHelwegen,JamesWiddicombe,LukasGeiger,ZechunLiu,Kwang-TingCheng,andRoeland
+Nusselder. Latentweightsdonotexist: Rethinkingbinarizedneuralnetworkoptimization. Neural
+InformationProcessingSystems,2019.
+GeoffreyHinton. Neuralnetworksformachinelearning. CourseraVideoLectures,2012.
+ItayHubara,MatthieuCourbariaux,DanielSoudry,RanEl-Yaniv,andYoshuaBengio. Quantized
+neuralnetworks:Trainingneuralnetworkswithlowprecisionweightsandactivations. TheJournal
+ofMachineLearningResearch,2017.
+Anil K Jain, Jianchang Mao, and K Moidin Mohiuddin. Artificial neural networks: A tutorial.
+Computer,29(3):31–44,1996.
+AlexKrizhevsky,VinodNair,andGeoffreyHinton. TheCIFAR-10dataset. http://www.cs.
+toronto.edu/kriz/cifar.html,2014.
+YannLeCun. TheMNISTdatabaseofhandwrittendigits. http://yann.lecun.com/exdb/
+mnist/.
+NealParikhandStephenBoyd. Proximalalgorithms. FoundationsandTrendsinoptimization,1(3):
+127–239,2014.
+AdamPaszke,SamGross,FranciscoMassa,AdamLerer,JamesBradbury,GregoryChanan,Trevor
+Killeen, Zeming Lin, Natalia Gimelshein, Luca Antiga, et al. Pytorch: An imperative style,
+high-performancedeeplearninglibrary. Advancesinneuralinformationprocessingsystems,32:
+8026–8037,2019.
+11
+
+PublishedasaconferencepaperatICLR2023
+Mert Pilanci and Tolga Ergen. Neural networks are convex regularizers: Exact polynomial-time
+convexoptimizationformulationsfortwo-layernetworks. InternationalConferenceonMachine
+Learning,2020.
+Mohammad Rastegari, Vicente Ordonez, Joseph Redmon, and Ali Farhadi. Xnor-net: Imagenet
+classification using binary convolutional neural networks. European conference on computer
+vision,pp.525–542,2016.
+RalphTyrellRockafellar. Convexanalysis. Princetonuniversitypress,2015.
+Saharon Rosset, Grzegorz Swirszcz, Nathan Srebro, and Ji Zhu. L1 regularization in infinite
+dimensionalfeaturespaces. InInternationalConferenceonComputationalLearningTheory,pp.
+544–558.Springer,2007.
+ArdaSahiner,MortezaMardani,BatuOzturkler,MertPilanci,andJohnPauly. Convexregularization
+behindneuralreconstruction. arXivpreprintarXiv:2012.05169,2020.
+Arda Sahiner, Tolga Ergen, John M. Pauly, and Mert Pilanci. Vector-output relu neural network
+problemsarecopositiveprograms: Convexanalysisoftwolayernetworksandpolynomial-time
+algorithms. In International Conference on Learning Representations, 2021. URL https:
+//openreview.net/forum?id=fGF8qAqpXXG.
+ArdaSahiner,TolgaErgen,BatuOzturkler,BurakBartan,JohnM.Pauly,MortezaMardani,and
+Mert Pilanci. Hidden convexity of wasserstein GANs: Interpretable generative models with
+closed-formsolutions. InInternationalConferenceonLearningRepresentations,2022a. URL
+https://openreview.net/forum?id=e2Lle5cij9D.
+ArdaSahiner,TolgaErgen,BatuOzturkler,JohnPauly,MortezaMardani,andMertPilanci. Un-
+raveling attention via convex duality: Analysis and interpretations of vision transformers. In
+KamalikaChaudhuri,StefanieJegelka,LeSong,CsabaSzepesvari,GangNiu,andSivanSabato
+(eds.),Proceedingsofthe39thInternationalConferenceonMachineLearning,volume162of
+ProceedingsofMachineLearningResearch,pp.19050–19088.PMLR,17–23Jul2022b. URL
+https://proceedings.mlr.press/v162/sahiner22a.html.
+RichardPStanleyetal. Anintroductiontohyperplanearrangements. Geometriccombinatorics,13:
+389–496,2004.
+RobertTibshirani. Regressionshrinkageandselectionviathelasso. JournaloftheRoyalStatistical
+Society: SeriesB(Methodological),58(1):267–288,1996.
+RomanVershynin. Memorycapacityofneuralnetworkswiththresholdandreluactivations. arXiv
+preprintarXiv:2001.06938,2020.
+YifeiWang,TolgaErgen,andMertPilanci. Paralleldeepneuralnetworkshavezerodualitygap. In
+InternationalConferenceonLearningRepresentations,2023. URLhttps://openreview.
+net/forum?id=6zrOr_Rdhjs.
+XiaXiao,ZigengWang,andSanguthevarRajasekaran. Autoprune: Automaticnetworkpruningby
+regularizingauxiliaryparameters. AdvancesinNeuralInformationProcessingSystems.
+PenghangYin, JianchengLyu, ShuaiZhang, StanleyOsher, YingyongQi, andJackXin. Under-
+standing straight-through estimator in training activation quantized neural nets. International
+ConferenceonLearningRepresentations,2019a.
+PenghangYin,ShuaiZhang,JianchengLyu,StanleyOsher,YingyongQi,andJackXin. Blended
+coarsegradientdescentforfullquantizationofdeepneuralnetworks.ResearchintheMathematical
+Sciences,6:1–23,2019b.
+12
+
+PublishedasaconferencepaperatICLR2023
+Appendix
+Table of Contents
+A Proofsoftheresultsinthemainpaper 13
+A.1 Lemma2.1 . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 13
+A.2 Proposition2.4. . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 15
+A.3 Theorem2.2 . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 15
+A.4 Theorem2.3 . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 16
+A.5 Lemma3.1. . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 17
+A.6 Theorem3.2 . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 17
+A.7 Lemma3.3. . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 18
+A.8 Lemma3.5. . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 18
+A.9 Corollary3.4. . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 19
+A.10Corollary4.1. . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 20
+B Additionalexperimentsanddetails 20
+B.1 ExperimentinFigure5 . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 20
+B.2 ExperimentinTable2 . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 20
+B.3 Two-layerexperimentsinFigure6,7,8,and9 . . . . . . . . . . . . . . . . . . 22
+B.4 Three-layerexperimentswitharepresentationmatrixinFigure10,11,12,and13 23
+B.5 Standardthree-layerexperimentsinFigure1and2 . . . . . . . . . . . . . . . . 25
+B.6 Standardten-layerexperimentsinFigure14 . . . . . . . . . . . . . . . . . . . 25
+(a)2-layernetwork (b)3-layernetwork
+Figure3: TheconvexhullofD(1) =A(X)correspondingtothe2-layernetwork(a)andtheconvex
+(cid:16) (cid:17)
+hullof (cid:70) A D(1) correspondingtothe3-layernetwork(b)forthedatainExample3.1.
+|S|=m1 S
+Here, we visualize the convex constraint in Proposition 2.4, which is the implicit representation
+revealedbyconvexanalysis. Weobservethatthehiddenrepresentationspacebecomesricherwithan
+additionalnonlinearlayer(from2-layerto3-layer),andtheresultingsymmetryintheconvexhull
+enablesthesimplerconvexformulation(7).
+A PROOFS OF THE RESULTS IN THE MAIN PAPER
+A.1 LEMMA2.1
+ProofofLemma2.1. Wefirstrestatetheoriginaltrainingproblembelow.
+m
+Pnoncvx = min
+1
+(cid:107)f (X)−y(cid:107)2+
+β (cid:88)(cid:16)
+(cid:107)w(1)(cid:107)2+s2+|w(2)|2
+(cid:17)
+. (19)
+2 W(1),s,w(2) 2 θ,2 2 2 j 2 j j
+j=1
+Asalreadynotedinthemainpaperthelossfunctionisinvarianttothenormofw(1) andwemay
+j
+havew(1) →0toreducetheregularizationcost. Therefore,wecanomittheregularizationpenalty
+j
+13
+
+PublishedasaconferencepaperatICLR2023
+(a)n=2 (b)n=3
+Figure4:Twoandthreedimensionalvisualizationsofhiddenlayerrepresentationspaceoftheweight
+decayregularizedthresholdnetworks. Here,wevisualizetheconvexhullinProposition2.4,whichis
+theimplicitrepresentationspacerevealedbyouranalysis.
+onw(1)tosimplify(19)as
+j
+m
+Pnoncvx = min 1 (cid:107)f (X)−y(cid:107)2+ β (cid:88) (s2+|w(2)|2).
+2 W(1),s,w(2) 2 θ,2 2 2 j j
+j=1
+Wenownotethatonecanrescaletheparametersas
+w(2)
+s¯ =α s , w¯(2) = j
+j j j j α
+j
+withoutthechangingthenetwork’soutput,i.e.,
+m m
+f θ¯,2 (X)= (cid:88) s¯ j 1{Xw j (1)}w¯ j (2) = (cid:88) s j 1{Xw j (1)}w j (2) =f θ,2 (X)
+j=1 j=1
+whereα >0. Wenextnotethat
+j
+β (cid:88) m (s¯2+w¯(2)2 )= β (cid:88) m (cid:32) α2s2+ |w j (2)|2 (cid:33) ≥β (cid:88) m |s ||w(2)|=β (cid:88) m |s¯ ||w¯(2)|,
+2 j j 2 j j α2 j j j j
+j=1 j=1 j j=1 j=1
+(cid:114)
+|w(2)|
+wheretheequalityholdswhenα = j . Thus,weobtainthefollowingreformulationofthe
+j |sj|
+objectivefunctionin(19)wheretheregularizationtermtakesamultiplicativeform
+m
+Pnoncvx = min 1 (cid:107)f (X)−y(cid:107)2+β (cid:88) |s ||w(2)|. (20)
+2 W(1),s,w(2) 2 θ,2 2 j j
+j=1
+Next,weapplyavariablechangeforthenewformulationin(20)asfollows
+s(cid:48) := s j , w(2)(cid:48) :=w(2)|s |.
+j |s | j j j
+j
+Withthevariablechangeabove(20)canbeequivalentlywrittenas
+m
+Pnoncvx = min 1 (cid:107)f (X)−y(cid:107)2+β (cid:88) |w(2)(cid:48) |. (21)
+2 W(1),w(2)(cid:48) 2 θ,2 2
+j=1
+j
+s(cid:48):|s(cid:48)|=1
+j
+Thisconcludestheproofandyieldsthefollowingequivalentformulationof(21)
+1
+Pnoncvx = min (cid:107)f (X)−y(cid:107)2+β(cid:107)w(2)(cid:48) (cid:107) ,
+2 W(1),w(2)(cid:48) 2 θ,2 2 1
+s(cid:48):|s(cid:48)|=1
+j
+14
+
+PublishedasaconferencepaperatICLR2023
+A.2 PROPOSITION2.4
+ProofofProposition2.4. UsingthereparameterizationforLassoproblems,werewrite(9)as
+P P
+(cid:88) (cid:88)
+min (w++w−) s.t. d (w+−w−)=y. (22)
+j j j j j
+w+,w−≥0
+j j j=1 j=1
+Wenextintroduceaslackvariablet≥0suchthat(22)canberewrittenas
+P P
+(cid:88) (cid:88)
+min min t s.t. d (w+−w−)=y, (w++w−)=t. (23)
+j j j j j
+t≥0 w+,w−≥0
+j j j=1 j=1
+Wenowrescalew+,w−with1/ttoobtainthefollowingequivalentof(23)
+j j
+P P
+(cid:88) (cid:88)
+min min t s.t. d (w+−w−)=y/t, (w++w−)=1. (24)
+j j j j j
+t≥0 w+,w−≥0
+j j j=1 j=1
+Theproblemin(24)impliesthat
+P P
+(cid:88) (cid:88)
+∃w+,w− ≥0s.t. (w++w−)=1 d (w+−w−)=y/t ⇐⇒ y∈tConv{±d ,∀j ∈[P]},
+j j j j j j j j
+j=1 j=1
+whereConvdenotestheconvexhulloperation. Therefore,(9)canbeequivalenlyformulatedas
+mint s.t. y∈tConv{±d ,∀j ∈[P]}.
+j
+t≥0
+A.3 THEOREM2.2
+ProofofTheorem2.2. We first remark that the activations can only be either zero or one, i.e.,
+σ (Xw(1))∈{0,1}n, since|s |=1,∀j ∈[m]. Therefore,basedonLemma2.1,wereformulated
+sj j j
+(4)as
+1
+Pnoncvx = min (cid:107)[d ,...,d ]w−y(cid:107)2+β(cid:107)w(cid:107) , (25)
+2 dij ∈{d1...dP}2 i1 im 2 1
+w
+wherewedenotetheelementsofthesetH(X)byd ,...,d ∈ {0,1}n andP isthenumberof
+1 P
+hyperplanearrangements. TheaboveproblemissimilartoLasso(Tibshirani,1996),althoughitis
+non-convexduetothediscretevariablesd ,...,d . Thesemhyperplanearrangementpatternsare
+i1 im
+discreteoptimizationvariablesalongwiththecoefficientvectorw. Infact,theaboveproblemis
+equivalenttoacardinality-constrainedLassoproblem.
+Wehave
+1
+Pnoncvx = min (cid:107)r(cid:107)2+β(cid:107)w(cid:107)
+2 r∈Rn,d1,...,dm∈H(X),w∈Rm 2 2 1
+r=[d1,...,dm]w−y
+m
+1 (cid:88)
+= min max (cid:107)r(cid:107)2+β(cid:107)w(cid:107) +zT(r+y)−zT d w
+r∈Rn,d1,...,dm∈H(X),w∈Rmz∈Rn 2 2 1
+i=1
+i i
+m
+(i) 1 (cid:88)
+≥ min max min zTy+ (cid:107)r(cid:107)2+zTr+ β|w |−w zTd
+d1,...,dm∈H(X)z∈Rnr∈Rn,w∈Rm 2 2
+i=1
+i i i
+1 1
+= min max (cid:107)y(cid:107)2− (cid:107)z−y(cid:107)2
+d1,...,dm∈H(X) z∈Rn 2 2 2 2
+|zTdi|≤β,∀i∈[m]
+(ii) 1 1
+≥ max (cid:107)y(cid:107)2− (cid:107)z−y(cid:107)2
+z∈Rn 2 2 2 2
+maxd∈H(X)|zTd|≤β
+(iii) 1 1
+≥ max (cid:107)y(cid:107)2− (cid:107)z−y(cid:107)2 =Dcvx,
+z∈Rn 2 2 2 2 2
+|zTdi|≤β,∀i∈[P]
+15
+
+PublishedasaconferencepaperatICLR2023
+where inequality (i) holds by weak duality, inequality (ii) follows from augmenting the set of
+constraints|zTd | ≤ β toholdforanysignpatternd ∈ H(X), andinequality(iii)followsfrom
+i
+enumeratingallpossiblesignpatterns,i.e.,H(X)={d ,d ,...,d }.
+1 2 P
+Wenowprovethatstrongdualityinfactholds,i.e.,Pnoncvx =Dcvx. WefirstformtheLagrangian
+2 2
+ofthedualproblemDcvx
+2
+P
+Dcvx = max min 1 (cid:107)y(cid:107)2− 1 (cid:107)z−y(cid:107)2+ (cid:88)(cid:0) w (β−zTd )+w(cid:48)(β+zTd ) (cid:1)
+2 z∈Rnwi,w
+i
+(cid:48)≥02 2 2 2
+i=1
+i i i i
+P
+( = i) min max 1 (cid:107)y(cid:107)2− 1 (cid:107)z−y(cid:107)2+ (cid:88)(cid:0) w (β−zTd )+w(cid:48)(β+zTd ) (cid:1)
+wi,w
+i
+(cid:48)≥0z∈Rn 2 2 2 2
+i=1
+i i i i
+(cid:13) (cid:13)2
+1(cid:13)(cid:88) P (cid:13) (cid:88) P
+= min (cid:13) d (w −w(cid:48))−y(cid:13) + β(w +w(cid:48))
+wi,w i
+(cid:48)≥02(cid:13)
+(cid:13) i=1
+i i i (cid:13)
+(cid:13) 2 i=1
+i i
+1
+= min (cid:107)Dw−y(cid:107)2+β(cid:107)w(cid:107) =Pcvx (26)
+w∈RP 2 2 1 2
+where,inequality(i)followsfromthefactthatDcvx isaconvexoptimizationproblemsatisfying
+2
+Slater’sconditionssothatstrongdualityholds(Boyd&Vandenberghe,2004),i.e.,Dcvx = Pcvx,
+2 2
+andthematrixD∈{0,1}n×P isdefinedas
+D:=[d ,d,...,d ].
+1 P
+Now,basedonthestrongdualityresultsinErgen&Pilanci(2020);Pilanci&Ergen(2020),there
+existathresholdforthenumberofneurons,i.e.,denotedasm∗,suchthatifm ≥ m∗ thenstrong
+dualityholdsfortheoriginalnon-convextrainingproblem(25),i.e.,Pnoncvx =Dcvx =Pcvx. Thus,
+2 2 2
+(26)isexactlyequivalenttotheoriginalnon-convextrainingproblem(3).
+A.4 THEOREM2.3
+ProofofTheorem2.3. FollowingtheproofofTheorem2.2,wefirstnotethatstrongdualityholds
+fortheproblemin(25),i.e.,Pnoncvx =Dcvx.
+2 2
+UndertheassumptionthatH(X)={0,1}n,thedualconstraintmax |zTd|≤βisequivalent
+d∈H(X)
+to{max zTd ≤ β}∪{max −zTd(cid:48) ≤ β}. FormingtheLagrangianbasedonthis
+d∈[0,1]n d(cid:48)∈[0,1]n
+reformulationofthedualconstraint,wehave
+1 1
+Dcvx = max min (cid:107)y(cid:107)2− (cid:107)z−y(cid:107)2+t(β− max zTd)+t(cid:48)(β+ max zTd(cid:48))
+2 z∈Rnt,t(cid:48)≥02 2 2 2 d∈[0,1]n d(cid:48)∈[0,1]n
+1 1
+= max min (cid:107)y(cid:107)2− (cid:107)y−z(cid:107)2+zT(t(cid:48)d(cid:48)−td)+β(t(cid:48)+t)
+z∈Rn t,t(cid:48)≥0 2 2 2 2
+d,d(cid:48)∈[0,1]n
+( = i) max min 1 (cid:107)y(cid:107)2− 1 (cid:107)y−z(cid:107)2+zT(d(cid:48)−d)+β(t(cid:48)+t)
+z∈Rn t,t(cid:48)≥0 2 2 2 2
+d∈[0,t]n,d(cid:48)∈[0,t(cid:48)]n
+( = ii) min max 1 (cid:107)y(cid:107)2− 1 (cid:107)y−z(cid:107)2+zT(d(cid:48)−d)+β(t(cid:48)+t)
+t,t(cid:48)≥0 z∈Rn 2 2 2 2
+d∈[0,t]n,d(cid:48)∈[0,t(cid:48)]n
+1
+= min (cid:107)d(cid:48)−d−y(cid:107)2+β(t+t(cid:48)).
+t,t(cid:48)≥0 2 2
+d∈[0,t]n,d(cid:48)∈[0,t(cid:48)]n
+where,inequality(i),weusedthechangeofvariablesd≡tdandd(cid:48) ≡t(cid:48)d(cid:48),and,inequality(ii),we
+usedthefactthattheobjectivefunction 1(cid:107)y(cid:107)2− 1(cid:107)y−z(cid:107)2+zT(d(cid:48)−d)+β(t(cid:48)+t)isstrongly
+2 2 2 2
+concaveinzandconvexin(d,d(cid:48),t,t(cid:48))andtheconstraintsarelinear,sothatstrongdualityholdsand
+wecanswitchtheorderofminimizationandmaximization.
+16
+
+PublishedasaconferencepaperatICLR2023
+Givenafeasiblepoint(d,d(cid:48),t,t(cid:48)),i.e.,d∈[0,t]n andd(cid:48) ∈[0,t(cid:48)]n,wesetδ =d(cid:48)−d. Notethat
+(cid:107)(δ) (cid:107) ≤(cid:107)(d(cid:48)) (cid:107) =(cid:107)d(cid:48)(cid:107) ≤t(cid:48). Similarly,(cid:107)(−δ) (cid:107) ≤t. Thisimpliesthat
++ ∞ + ∞ ∞ + ∞
+1 1
+min (cid:107)d(cid:48)−d−y(cid:107)2+β(t+t(cid:48))≥ min (cid:107)δ−y(cid:107)2+β((cid:107)(δ) (cid:107) +(cid:107)(−δ) (cid:107) )=Pcvx.
+t,t(cid:48)≥0 2 2 δ∈Rn 2 2 + ∞ + ∞ v2
+d∈[0,t]n,d(cid:48)∈[0,t(cid:48)]n
+Conversely,givenδ ∈ Rn,wesetd = (δ) ,t = (cid:107)d(cid:107) ,d(cid:48) = (−δ) andt(cid:48) = (cid:107)d(cid:48)(cid:107) . Itholds
++ ∞ + ∞
+that(d,d(cid:48),t,t(cid:48))isfeasiblewithsameobjectivevalue,andconsequently,theaboveinequalityisan
+equality,i.e.,Dcvx =Pcvx.
+2 v2
+Optimalthresholdnetworkconstruction:Wenowshowhowtoconstructanoptimalthresholdnet-
+workgivenanoptimalsolutiontotheconvexproblem(7).Letδ ∈Rnbeanoptimalsolution.Setd=
+(δ) andd(cid:48) = (−δ) . Wehaved ∈ [0,(cid:107)d(cid:107) ]n andd(cid:48) ∈ [0,(cid:107)d(cid:48)(cid:107) ]n. Itiseasytoshowthatwe
++ + ∞ ∞
+cantransformδsuchthat,foreachindexi∈[n],eitherthei-thcoordinateofdisactiveorthei-thco-
+ordinateofd(cid:48)isactive.Therefore,byCaratheodory’stheorem,thereexistn ,n ≥1suchthatn +
++ − −
+n ≤ n,andd ,...,d ∈ {0,1}n andγ ,...,γ ≥ 0suchthat (cid:80)n++1γ = 1andd =
++ 1 n++1 1 n++1 i=1 i
+(cid:107)d(cid:107) (cid:80)n++1γ d ,and,d(cid:48),...,d(cid:48) ∈{0,1}nandγ(cid:48),...,γ(cid:48) ≥0suchthat (cid:80)n−+1γ(cid:48) =1
+∞ i=1 i i 1 n−+1 1 n−+1 i=1 i
+and d(cid:48) = (cid:107)d(cid:48)(cid:107) (cid:80)n−+1γ(cid:48)d(cid:48), with n + n ≤ n. Then, we can pick w(1),...,w(1) ,
+∞ i=1 i i − + 1 n++1
+w(2),...,w(2) ,s ,...,s suchthat1{Xw(1) ≥0}=d ,w(1) =(cid:107)d(cid:107) γ ands =−1,and,
+1 n++1 1 n++1 i i i ∞ i i
+w(1) ,...,w(1) , w(2) ,...,w(2) ,s ,...,s such that 1{Xw(1) ≥
+n++2 n++n−+2 n++2 n++n−+2 n++2 n++n−+2 i
+0} = d(cid:48) , α = (cid:107)d(cid:48)(cid:107) γ and s = 1. Note that, given δ ∈ Rn, finding
+i−(n++1) i ∞ i−(n++1) i
+the corresponding d ,...,d ,γ ,...,γ and d(cid:48),...,d(cid:48) ,γ(cid:48),...,γ(cid:48) takes time
+1 n++1 1 n++1 1 n++1 1 n++1
+O(n +n )=O(n).
++ +
+A.5 LEMMA3.1
+ProofofLemma3.1. Wefirstrestatethestandardweightdecayregularizedtrainingproblembelow
+min
+1
+(cid:107)f (X)−y(cid:107)2+
+β m (cid:88)L−1(cid:88) L
+((cid:107)W(l)(cid:107)2 +(cid:107)s(l)(cid:107)2). (27)
+θ∈Θ 2 θ,L 2 2 k F k 2
+k=1 l=1
+Then,weremarkthatthelossfunctionin(27),i.e., 1(cid:107)f (X)−y(cid:107)2 isinvarianttothenormsof
+2 θ,L 2
+hiddenlayerweights{{W(l)}L−1}mL−1 andamplitudeparameters{{s(l)}L−2}mL−1.
+Therefore,
+k l=1 k=1 k l=1 k=1
+(27)canberewrittenas
+min
+1
+(cid:107)f (X)−y(cid:107)2+
+β m (cid:88)L−1(cid:16)
+(w(L))2+(s(L−1))2
+(cid:17)
+. (28)
+θ∈Θ 2 θ,L 2 2 k k
+k=1
+Then,wecandirectlyapplythescalingintheproofofLemma2.1toobtaintheclaimed(cid:96) -norm
+1
+regularizedoptimizationproblem.
+A.6 THEOREM3.2
+ProofofTheorem3.2. Wefirstremarkthatthelasthiddenlayeractivationscanonlybeeitherzero
+or one, i.e., X(
+k
+L−1) ∈ {0,1}n×mL−1, since |s
+k
+(L−1)| = 1,∀k ∈ [m
+L−1
+]. Therefore, based on
+Lemma3.1,wereformulated(12)as
+1(cid:13)(cid:104) (cid:105) (cid:13)2
+Pnoncvx = min (cid:13) d ,...,d w−y(cid:13) +β(cid:107)w(cid:107) , (29)
+L
+dij
+∈HL(X)2(cid:13) i1 imL−1 (cid:13)
+2
+1
+w
+As in (25), the above problem is similar to Lasso, although it is non-convex due to the discrete
+variablesd ,...,d . Thesem hyperplanearrangementpatternsarediscreteoptimization
+i1 imL−1 L−1
+variablesalongwiththecoefficientvectorw.
+Wenownotethat(29)hasfollowingdualproblem
+1 1
+Dcvx =Dcvx = max − (cid:107)z−y(cid:107)2+ (cid:107)y(cid:107)2. (30)
+L 2 maxd∈HL(X)|zTd|≤β 2 2 2 2
+17
+
+PublishedasaconferencepaperatICLR2023
+Sincetheabovedualformisthesamewiththedualproblemoftwo-layernetworks,i.e.,Dcvx =Dcvx,
+L 2
+wedirectlyfollowtheproofofTheorem2.2toobtainthefollowingbidualformulation.
+1(cid:13) (cid:13)2
+Dcvx =Pcvx = min (cid:13)D(L−1)w−y(cid:13) +β(cid:107)w(cid:107) ,
+L L
+w∈RPL−1
+2(cid:13) (cid:13)
+2
+1
+whereD(L−1) =[d ,d,...,d ].
+1 PL−1
+Hence,basedonthestrongdualityresultsinErgen&Pilanci(2020);Pilanci&Ergen(2020);Ergen
+&Pilanci(2021c),thereexistathresholdforthenumberofneurons,i.e.,denotedasm∗,suchthat
+if m ≥ m∗ then strong duality holds for the original non-convex training problem (25), i.e.,
+L−1
+Pnoncvx =Dcvx =Pcvx.
+L L L
+A.7 LEMMA3.3
+ProofofLemma3.3. Basedontheconstructionin(Bartlettetal.,2019), adeepnetworkwithL
+layers and W parameters, where W =
+(cid:80)L
+m m in our notation, can shatter a dataset of
+i=1 i−1 i
+the size C WLlog(W), where C is a constant. Based on this complexity results, if we choose
+1 √ 1
+m =m=C n/L,∀l∈[L],thenumberofsamplesthatcanbeshatteredbyanL-layerthreshold
+l
+networkis
+#ofdatasamplesthatcanbeshattered=C WLlog(W)
+1
+=C m2L2log(m2L)
+1
+(cid:18) C2n (cid:19)
+=C C2nlog
+1 L
+(cid:18) (cid:19)
+n
+=nlog (cid:29)n
+LC
+1
+providedthatn (cid:29) L, whichisusuallyholdsinpracticeandwechoosetheconstantC suchthat
+C =1/C2. Therefore,aswemakethearchitecturedeeper,wecaninfactimprovetheassumption
+1
+m≥n+2assumptioninthetwo-layernetworkscasebybenefitingfromthedepth.
+A.8 LEMMA3.5
+ProofofProposition3.5. LetusstartwiththeL = 2caseforwhichhyperplanearrangementset
+candescribedasdetailedin(5)
+H (X)={1{Xw(1) ≥0}:θ ∈Θ}
+2
+=H(X)
+={d ,...,d }⊂{0,1}n.
+1 P1
+Now,inordertoconstructH (X)(withm =1sowedroptheindexk),weneedtochoosem
+3 L−1 1
+arrangementsfromH (X)andthenconsiderallhyperplanearrangementsforeachofthesechoices.
+2
+Particularly,since|H (X)|=P ,where
+2 1
+(cid:88)
+r−1(cid:18)
+n−1
+(cid:19) (cid:18)
+e(n−1)
+(cid:19)r
+P ≤2 ≤2r ≈O(nr)
+1 k r
+k=0
+from (8), we have
+(cid:0)P1 (cid:1)
+choices and each of them yields a different activation matrix denoted as
+m1
+X(1) ∈Rn×m1. Basedontheupperbound(8),eachX(1)cangenerateO(nm1)patterns.
+i i
+Therefore,overall,thesetofpossiblearrangementinthesecondlayerisasfollows
+(P1)
+(cid:91) m1 (cid:12)
+H (X)= {1{X(1)w(2) ≥0}:θ ∈Θ}(cid:12)
+3 (cid:12) X(1)=X(1)
+i=1 i
+18
+
+PublishedasaconferencepaperatICLR2023
+whichimpliesthat
+(cid:18) (cid:19)
+P
+|H (X)|=P (cid:46) 1 O(nm1)≈O(nm1r).
+3 2 m
+1
+Thisanalysiscanberecursivelyextendedtothelthlayerwherethehyperplanearrangementsetand
+thecorrespondingcardinalityvaluescanbecomputedasfollows
+(Pl−2)
+m (cid:91)l−2 (cid:12)
+H (X)= {1{X(l−2)w(l−1) ≥0}:θ ∈Θ}(cid:12)
+l (cid:12) X(l−2)=X(l−2)
+i=1 i
+(cid:18) (cid:19)
+|H l (X)|=P l−1 (cid:46) m P l−2 O(nml−2)≈O(nr(cid:81)l k − = 2 1 mk).
+l−2
+A.9 COROLLARY3.4
+ProofofCorollary3.4. We first remark that the last hidden layer activations can only be either
+zeroorone,i.e.,X(
+k
+L−1) ∈{0,1}n×mL−1, since|s
+k
+(L−1)|=1,∀k ∈[m
+L−1
+]. Therefore,basedon
+Lemma3.1,wereformulated(12)as
+1(cid:13)(cid:104) (cid:105) (cid:13)2
+min (cid:13) d ,...,d w−y(cid:13) +β(cid:107)w(cid:107) , (31)
+dij
+∈HL(X)2(cid:13) i1 imL−1 (cid:13)
+2
+1
+w
+As in (25), the above problem is similar to Lasso, although it is non-convex due to the discrete
+variablesd ,...,d . Thesem hyperplanearrangementpatternsarediscreteoptimization
+i1 imL−1 L−1
+variablesalongwiththecoefficientvectorw.
+Wenownotethat(31)hasfollowingdualproblem
+1 1
+max − (cid:107)z−y(cid:107)2+ (cid:107)y(cid:107)2.
+maxd∈HL(X)|zTd|≤β 2 2 2 2
+SinceH (X)={0,1}nbyLemma3.3,allthestepsintheproofofTheorem2.3directlyfollow.
+L
+Optimaldeepthresholdnetworkconstruction: Forthelasttwolayers’weights,weexactlyfollow
+theweightconstructionprocedureintheProofofTheorem2.3asdetailedbelow.
+Letδ ∈Rn beanoptimalsolution. Setd=(δ) andd(cid:48) =(−δ) . Wehaved∈[0,(cid:107)d(cid:107) ]n and
++ + ∞
+d(cid:48) ∈[0,(cid:107)d(cid:48)(cid:107) ]n. Itiseasytoshowthatwecantransformδsuchthat,foreachindexi∈[n],either
+∞
+thei-thcoordinateofdisactiveorthei-thcoordinateofd(cid:48)isactive. Therefore,byCaratheodory’s
+theorem, there exist n ,n ≥ 1 such that n + n ≤ n, and d ,...,d ∈ {0,1}n and
++ − − + 1 n++1
+γ ,...,γ ≥ 0suchthat (cid:80)n++1γ = 1andd = (cid:107)d(cid:107) (cid:80)n++1γ d ,and,d(cid:48),...,d(cid:48) ∈
+1 n++1 i=1 i ∞ i=1 i i 1 n−+1
+{0,1}n and γ(cid:48),...,γ(cid:48) ≥ 0 such that (cid:80)n−+1γ(cid:48) = 1 and d(cid:48) = (cid:107)d(cid:48)(cid:107) (cid:80)n−+1γ(cid:48)d(cid:48), with
+1 n−+1 i=1 i ∞ i=1 i i
+n +n ≤n. Then,wecanpickw(L−1),...,w(L−1),w(L),...,w(L) ,s(L−1),...,s(L−1)such
+− + 1 n++1 1 n++1 1 n++1
+that1{X(L−2)w(L−1) ≥0}=d ,w(L−1) =(cid:107)d(cid:107) γ ands =−1,and,w(L−1),...,w(1) ,
+i i i ∞ i i n++2 n++n−+2
+w(L) ,...,w(L) ,s(L−1),...,s(L−1) such that 1{X(L−2)w(L−1) ≥ 0} = d(cid:48) ,
+n++2 n++n−+2 n++2 n++n−+2 i i−(n++1)
+α = (cid:107)d(cid:48)(cid:107) γ and s = 1. Note that, given δ ∈ Rn, finding the corresponding
+i ∞ i−(n++1) i
+d ,...,d ,γ ,...,γ andd(cid:48),...,d(cid:48) ,γ(cid:48),...,γ(cid:48) takestimeO(n +n )=O(n).
+1 n++1 1 n++1 1 n++1 1 n++1 + +
+Then,therestofthelayerweightscanbereconstructedusingtheconstructionproceduredetailedin
+(Bartlettetal.,2019).
+19
+
+PublishedasaconferencepaperatICLR2023
+A.10 COROLLARY4.1
+ProofofCorollary4.1. WefirstapplythescalinginLemma3.1andthenfollowthesamestepsin
+theproofofTheorem2.3togetthefollowingdualproblem
+max −L∗(z), (32)
+maxd∈H(X)|zTd|≤β
+whereL∗istheFenchelconjugateofLanddefinedas
+L∗(z):=maxvTz−L(v,y).
+v
+Therefore,weobtainagenericversionofthedualproblemin(30),wherewecanarbitrarilychoose
+thenetwork’sdepthandtheconvexlossfunction. Thentherestoftheproofdirectlyfollowsfrom
+Theorem3.2andCorollary3.4.
+B ADDITIONAL EXPERIMENTS AND DETAILS
+Inthissection,wepresentadditionalnumericalexperimentsandfurtherexperimentaldetailsthatare
+notpresentedinthemainpaperduetothepagelimit.
+WefirstnotethatalloftheexperimentsinthepaperarerunonasinglelaptopwithIntel(R)Core(TM)
+i7-7700HQCPUand16GBofRAM.
+B.1 EXPERIMENTINFIGURE5
+Figure 5: Comparison of our convex training method in (6) with standard non-convex training
+heuristicforthresholdnetworks,knownasStraight-ThroughEstimator(STE)(Bengioetal.,2013).
+For the non-convex heuristic, we repeat the training process using 5 independent initializations,
+however,alltrialsfailtoconvergetotheglobalminimumobtainedbyourconvexoptimalmethod,
+andlackstability. WeprovideexperimentaldetailsinAppendixB.
+FortheexperimentinFigure5,weconsiderasimpleonedimensionalexperiment,wherethedata
+matrixisX = [−2,−1,0,1,2]T. Usingthisdatamatrix,wegeneratethecorrespondinglabelsy
+bysimplyforwardpropagatingthedatathroughrandomlyinitializedtwo-layerthresholdnetworks
+withm = 2neuronsasdescribedin(2). Wethenrunourconvextrainingmethodin(6)andthe
+1
+non-convex training heuristic STE (Bengio et al., 2013) on the objective with the regularization
+coefficient β = 1e − 2. For a fair comparison, we used P = 24 for the convex method and
+1
+m = 24forSTE.WealsotunethelearningrateofSTEbyperformingagridsearchontheset
+1
+{5e−1,1e−1,5e−2,1e−2,5e−3,1e−3}. AsillustratedinFigure5,thenon-convextraining
+heuristicSTEfailstoachievetheglobalminimumobtainedbyourconvextrainingalgorithmfor5
+differentinitializationtrials.
+B.2 EXPERIMENTINTABLE2
+Here,weprovideatestperformancecomparisonononCIFAR-10(Krizhevskyetal.,2014),MNIST
+(LeCun),andthedatasetstakenfromUCIMachineLearningRepository(Dua&Graff,2017),where
+20
+
+PublishedasaconferencepaperatICLR2023
+Table3: DatasetsizesfortheexperimentsinTable2.
+Dataset n d
+CIFAR-10 10000 3072
+MNIST 12665 784
+bank 4521 16
+chess-krvkp 3196 36
+mammographic 961 5
+oocytes-4d 1022 41
+oocytes-2f 912 25
+ozone 2536 72
+pima 768 8
+spambase 4601 57
+statlog-german 1000 24
+tic-tac-toe 958 9
+titanic 2201 3
+we follow the preprocesing in Ferna´ndez-Delgado et al. (2014) such that 750 ≤ n ≤ 5000 (see
+Table3fortheexactdatasetsizes). Weparticularlyconsideraconventionalbinaryclassification
+frameworkwithtwo-layernetworksandperformedsimulationsovermultipleseedsandcompare
+themean/stdofthetestaccuraciesofnon-convexheuristicstrainedwithSGDnamelyNonconvex-
+STE(Bengioetal.,2013),Nonconvex-ReLU(Yinetal.,2019a),Nonconvex-LReLU(Xiaoetal.)
+and Nonconvex-CReLU (Cai et al., 2017), with our convex program in (6), i.e., Convex-Lasso.
+For the non-convex training, we use the SGD optimizer. We also use the 80%−20% splitting
+ratio for the training and test sets of the UCI datasets. We tune the regularization coefficient
+β and the learning rate µ for the non-convex program by performing a grid search on the sets
+β = {1e−6,1e−3,1e−2,1e−1,0.5,1,5} and µ = {1e−3,5e−3,1e−2,1e−1},
+list list
+respectively. In all experiments, we also decayed the selected learning rate systematically using
+PyTorch’s(Paszkeetal.,2019)schedulerReduceLROnPlateau.Moreover,wechoosethenumber
+ofneurons,numberofepochs(ne),batchsize(bs)asm=1000,bs=5000,bs=n,respectively.
+Ourconvexapproachachieveshighesttestaccuracyforprecisely9of13datasetswhereasthebest
+non-convexheuristicachievesthehighesttestaccuracyonlyfor4datasets. Thisexperimentverifies
+thatourconvextrainingapproachnotonlygloballyoptimizethetrainingobjectivebutalsousually
+generalizeswellonthetestdata.Inaddition,ourconvextrainingapproachisshowntobesignificantly
+moretimeefficientthanstandardnon-convextraining.
+(a)(n,d)=(20,100) (b)(n,d)=(50,50) (c)(n,d)=(100,20)
+Figure6: Trainingperformancecomparisonofourconvexprogramfortwo-layernetworksin(6)
+withfourstandardnon-convextrainingheuristics(STEanditsvariantsinSection5). Togeneratethe
+dataset,werandomlyinitializeatwo-layernetworkandthensamplearandomi.i.d. Gaussiandata
+matrixX ∈ Rn×d. Then,wesetthelabelsasy = sgn(tanh(XW(1))w(2))wheresgnandtanh
+arethesignandhyperbolictangentfunctions. Wespecificallychoosetheregularizationcoefficient
+β =1e−3andrunthetrainingalgorithmswithm=1000neuronsfordifferent(n,d)combinations.
+Foreachnon-convexmethod,werepeatthetrainingwith5differentinitializationandthenplotthe
+bestperformingnon-convexmethodforeachinitializationtrial. Ineachcase,ourconvextraining
+algorithmachievessignificantlylowerobjectivethanallthenon-convexheuristics. Wealsoindicate
+thetimetakentosolvetheconvexprogramwithamarker.
+21
+
+PublishedasaconferencepaperatICLR2023
+(a) (b) (c)
+Figure7: Inthisfigure,wecomparetheclassificationperformanceofthesimulationinFigure6c
+forasingleinitializationtrial,wheren=100andd=20. Thisexperimentshowsthatourconvex
+trainingapproachnotonlyprovidestheoptimaltrainingperformancebutalsogeneralizesonthetest
+dataasdemonstratedin(c).
+(a) (b) (c)
+Figure8: ThesetupforthesefiguresiscompletelythesamewithFigure7exceptthatweconsider
+the (n,d) = (50,50) case in Figure 6b. Unlike Figure 7, here even though our convex training
+approachprovidestheoptimaltraining,thenon-convexheuristicmethodsthatarestuckatalocal
+minimumyieldabettertestaccuracy. Thisisduetothefactthatwehavelessdatasampleswith
+higherdimensionalitycomparedtoFigure7.
+B.3 TWO-LAYEREXPERIMENTSINFIGURE6,7,8,AND9
+Here, wecomparetwo-layerthresholdnetworktrainingperformanceofourconvexprogram(6),
+whichwecallConvex-Lasso,withstandardnon-convextrainingheuristics,namelyNonconvex-STE
+(Bengioetal.,2013),Nonconvex-ReLU(Yinetal.,2019a),Nonconvex-LReLU(Xiaoetal.) and
+Nonconvex-CReLU (Cai et al., 2017). For the non-convex heuristics, we train a standard two-
+layerthresholdnetworkwiththeSGDoptimizer. Inallexperiments,learningratesareinitialized
+to be 0.01 and they are decayed systematically using PyTorch’s (Paszke et al., 2019) scheduler
+ReduceLROnPlateau. Togenerateadataset,wefirstsampleani.i.d. GaussiandatamatrixXand
+thenobtainthecorrespondinglabelsasy =sgn(tanh(XW(1))w(2))wheresgnandtanharethe
+signandhyperbolictangentfunctions,respectively. Here,wedenotethethegroundtruthparameters
+asW(1) ∈Rd×m∗ andw(2) ∈Rm∗,wherem∗ =20isthenumberofneuronsinthegroundtruth
+model.Noticethatweusetanhandsigninthegroundtruthmodeltohavebalancedlabeldistribution
+y∈{+1,−1}n. Wealsonotethatforalltheexperiments,wechoosetheregularizationcoefficient
+asβ =1e−3.
+Wenowemphasizethattohaveafaircomparisonwiththenon-convexheuristics,wefirstrandomly
+sampleasmallsubsetofhyperplanearrangementsandthensolve(6)withthisfixedsmallsubset.
+Specifically, instead of enumerating all possible arrangements {d }P , we randomly sample a
+i i=1
+subset {d }m to have a fair comparison with the non-convex neural network training with m
+ij j=1
+hiddenneurons. So,Convex-Lassoisanapproximatewaytosolvetheconvexprogram(6)yetit
+stillperformsextremelywellinourexperiments. Wealsonotethattheotherconvexapproaches
+Convex-PIandConvex-SVMexactlysolvetheproposedconvexprograms.
+In Figure 6, we compare training performances. We particularly solve the convex optimization
+problem(6)once. However,forthenon-convextrainingheuristics,wetryfivedifferentinitializations.
+22
+
+PublishedasaconferencepaperatICLR2023
+(a) (b) (c)
+Figure9: ThesetupforthesefiguresiscompletelythesamewithFigure7exceptthatweconsiderthe
+(n,d)=(20,100)caseinFigure6a. AsinFigure8,eventhoughthenon-convexheuristictraining
+methodsfailtogloballyoptimizetheobjective, theyyieldhighertestaccuraciesthantheconvex
+programduetothelowdataregime(n≤d).
+Wethenselectthetrialwiththelowestobjectivevaluetoplot. Inthefigure,weplottheobjective
+valuedefinedin(3). Asitcanbeseenfromthefigures,Convex-Lassoachievesmuchlowerobjective
+value than the non-convex heuristics in three different regimes, i.e., overparameterized (n < d),
+underparameterized(n>d)andmoderatelyparameterized((n=d)). Thisismainlybecauseofthe
+non-convexandheuristicnatureofthestandardoptimizers.
+Moreover,weillustratetrainingandtestaccuraciesofthesetrainingalgorithmsinFigure7,8,and
+9fordifferent(n,d)combinations. Togeneratethetestdatawith3000,samplesweusethesame
+groundtruthmodeldefinedabove. HereweobservethatinsomecaseseventhoughConvex-Lasso
+provides a better training performance, it might yield worse test accuracies than the non-convex
+heuristicespeciallyinthelowdataregime(n ≤ d). Therefore, understandingthegeneralization
+performanceandoptimalweightreconstruction(discussedinSection2.4)remainstobeanopen
+problem.
+(a) (n,d,m ,m ) = (b) (n,d,m ,m ) = (c) (n,d,m ,m ) =
+1 2 1 2 1 2
+(20,100,1000,20) (50,50,1000,50) (100,20,1000,100)
+Figure10: Trainingcomparisonofourconvexprogramin(7)withthree-layerthresholdnetworks
+trainedwiththenon-convexheuristics. Here,wedirectlyfollowthesetupinFigure6exceptthe
+followingdifferences. Thistimewerandomlyinitializeathree-layernetworkandthensamplei.i.d.
+Gaussiandatamatrix. Wethensetthelabelsasy=sgn(tanh(tanh(XW(1))W(2))w(3)). Tohave
+ourconvexformulation,werequireH(X)tobecomplete. Thus,wefirstusearandomrepresentation
+matrixH ∈ Rd×M,whereM = 1000,andthenapplythetransformationX˜ = σ(XH). Wealso
+apply this transformation to the non-convex methods as if we train a two-layer networks on the
+modifieddatamatrixX˜. Wealsoindicatethetimetakentosolvetheconvexprogramswithmarkers.
+We again observe that our convex training approach achieves lower objective value than all the
+non-convexheuristictrainingmethodsinallinitializationtrials.
+B.4 THREE-LAYEREXPERIMENTSWITHAREPRESENTATIONMATRIXINFIGURE10,11,12,
+AND13
+Wealsocompareouralternativeconvexformulationin(7)withnon-convexapproachesforthree-layer
+networktraining. Todosowefirstgenerateadatasetviathefollowinggroundtruthmodely =
+23
+
+PublishedasaconferencepaperatICLR2023
+(a) (b) (c)
+Figure11: Inthisfigure,wecomparetheclassificationperformanceofthesimulationinFigure10c
+forasingleinitializationtrial, where(n,d) = (100,20). Thisexperimentshowsthatourconvex
+trainingapproachnotonlyprovidestheoptimaltrainingperformancebutalsogeneralizesonthetest
+dataasdemonstratedin(c).
+(a) (b) (c)
+Figure12: ThesetupforthesefiguresiscompletelythesamewithFigure11exceptthatweconsider
+the(n,d) = (50,50)caseinFigure10b. Thisexperimentshowsthatwhenwehaveallpossible
+hyperplanearrangements,ourconvextrainingapproachgeneralizesbettereveninthelowdataregime
+(n≤d).
+sgn(tanh(tanh(XW(1))W(2))w(3)),whereW(1) ∈ Rd×m∗ 1,W(2) ∈ Rm∗ 1 ×m∗ 2 andw(3) ∈ Rm∗ 2
+andwechoosem∗ =m∗ =20foralltheexperiments. AsitisdescribedinTheorem2.3,werequire
+1 2
+H(X)tobecompleteinthiscase. Toensurethat,wetransformthedatamatrixXusingarandom
+representationmatrix. Inparticular,wefirstgeneratearandomrepresentationmatrixH∈Rd×M
+andthenmultiplyitwiththedatamatrixfollowedbyathresholdfunction. Therefore,effectively,we
+obtainanewdatamatrixX˜ = σ(XH). BychoosingM largeenough,whichisM = 1000inour
+experiments,weareabletoenforceX˜ tobefullrankandthusthesetofhyperplanearrangements
+H(X˜)iscompleteasassumedinTheorem2.3. Wealsoapplythesamestepsforthenon-convex
+training,i.e.,wetrainthenetworksasifweperformatwo-layernetworktrainingonthedatamatrix
+X˜. Noticethatwealsoprovidestandardthree-layernetworktrainingcomparison,whereallofthree
+layers are trainable, in Section B.5. More importantly, after solving the convex problem (7), we
+need to construct a neural network that gives the same objective value. As discussed in Section
+2.4,therearenumerouswaystoreconstructthenon-convexnetworkweightsandweparticularly
+useConvex-PIandConvex-SVMasdetailedinSection5,whichseemtohavegoodgeneralization
+performance. Wealsonotethattheseapproachesareexactinthesensethattheygloballyoptimize
+theobjectiveinB.3. Additionally,wehavenneuronsinourreconstructedneuralnetworktohave
+faircomparisonwiththenon-convextrainingwithnhiddenneurons.
+InFigure10,wecompareobjectivevaluesandobservethatConvex-PIandConvex-SVM,which
+solve the convex problem 7, obtain the globally optimal objective value whereas all trials of the
+non-convextrainingheuristicsarestuckatalocalminimum. Figure11,12,and13showthatour
+convextrainingapproachesalsoyieldbettertestperformanceinallcasesunlikethetwo-layertraining
+inSectionB.3. Again,forthetestingphasewegenerate3000samplesviathegroundtruthmodel
+definedabove.
+24
+
+PublishedasaconferencepaperatICLR2023
+(a) (b) (c)
+Figure13: ThesetupforthesefiguresiscompletelythesamewithFigure11exceptthatweconsider
+the(n,d)=(20,100)caseinFigure10a. Thisexperimentalsoconfirmsbettergeneralizationofour
+convextrainingapproachasinFigure11and12.
+B.5 STANDARDTHREE-LAYEREXPERIMENTSINFIGURE1AND2
+Here, we compare our convex program in (7) with 3-layer networks trained with non-convex
+heuristics. Similar to the case in Section B.4 we generate a dataset via the ground truth model
+y = sgn(tanh(tanh(XW(1))W(2))w(3)),whereX ∈ Rn×d,W(1) ∈ Rd×m∗ 1,W(2) ∈ Rm∗ 1 ×m∗ 2
+andw(3) ∈Rm∗ 2 andwechoosem∗ 1 =m∗ 2 =20foralltheexperiments.
+In contrast to Section B.4, we use a representation matrix H ∈ Rd×M, where M = 1000, and
+thenapplythetransformationX˜ =σ(XH)fortheconvexmethods. Weperformstandardtraining
+procedureforthree-layernon-convexnetworks,i.e.,wetrainafullythree-layernetworkwithoutany
+sortofrepresentationmatrix. Tohavefaircomparison,wechoosem =M andm =nforboth
+1 2
+non-convexandconvexsettings.
+InFigure1,wecomparetheobjectivevaluesandobservethatourconvextrainingapproachesachieve
+aglobaloptimuminallcasesunlikethenon-convextrainingheuristics. Wealsoprovidethetestand
+trainingaccuraciesforthree-layernetworkstrainedwithdifferent(n,d)pairsinFigure2. Inallcases
+ourconvexapproachesoutperformthenon-convexheuristicsintermsoftestaccuracy.
+(a) (b) (c)
+Figure14:Performancecomparisonofourconvextrainingapproachestrainedvia(7)andnon-convex
+trainingheuristicsfora10-layerthresholdnetworktrainingproblem. Here,weusethesamesetup
+inFigure1. Asinthepreviousexperiment,ourconvextrainingapproachesyieldsoutperformsthe
+non-convexheuristicsinbothtrainingandtestmetrics.
+B.6 STANDARDTEN-LAYEREXPERIMENTSINFIGURE14
+Inordertoverifytheeffectivenessoftheproposedconvexformulationsintrainingdeepernetworks,
+weconsiderathresholdnetworktrainingproblemfora10-layernetwork,i.e.,(10)withL=10. We
+directlyfollowthesamesetupwithSectionB.5for(n,d,β)=(100,20,1e−3). Sinceinthiscase
+thenetworkissignificantlydeeperthanthepreviouscases,allofthenon-convextrainingheuristics
+failedtofitthetrainingdata,i.e.,theycouldn’tachieve100%trainingaccuracy. Therefore,forthe
+non-convextraining,wealsoincludeBatchNormalizationinbetweenhiddenlayerstostabilizeand
+improvethetrainingperformance. InFigure14,wepresenttheresultsforthisexperiment. Here,we
+observethatourconvextrainingapproachesprovideagloballyoptimaltrainingperformanceand
+25
+
+PublishedasaconferencepaperatICLR2023
+yieldhighertestaccuraciesthanallofthenon-convexheuristicsthatarefurthersupportedbyBatch
+Normalization.
+26
