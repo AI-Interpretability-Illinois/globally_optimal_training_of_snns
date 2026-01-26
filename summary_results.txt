@@ -28,3 +28,11 @@ FFN:gaussian | STE train=0.910 test=0.960 | Convex train=1.000 test=0.995 | Prim
 FFN:ground_truth | STE train=0.560 test=0.530 | Convex train=1.000 test=0.665 | Primal=0.007197 Dual=0.007139 Gap=0.000059 zero_gap=True
 RNN:two_step_xor | STE train=0.750 test=0.785 | Convex train=1.000 test=1.000 | Primal=0.000448 Dual=0.000452 Gap=-0.000004 zero_gap=True
 RNN:moving_gaussian | STE train=0.950 test=0.865 | Convex train=1.000 test=0.910 | Primal=0.000809 Dual=0.000819 Gap=-0.000010 zero_gap=True
+
+RUN run_experiments.py | mode=all | time=1769431589
+FFN:parity | STE train=1.000 test=0.489 | Convex train=1.000 test=0.487 | Primal=0.003482 Dual=0.002222 Gap=0.001260 zero_gap=False
+FFN:gaussian | STE train=1.000 test=0.999 | Convex train=1.000 test=1.000 | Primal=0.002641 Dual=0.002000 Gap=0.000641 zero_gap=False
+FFN:ground_truth | STE train=1.000 test=0.500 | Convex train=1.000 test=0.525 | Primal=0.365531 Dual=0.002526 Gap=0.363005 zero_gap=False
+RNN:two_step_xor | STE train=0.900 test=0.748 | Convex train=1.000 test=0.880 | Primal=0.000477 Dual=0.000471 Gap=0.000006 zero_gap=True
+RNN:moving_gaussian | STE train=1.000 test=0.905 | Convex train=1.000 test=0.852 | Primal=0.000379 Dual=0.000368 Gap=0.000011 zero_gap=True
+RNN:rotated_mnist | STE train=0.950 test=0.551 | Convex train=1.000 test=0.559 | Primal=0.000506 Dual=0.000502 Gap=0.000004 zero_gap=True

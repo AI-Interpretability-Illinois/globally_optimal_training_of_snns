@@ -601,9 +601,8 @@ def main() -> None:
         datasets["two_step_xor"] = (x1, x2, y)
         x1, x2, y = generate_moving_gaussian_blobs(params.n + config["n_total"], args.seed + 2)
         datasets["moving_gaussian"] = (x1, x2, y)
-        if not args.debug:
-            x1, x2, y = generate_rotated_mnist_pairs(params.n + config["n_total"], args.seed + 3)
-            datasets["rotated_mnist"] = (x1, x2, y)
+        x1, x2, y = generate_rotated_mnist_pairs(params.n + config["n_total"], args.seed + 3)
+        datasets["rotated_mnist"] = (x1, x2, y)
         run_snn_pipeline(datasets, params, config)
 
 

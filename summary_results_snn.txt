@@ -49,3 +49,13 @@ SNN:two_step_xor | Convex train=1.000 | Reconstructed test=1.000 | LIF train=0.9
 SNN:moving_gaussian | Convex train=1.000 | Reconstructed test=0.905 | LIF train=1.000 test=0.970 | m1_eff=169 | Active hyperplanes=172 mean_active=85.180 | Primal=0.000793 Dual=0.000793 Gap=0.000000 zero_gap=True
 SNN:two_step_xor | Convex train=1.000 | Reconstructed test=1.000 | LIF train=1.000 test=1.000 | m1_eff=16 | Active hyperplanes=141 mean_active=71.960 | Primal=0.000426 Dual=0.000426 Gap=0.000000 zero_gap=True
 
+RUN snn_experiments.py | mode=debug | time=1769428897
+SNN:two_step_xor | Convex train=1.000 | Reconstructed test=0.895 | LIF train=1.000 test=0.955 | m1_eff=16 | Active hyperplanes=127 mean_active=63.000 | Primal=0.000696 Dual=0.000696 Gap=0.000000 zero_gap=True
+SNN:moving_gaussian | Convex train=1.000 | Reconstructed test=0.895 | LIF train=1.000 test=0.935 | m1_eff=148 | Active hyperplanes=162 mean_active=84.350 | Primal=0.000407 Dual=0.000407 Gap=0.000000 zero_gap=True
+SNN:rotated_mnist | Convex train=1.000 | Reconstructed test=0.585 | LIF train=1.000 test=0.525 | m1_eff=156 | Active hyperplanes=155 mean_active=74.550 | Primal=0.000804 Dual=0.000804 Gap=0.000000 zero_gap=True
+SNN:two_step_xor | Convex train=1.000 | Reconstructed test=1.000 | LIF train=0.940 test=0.950 | m1_eff=16 | Active hyperplanes=137 mean_active=68.800 | Primal=0.000570 Dual=0.000570 Gap=0.000000 zero_gap=True
+SNN:moving_gaussian | Convex train=1.000 | Reconstructed test=0.905 | LIF train=0.980 test=0.970 | m1_eff=169 | Active hyperplanes=172 mean_active=85.180 | Primal=0.000793 Dual=0.000793 Gap=0.000000 zero_gap=True
+SNN:rotated_mnist | Convex train=1.000 | Reconstructed test=0.595 | LIF train=1.000 test=0.645 | m1_eff=171 | Active hyperplanes=172 mean_active=80.100 | Primal=0.001295 Dual=0.001294 Gap=0.000000 zero_gap=True
+SNN:two_step_xor | Convex train=1.000 | Reconstructed test=1.000 | LIF train=0.940 test=0.955 | m1_eff=16 | Active hyperplanes=141 mean_active=71.960 | Primal=0.000426 Dual=0.000426 Gap=0.000000 zero_gap=True
+SNN:moving_gaussian | Convex train=1.000 | Reconstructed test=0.775 | LIF train=0.970 test=0.940 | m1_eff=175 | Active hyperplanes=182 mean_active=95.170 | Primal=0.001808 Dual=0.001808 Gap=0.000000 zero_gap=True
+SNN:rotated_mnist | Convex train=1.000 | Reconstructed test=0.565 | LIF train=1.000 test=0.775 | m1_eff=183 | Active hyperplanes=178 mean_active=88.620 | Primal=0.002922 Dual=0.002922 Gap=0.000000 zero_gap=True
