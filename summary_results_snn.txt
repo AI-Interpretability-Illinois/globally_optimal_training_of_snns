@@ -1,0 +1,51 @@
+RUN snn_experiments.py | mode=full | time=1769393142
+
+RUN snn_experiments.py | mode=full | time=1769393220
+
+RUN snn_experiments.py | mode=full | time=1769393265
+SNN:two_step_xor | Convex train=0.500 | Reconstructed test=0.760 | LIF train=0.850 test=0.935 | Primal=9.812540 Dual=9.812540 Gap=-0.000000 zero_gap=True
+SNN:two_step_xor | WARNING pattern_repeats_used for reconstruction
+
+RUN snn_experiments.py | mode=full | time=1769393560
+SNN:two_step_xor | Convex train=0.500 | Reconstructed test=0.760 | LIF train=0.850 test=0.935 | Primal=9.812540 Dual=9.812540 Gap=-0.000000 zero_gap=True
+SNN:two_step_xor | WARNING pattern_repeats_used for reconstruction
+SNN:moving_gaussian | Convex train=0.550 | Reconstructed test=0.500 | LIF train=1.000 test=0.927 | Primal=9.666772 Dual=9.666772 Gap=-0.000000 zero_gap=True
+SNN:moving_gaussian | WARNING pattern_repeats_used for reconstruction
+SNN:rotated_mnist | Convex train=0.700 | Reconstructed test=0.536 | LIF train=1.000 test=0.638 | Primal=6.428888 Dual=6.428888 Gap=0.000000 zero_gap=True
+SNN:rotated_mnist | WARNING pattern_repeats_used for reconstruction
+
+RUN snn_experiments.py | mode=full | time=1769406000
+
+RUN snn_experiments.py | mode=full | time=1769406171
+
+RUN snn_experiments.py | mode=full | time=1769425538
+
+RUN snn_experiments.py | mode=full | time=1769425923
+
+RUN snn_experiments.py | mode=full | time=1769425950
+
+RUN snn_experiments.py | mode=full | time=1769425967
+
+RUN snn_experiments.py | mode=full | time=1769426015
+SNN:two_step_xor | Convex train=1.000 | Reconstructed test=0.760 | LIF train=0.850 test=0.873 | Active hyperplanes=2911 mean_active=1453.600 | Primal=0.000351 Dual=0.000348 Gap=0.000003 zero_gap=True
+SNN:two_step_xor | WARNING pattern_repeats_used for reconstruction
+SNN:moving_gaussian | Convex train=1.000 | Reconstructed test=0.884 | LIF train=1.000 test=0.933 | Active hyperplanes=11847 mean_active=5907.600 | Primal=0.000393 Dual=0.000389 Gap=0.000005 zero_gap=True
+SNN:moving_gaussian | WARNING pattern_repeats_used for reconstruction
+SNN:rotated_mnist | Convex train=1.000 | Reconstructed test=0.690 | LIF train=1.000 test=0.628 | Active hyperplanes=12453 mean_active=6221.200 | Primal=0.000407 Dual=0.000399 Gap=0.000009 zero_gap=True
+
+RUN snn_experiments.py | mode=debug | time=1769427142
+
+RUN snn_experiments.py | mode=debug | time=1769427168
+
+RUN snn_experiments.py | mode=debug | time=1769427211
+
+RUN snn_experiments.py | mode=debug | time=1769427330
+SNN:two_step_xor | Convex train=1.000 | Reconstructed test=0.955 | LIF train=1.000 test=0.955 | m1_eff=16 | Active hyperplanes=13697 mean_active=6854.200 | Primal=0.000331 Dual=0.000316 Gap=0.000014 zero_gap=True
+
+RUN snn_experiments.py | mode=debug | time=1769427852
+SNN:two_step_xor | Convex train=1.000 | Reconstructed test=0.895 | LIF train=1.000 test=0.955 | m1_eff=16 | Active hyperplanes=127 mean_active=63.000 | Primal=0.000696 Dual=0.000696 Gap=0.000000 zero_gap=True
+SNN:moving_gaussian | Convex train=1.000 | Reconstructed test=0.895 | LIF train=1.000 test=0.920 | m1_eff=148 | Active hyperplanes=162 mean_active=84.350 | Primal=0.000407 Dual=0.000407 Gap=0.000000 zero_gap=True
+SNN:two_step_xor | Convex train=1.000 | Reconstructed test=1.000 | LIF train=0.940 test=0.900 | m1_eff=16 | Active hyperplanes=137 mean_active=68.800 | Primal=0.000570 Dual=0.000570 Gap=0.000000 zero_gap=True
+SNN:moving_gaussian | Convex train=1.000 | Reconstructed test=0.905 | LIF train=1.000 test=0.970 | m1_eff=169 | Active hyperplanes=172 mean_active=85.180 | Primal=0.000793 Dual=0.000793 Gap=0.000000 zero_gap=True
+SNN:two_step_xor | Convex train=1.000 | Reconstructed test=1.000 | LIF train=1.000 test=1.000 | m1_eff=16 | Active hyperplanes=141 mean_active=71.960 | Primal=0.000426 Dual=0.000426 Gap=0.000000 zero_gap=True
+

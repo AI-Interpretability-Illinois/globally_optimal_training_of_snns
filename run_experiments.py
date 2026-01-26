@@ -1,4 +1,5 @@
 import argparse
+import time
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Dict, List, Tuple
@@ -437,9 +438,9 @@ class B4Params:
 
 def b4_param_grid() -> List[B4Params]:
     return [
-        B4Params(n=20, d=100, m1=1000, m2=20, m_star=20, m_repr=1000, beta=1e-3),
-        B4Params(n=50, d=50, m1=1000, m2=50, m_star=20, m_repr=1000, beta=1e-3),
-        B4Params(n=100, d=20, m1=1000, m2=100, m_star=20, m_repr=1000, beta=1e-3),
+        B4Params(n=20, d=120, m1=1020, m2=40, m_star=40, m_repr=1020, beta=1e-3),
+        B4Params(n=50, d=70, m1=1020, m2=70, m_star=40, m_repr=1020, beta=1e-3),
+        B4Params(n=100, d=40, m1=1020, m2=120, m_star=40, m_repr=1020, beta=1e-3),
     ]
 
 
@@ -590,6 +591,8 @@ def main() -> None:
 
     set_seed(args.seed)
     np.set_printoptions(threshold=np.inf, linewidth=200)
+    run_ts = int(time.time())
+    run_id = f"{args.mode}_{run_ts}"
     params_grid = b4_param_grid()
     config = {
         "seed": args.seed,
@@ -599,11 +602,20 @@ def main() -> None:
         "lr": 1e-2,
         "solver": args.solver,
         "n_test": 200 if args.debug else 3000,
-        "ffn_plot_path": "/Users/hima_3114/Desktop/Paper_1/experiments/ffn_accuracies.png",
-        "rnn_plot_path": "/Users/hima_3114/Desktop/Paper_1/experiments/rnn_accuracies.png",
+        "ffn_plot_path": f"/Users/hima_3114/Desktop/Paper_1/experiments/ffn_accuracies_{run_id}.png",
+        "rnn_plot_path": f"/Users/hima_3114/Desktop/Paper_1/experiments/rnn_accuracies_{run_id}.png",
         "summary_path": "/Users/hima_3114/Desktop/Paper_1/experiments/summary_results.txt",
+        "append_summary": True,
     }
-    Path(config["summary_path"]).write_text("")
+    summary_path = Path(config["summary_path"])
+    if summary_path.exists():
+        existing = summary_path.read_text()
+        if existing and not existing.endswith("\n\n"):
+            summary_path.write_text(existing + "\n")
+    append_summary(
+        config["summary_path"],
+        f"RUN {Path(__file__).name} | mode={args.mode} | time={run_ts}",
+    )
 
     for params in params_grid:
         if args.mode in ["ffn", "all"]:

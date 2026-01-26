@@ -3,3 +3,4 @@ cvxpy
 torch
 torchvision
 matplotlib
+snntorch
