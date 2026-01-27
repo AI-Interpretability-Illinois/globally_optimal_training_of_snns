@@ -15,3 +15,101 @@ test-acc-delta=0.240
 Primal=2.333333 Dual=2.333333 Gap=0.000000
 Elapsed=0.909s
 
+
+== Small SNN (T=2) full enumeration | fixed_shift | run=0 ==
+D11=23 D12=32 D21=32 D22=32
+Convex train=1.000 beta=1.000 active_hyperplanes=18
+Recon train=1.000 Recon test=1.000
+LIF train=0.800 LIF test=0.840
+test-acc-delta=0.160
+Primal=0.900000 Dual=0.900000 Gap=0.000000
+Elapsed=1.039s
+
+== Small SNN (T=2) full enumeration | gaussian_shift | run=0 ==
+D11=23 D12=32 D21=32 D22=32
+Convex train=1.000 beta=2.000 active_hyperplanes=1
+Recon train=0.800 Recon test=0.940
+LIF train=0.800 LIF test=0.640
+test-acc-delta=0.300
+Primal=2.333333 Dual=2.333333 Gap=0.000000
+Elapsed=0.525s
+
+== Small SNN (T=2) full enumeration | fixed_shift | run=1 ==
+D11=23 D12=32 D21=32 D22=32
+Convex train=1.000 beta=1.000 active_hyperplanes=18
+Recon train=1.000 Recon test=1.000
+LIF train=1.000 LIF test=0.860
+test-acc-delta=0.140
+Primal=0.900000 Dual=0.900000 Gap=0.000000
+Elapsed=0.628s
+
+== Small SNN (T=2) full enumeration | gaussian_shift | run=1 ==
+D11=23 D12=32 D21=32 D22=32
+Convex train=1.000 beta=2.000 active_hyperplanes=1
+Recon train=1.000 Recon test=1.000
+LIF train=1.000 LIF test=0.880
+test-acc-delta=0.120
+Primal=1.600000 Dual=1.600000 Gap=0.000000
+Elapsed=0.694s
+
+== Small SNN (T=2) full enumeration | fixed_shift | run=2 ==
+D11=23 D12=32 D21=32 D22=32
+Convex train=1.000 beta=1.000 active_hyperplanes=18
+Recon train=1.000 Recon test=1.000
+LIF train=1.000 LIF test=0.880
+test-acc-delta=0.120
+Primal=0.900000 Dual=0.900000 Gap=0.000000
+Elapsed=0.677s
+
+== Small SNN (T=2) full enumeration | gaussian_shift | run=2 ==
+D11=23 D12=32 D21=32 D22=32
+Convex train=1.000 beta=2.000 active_hyperplanes=1
+Recon train=1.000 Recon test=1.000
+LIF train=1.000 LIF test=0.860
+test-acc-delta=0.140
+Primal=1.600000 Dual=1.600000 Gap=0.000000
+Elapsed=0.599s
+
+== Small SNN (T=2) full enumeration | fixed_shift | run=3 ==
+D11=23 D12=32 D21=32 D22=32
+Convex train=1.000 beta=1.000 active_hyperplanes=18
+Recon train=1.000 Recon test=1.000
+LIF train=1.000 LIF test=0.840
+test-acc-delta=0.160
+Primal=0.900000 Dual=0.900000 Gap=0.000000
+Elapsed=0.692s
+
+== Small SNN (T=2) full enumeration | gaussian_shift | run=3 ==
+D11=23 D12=32 D21=32 D22=32
+Convex train=1.000 beta=2.000 active_hyperplanes=1
+Recon train=1.000 Recon test=1.000
+LIF train=1.000 LIF test=0.880
+test-acc-delta=0.120
+Primal=1.600000 Dual=1.600000 Gap=0.000000
+Elapsed=0.573s
+
+== Small SNN (T=2) full enumeration | fixed_shift | run=4 ==
+D11=23 D12=32 D21=32 D22=32
+Convex train=1.000 beta=1.000 active_hyperplanes=18
+Recon train=1.000 Recon test=1.000
+LIF train=1.000 LIF test=0.860
+test-acc-delta=0.140
+Primal=0.900000 Dual=0.900000 Gap=0.000000
+Elapsed=0.634s
+
+== Small SNN (T=2) full enumeration | gaussian_shift | run=4 ==
+D11=23 D12=32 D21=32 D22=32
+Convex train=1.000 beta=2.000 active_hyperplanes=1
+Recon train=1.000 Recon test=1.000
+LIF train=1.000 LIF test=0.820
+test-acc-delta=0.180
+Primal=1.600000 Dual=1.600000 Gap=0.000000
+Elapsed=0.552s
+
+
+SUMMARY_START
+SUMMARY (fixed/gaussian, 5 runs):
+fixed_shift: runs=5 recon_test_mean=1.000 lif_test_mean=0.856 delta_mean=0.144
+gaussian_shift: runs=5 recon_test_mean=0.988 lif_test_mean=0.816 delta_mean=0.172
+SUMMARY_END
+

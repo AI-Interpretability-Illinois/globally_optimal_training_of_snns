@@ -1,3 +1,4 @@
+import argparse
 import time
 from dataclasses import dataclass
 from typing import Dict, List, Tuple
@@ -251,6 +252,8 @@ def solve_svm_hyperplane(
     constraints = [cp.multiply(y, x @ w) >= 1 - xi, xi >= 0]
     problem = cp.Problem(cp.Minimize(objective), constraints)
     problem.solve(solver=solver, **solver_opts)
+    if w.value is None:
+        raise ValueError("SVM solve failed: no solution returned by solver.")
     return w.value
 
 
@@ -399,25 +402,43 @@ class SmallConfig:
     solver_opts: Dict[str, float] = None
     lif_lr: float = 1e-2
     lif_epochs: int = 500
+    results_path: str = "/Users/hima_3114/Desktop/Paper_1/experiments/snn_small_results.txt"
 
 
 def main() -> None:
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--datasets", type=str, default="fixed_shift,gaussian_shift,two_step_xor_small")
+    parser.add_argument("--runs", type=int, default=5)
+    args = parser.parse_args()
+
     set_seed(0)
     config = SmallConfig()
     if config.solver_opts is None:
         config.solver_opts = {"eps": 1e-9, "max_iters": 200000}
+
+    def append_results(lines: List[str]) -> None:
+        with open(config.results_path, "a", encoding="utf-8") as handle:
+            for line in lines:
+                handle.write(line + "\n")
+            handle.flush()
     def run_case(label: str, data_fn, data_kwargs: Dict[str, float], run_idx: int) -> None:
+        if label == "two_step_xor_small":
+            print(f"[XOR run={run_idx}] STEP 1: generate data")
         x1_train, x2_train, x1_test, x2_test, y_train, y_test = data_fn(**data_kwargs)
         beta_case = config.beta
         if data_kwargs.get("shift_mode") == "gaussian":
             beta_case = config.beta * 2.0
         start = time.time()
+        if label == "two_step_xor_small":
+            print(f"[XOR run={run_idx}] STEP 2: enumerate hyperplanes")
         d_arr = build_snn_arrangements_full(
             x1_train,
             x2_train,
             config.solver,
             config.solver_opts,
         )
+        if label == "two_step_xor_small":
+            print(f"[XOR run={run_idx}] STEP 3: build test hyperplanes")
         d_arr_test = build_snn_arrangements_from_weights(
             x1_test,
             x2_test,
@@ -429,6 +450,8 @@ def main() -> None:
             },
         )
         d22 = d_arr["D22"]
+        if label == "two_step_xor_small":
+            print(f"[XOR run={run_idx}] STEP 4: solve convex primal/dual")
         primal = solve_primal_convex_snn(d22, y_train, beta_case, config.solver, config.solver_opts)
         dual = solve_dual_convex_snn(d22, y_train, beta_case, config.solver, config.solver_opts)
         gap = primal["primal"] - dual["dual"]
@@ -438,6 +461,8 @@ def main() -> None:
         m1 = min(config.m1_max, d_arr["D11"].shape[1], d_arr["D12"].shape[1])
         if m1 == 0:
             raise ValueError("No layer-1 patterns available for reconstruction.")
+        if label == "two_step_xor_small":
+            print(f"[XOR run={run_idx}] STEP 5: select patterns")
         h1_1, h1_2, h2_1, h2_2 = select_activation_patterns(
             d_arr["D11"],
             d_arr["D12"],
@@ -447,6 +472,8 @@ def main() -> None:
             m1,
             m2,
         )
+        if label == "two_step_xor_small":
+            print(f"[XOR run={run_idx}] STEP 6: reconstruct weights")
         P1, P2_in, P2_rec = reconstruct_weights(
             x1_train,
             x2_train,
@@ -460,6 +487,8 @@ def main() -> None:
         )
         h2_train_hat = forward_reconstructed(x1_train, x2_train, P1, P2_in, P2_rec)
         h2_test_hat = forward_reconstructed(x1_test, x2_test, P1, P2_in, P2_rec)
+        if label == "two_step_xor_small":
+            print(f"[XOR run={run_idx}] STEP 7: fit readout")
         v = solve_svm_hyperplane(
             h2_train_hat,
             y_train,
@@ -469,6 +498,8 @@ def main() -> None:
         )
         recon_train_acc = float(np.mean(np.sign(h2_train_hat @ v) == y_train))
         recon_test_acc = float(np.mean(np.sign(h2_test_hat @ v) == y_test))
+        if label == "two_step_xor_small":
+            print(f"[XOR run={run_idx}] STEP 8: train LIF baseline")
         lif = train_leaky_snn(
             x1_train,
             x2_train,
@@ -483,28 +514,37 @@ def main() -> None:
         lif_test_acc = float(np.mean(lif_test_preds == y_test))
         test_acc_delta = recon_test_acc - lif_test_acc
         elapsed = time.time() - start
-        print(f"== Small SNN (T=2) full enumeration | {label} | run={run_idx} ==")
-        print(f"D11={d_arr['D11'].shape[1]} D12={d_arr['D12'].shape[1]} "
-              f"D21={d_arr['D21'].shape[1]} D22={d_arr['D22'].shape[1]}")
-        print(
+        lines = [
+            f"== Small SNN (T=2) full enumeration | {label} | run={run_idx} ==",
+            f"D11={d_arr['D11'].shape[1]} D12={d_arr['D12'].shape[1]} "
+            f"D21={d_arr['D21'].shape[1]} D22={d_arr['D22'].shape[1]}",
             f"Convex train={convex_train_acc:.3f} beta={beta_case:.3f} "
-            f"active_hyperplanes={active_idx.size}"
-        )
-        print(f"Recon train={recon_train_acc:.3f} Recon test={recon_test_acc:.3f}")
-        print(f"LIF train={lif['acc']:.3f} LIF test={lif_test_acc:.3f}")
-        print(f"test-acc-delta={test_acc_delta:.3f}")
-        print(f"Primal={primal['primal']:.6f} Dual={dual['dual']:.6f} Gap={gap:.6f}")
-        print(f"Elapsed={elapsed:.3f}s")
+            f"active_hyperplanes={active_idx.size}",
+            f"Recon train={recon_train_acc:.3f} Recon test={recon_test_acc:.3f}",
+            f"LIF train={lif['acc']:.3f} LIF test={lif_test_acc:.3f}",
+            f"test-acc-delta={test_acc_delta:.3f}",
+            f"Primal={primal['primal']:.6f} Dual={dual['dual']:.6f} Gap={gap:.6f}",
+            f"Elapsed={elapsed:.3f}s",
+            "",
+        ]
+        for line in lines:
+            print(line)
+        append_results(lines)
 
-    datasets = [
-        ("fixed_shift", generate_b1_synthetic, {"seed": 0, "n_train": 5, "n_test": 50, "shift_mode": "fixed"}),
-        ("gaussian_shift", generate_b1_synthetic, {"seed": 0, "n_train": 5, "n_test": 50, "shift_mode": "gaussian"}),
-        ("two_step_xor_small", generate_two_step_xor_small, {"seed": 0, "n_train": 16, "n_test": 64}),
-    ]
-    for run_idx in range(5):
-        for label, data_fn, data_kwargs in datasets:
+    datasets = {
+        "fixed_shift": (generate_b1_synthetic, {"seed": 0, "n_train": 5, "n_test": 50, "shift_mode": "fixed"}),
+        "gaussian_shift": (generate_b1_synthetic, {"seed": 0, "n_train": 5, "n_test": 50, "shift_mode": "gaussian"}),
+        "two_step_xor_small": (generate_two_step_xor_small, {"seed": 0, "n_train": 10, "n_test": 64}),
+    }
+    selected = [name.strip() for name in args.datasets.split(",") if name.strip()]
+    for name in selected:
+        if name not in datasets:
+            raise ValueError(f"Unknown dataset '{name}'.")
+    for run_idx in range(args.runs):
+        for name in selected:
+            data_fn, data_kwargs = datasets[name]
             data_kwargs["seed"] = run_idx
-            run_case(label, data_fn, data_kwargs, run_idx)
+            run_case(name, data_fn, data_kwargs, run_idx)
 
 
 if __name__ == "__main__":
