@@ -235,13 +235,20 @@ def build_snn_arrangements(
     }
 
 
-def solve_primal_convex_snn(d22: np.ndarray, y: np.ndarray, beta: float, m2: int, solver: str) -> Dict[str, float]:
+def solve_primal_convex_snn(
+    d22: np.ndarray,
+    y: np.ndarray,
+    beta: float,
+    m2: int,
+    solver: str,
+    solver_opts: Dict[str, float],
+) -> Dict[str, float]:
     # Algorithm 3: SolvePrimalConvexSNN
     beta_hat = beta / np.sqrt(m2)
     w = cp.Variable(d22.shape[1])
     objective = 0.5 * cp.sum_squares(d22 @ w - y) + beta_hat * cp.norm1(w)
     problem = cp.Problem(cp.Minimize(objective))
-    problem.solve(solver=solver)
+    problem.solve(solver=solver, **solver_opts)
     w_val = w.value
     primal = problem.value
     preds = np.sign(d22 @ w_val)
@@ -249,7 +256,14 @@ def solve_primal_convex_snn(d22: np.ndarray, y: np.ndarray, beta: float, m2: int
     return {"primal": primal, "w": w_val, "acc": acc}
 
 
-def solve_dual_convex_snn(d22: np.ndarray, y: np.ndarray, beta: float, m2: int, solver: str) -> Dict[str, float]:
+def solve_dual_convex_snn(
+    d22: np.ndarray,
+    y: np.ndarray,
+    beta: float,
+    m2: int,
+    solver: str,
+    solver_opts: Dict[str, float],
+) -> Dict[str, float]:
     # Algorithm 4: SolveDualConvexSNN
     beta_hat = beta / np.sqrt(m2)
     lam = cp.Variable(d22.shape[0])
@@ -259,7 +273,7 @@ def solve_dual_convex_snn(d22: np.ndarray, y: np.ndarray, beta: float, m2: int, 
     ]
     objective = cp.Maximize(-0.5 * cp.sum_squares(lam) - lam @ y)
     problem = cp.Problem(objective, constraints)
-    problem.solve(solver=solver)
+    problem.solve(solver=solver, **solver_opts)
     return {"dual": problem.value, "lambda": lam.value}
 
 
@@ -327,7 +341,13 @@ def eval_leaky_snn(layers: Tuple[nn.Linear, snn.Leaky, nn.Linear, snn.Leaky, nn.
     return preds
 
 
-def solve_svm_hyperplane(x: np.ndarray, y: np.ndarray, C: float, solver: str) -> np.ndarray:
+def solve_svm_hyperplane(
+    x: np.ndarray,
+    y: np.ndarray,
+    C: float,
+    solver: str,
+    solver_opts: Dict[str, float],
+) -> np.ndarray:
     # Algorithm 1 reconstruction uses SVMs (5.12) and (5.13).
     if x.shape[0] != y.shape[0]:
         raise ValueError("x and y must have the same number of rows.")
@@ -336,7 +356,7 @@ def solve_svm_hyperplane(x: np.ndarray, y: np.ndarray, C: float, solver: str) ->
     objective = 0.5 * cp.sum_squares(w) + C * cp.sum(xi)
     constraints = [cp.multiply(y, x @ w) >= 1 - xi, xi >= 0]
     problem = cp.Problem(cp.Minimize(objective), constraints)
-    problem.solve(solver=solver)
+    problem.solve(solver=solver, **solver_opts)
     return w.value
 
 
@@ -388,6 +408,7 @@ def reconstruct_weights(
     h2_2: np.ndarray,
     C: float,
     solver: str,
+    solver_opts: Dict[str, float],
 ) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
     # Algorithm 1: Reconstruction of shared weights from activations.
     n = x1.shape[0]
@@ -397,7 +418,7 @@ def reconstruct_weights(
     P1 = np.zeros((x1.shape[1], m1), dtype=np.float32)
     for j in range(m1):
         y_stack = np.concatenate([2 * h1_1[:, j] - 1, 2 * h1_2[:, j] - 1])
-        p = solve_svm_hyperplane(x_layer1, y_stack, C, solver)
+        p = solve_svm_hyperplane(x_layer1, y_stack, C, solver, solver_opts)
         P1[:, j] = p
     h2_0 = np.zeros((n, m2), dtype=np.float32)
     x_t1 = np.hstack([h1_1, h2_0])
@@ -407,7 +428,7 @@ def reconstruct_weights(
     P2_rec = np.zeros((m2, m2), dtype=np.float32)
     for j in range(m2):
         y_stack = np.concatenate([2 * h2_1[:, j] - 1, 2 * h2_2[:, j] - 1])
-        w = solve_svm_hyperplane(x_layer2, y_stack, C, solver)
+        w = solve_svm_hyperplane(x_layer2, y_stack, C, solver, solver_opts)
         P2_in[:, j] = w[:m1]
         P2_rec[:, j] = w[m1:]
     return P1, P2_in, P2_rec
@@ -442,9 +463,9 @@ class B4Params:
 
 def b4_param_grid() -> List[B4Params]:
     return [
-        B4Params(n=20, d=100, m1=1000, m2=40, m_star=20, m_repr=1000, beta=1e-3),
-        B4Params(n=50, d=50, m1=1000, m2=70, m_star=20, m_repr=1000, beta=1e-3),
-        B4Params(n=100, d=20, m1=1000, m2=120, m_star=20, m_repr=1000, beta=1e-3),
+        B4Params(n=20, d=100, m1=20, m2=20, m_star=20, m_repr=1000, beta=1e-3),
+        B4Params(n=50, d=50, m1=100, m2=70, m_star=20, m_repr=1000, beta=1e-3),
+        B4Params(n=100, d=20, m1=100, m2=120, m_star=20, m_repr=1000, beta=1e-3),
     ]
 
 
@@ -473,7 +494,10 @@ def run_snn_pipeline(
         x1_test_tilde = apply_representation(x1_test, h_repr)
         x2_test_tilde = apply_representation(x2_test, h_repr)
 
-        arr_samples = config["arr_samples"]
+        arr_samples = max(
+            config["arr_samples"],
+            params.m2 * config["arr_sample_factor"],
+        )
         d_arr = build_snn_arrangements(
             x1_train_tilde,
             x2_train_tilde,
@@ -482,8 +506,22 @@ def run_snn_pipeline(
             config["sampled_arrangements"],
         )
         d22 = d_arr["D22"]
-        primal = solve_primal_convex_snn(d22, y_train, params.beta, params.m2, config["solver"])
-        dual = solve_dual_convex_snn(d22, y_train, params.beta, params.m2, config["solver"])
+        primal = solve_primal_convex_snn(
+            d22,
+            y_train,
+            params.beta,
+            params.m2,
+            config["solver"],
+            config["solver_opts"],
+        )
+        dual = solve_dual_convex_snn(
+            d22,
+            y_train,
+            params.beta,
+            params.m2,
+            config["solver"],
+            config["solver_opts"],
+        )
         gap = primal["primal"] - dual["dual"]
         is_zero_gap = abs(gap) <= zero_gap_tol
         if config["sampled_arrangements"]:
@@ -521,10 +559,17 @@ def run_snn_pipeline(
             h2_2,
             config["svm_C"],
             config["solver"],
+            config["solver_opts"],
         )
         h2_train_hat = forward_reconstructed(x1_train_tilde, x2_train_tilde, P1, P2_in, P2_rec)
         h2_test_hat = forward_reconstructed(x1_test_tilde, x2_test_tilde, P1, P2_in, P2_rec)
-        v, *_ = np.linalg.lstsq(h2_train_hat, y_train, rcond=None)
+        v = solve_svm_hyperplane(
+            h2_train_hat,
+            y_train,
+            config["svm_C"],
+            config["solver"],
+            config["solver_opts"],
+        )
         recon_test_preds = np.sign(h2_test_hat @ v)
         recon_test_acc = float(np.mean(recon_test_preds == y_test))
 
@@ -560,7 +605,7 @@ def run_snn_pipeline(
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--debug", action="store_true")
-    parser.add_argument("--solver", type=str, default="SCS")
+    parser.add_argument("--solver", type=str, default="ECOS")
     parser.add_argument("--seed", type=int, default=0)
     parser.add_argument("--allow_pattern_repeats", action="store_true")
     parser.add_argument("--sampled_arrangements", action="store_true")
@@ -578,10 +623,12 @@ def main() -> None:
         "solver": args.solver,
         "n_total": 200 if args.debug else 3000,
         "svm_C": 1000.0,
+        "solver_opts": {"abstol": 1e-9, "reltol": 1e-9, "feastol": 1e-9, "max_iters": 50000},
         "summary_path": "/Users/hima_3114/Desktop/Paper_1/experiments/summary_results_snn.txt",
         "allow_pattern_repeats": args.allow_pattern_repeats,
         "sampled_arrangements": args.sampled_arrangements,
         "arr_samples": 200 if args.debug else 2000,
+        "arr_sample_factor": 20 if args.debug else 5,
     }
     summary_path = Path(config["summary_path"])
     if summary_path.exists():

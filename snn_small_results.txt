@@ -1,0 +1,17 @@
+== Small SNN (T=2) full enumeration | fixed_shift ==
+D11=23 D12=32 D21=32 D22=32
+Convex train=1.000 beta=1.000 active_hyperplanes=18
+Recon train=1.000 Recon test=1.000
+LIF train=1.000 LIF test=0.900
+test-acc-delta=0.100
+Primal=0.900000 Dual=0.900000 Gap=0.000000
+Elapsed=1.461s
+== Small SNN (T=2) full enumeration | gaussian_shift ==
+D11=23 D12=32 D21=32 D22=32
+Convex train=1.000 beta=2.000 active_hyperplanes=1
+Recon train=0.800 Recon test=0.940
+LIF train=0.800 LIF test=0.700
+test-acc-delta=0.240
+Primal=2.333333 Dual=2.333333 Gap=0.000000
+Elapsed=0.909s
+
