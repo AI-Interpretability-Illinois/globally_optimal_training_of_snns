@@ -228,16 +228,24 @@ class ThresholdSTE(torch.autograd.Function):
 
 
 class STEFFN(nn.Module):
-    def __init__(self, input_dim: int, m1: int, m2: int):
+    def __init__(self, input_dim: int, m1: int, m2: int, depth: int):
         super().__init__()
-        self.w1 = nn.Linear(input_dim, m1, bias=False)
-        self.w2 = nn.Linear(m1, m2, bias=False)
-        self.w3 = nn.Linear(m2, 1, bias=False)
+        if depth < 1:
+            raise ValueError("SNN depth must be >= 1.")
+        hidden_dims = [m1] + [m2] * (depth - 1)
+        layers = []
+        in_dim = input_dim
+        for hidden_dim in hidden_dims:
+            layers.append(nn.Linear(in_dim, hidden_dim, bias=False))
+            in_dim = hidden_dim
+        self.hidden_layers = nn.ModuleList(layers)
+        self.out = nn.Linear(in_dim, 1, bias=False)
 
     def forward(self, x):
-        h1 = ThresholdSTE.apply(self.w1(x))
-        h2 = ThresholdSTE.apply(self.w2(h1))
-        out = self.w3(h2)
+        h = x
+        for layer in self.hidden_layers:
+            h = ThresholdSTE.apply(layer(h))
+        out = self.out(h)
         return out.squeeze(-1)
 
 
@@ -266,11 +274,12 @@ def train_ste_ffn(
     y_test: np.ndarray,
     m1: int,
     m2: int,
+    depth: int,
     beta: float,
     lr: float,
     epochs: int,
 ) -> Dict[str, float]:
-    model = STEFFN(x_train.shape[1], m1, m2)
+    model = STEFFN(x_train.shape[1], m1, m2, depth)
     optimizer = torch.optim.Adam(model.parameters(), lr=lr)
     x_train_t = torch.from_numpy(x_train)
     y_train_t = torch.from_numpy(y_train)
@@ -279,7 +288,7 @@ def train_ste_ffn(
     for _ in range(epochs):
         optimizer.zero_grad()
         logits = model(x_train_t)
-        loss = F.mse_loss(logits, y_train_t) + beta * model.w3.weight.abs().sum()
+        loss = F.mse_loss(logits, y_train_t) + beta * model.out.weight.abs().sum()
         loss.backward()
         optimizer.step()
     with torch.no_grad():
@@ -287,12 +296,12 @@ def train_ste_ffn(
         test_pred = model(x_test_t).sign()
     train_acc = (train_pred == y_train_t).float().mean().item()
     test_acc = (test_pred == y_test_t).float().mean().item()
+    hidden_weights = [layer.weight.detach().cpu().numpy() for layer in model.hidden_layers]
     return {
         "train_acc": train_acc,
         "test_acc": test_acc,
-        "w1": model.w1.weight.detach().cpu().numpy(),
-        "w2": model.w2.weight.detach().cpu().numpy(),
-        "w3": model.w3.weight.detach().cpu().numpy(),
+        "hidden_weights": hidden_weights,
+        "out_weight": model.out.weight.detach().cpu().numpy(),
     }
 
 
@@ -477,13 +486,14 @@ def run_ffn_experiments(
             y_test,
             params.m1,
             params.m2,
+            config["snn_depth"],
             params.beta,
             config["lr"],
             config["epochs"],
         )
-        print(f"[FFN:{name}] STE weights w1={ste_metrics['w1']}")
-        print(f"[FFN:{name}] STE weights w2={ste_metrics['w2']}")
-        print(f"[FFN:{name}] STE weights w3={ste_metrics['w3']}")
+        for layer_idx, layer_weights in enumerate(ste_metrics["hidden_weights"]):
+            print(f"[FFN:{name}] STE weights hidden_{layer_idx + 1}={layer_weights}")
+        print(f"[FFN:{name}] STE weights out={ste_metrics['out_weight']}")
         arr_samples = max(config["arr_samples"], params.m1 * 4)
         d2_train, spec = build_ffn_arrangements(
             x_train_tilde,
@@ -587,6 +597,7 @@ def main() -> None:
     parser.add_argument("--debug", action="store_true")
     parser.add_argument("--solver", type=str, default="SCS")
     parser.add_argument("--seed", type=int, default=0)
+    parser.add_argument("--snn-depth", type=int, default=2)
     args = parser.parse_args()
 
     set_seed(args.seed)
@@ -602,9 +613,10 @@ def main() -> None:
         "lr": 1e-2,
         "solver": args.solver,
         "n_test": 200 if args.debug else 3000,
-        "ffn_plot_path": f"/Users/hima_3114/Desktop/Paper_1/experiments/ffn_accuracies_{run_id}.png",
-        "rnn_plot_path": f"/Users/hima_3114/Desktop/Paper_1/experiments/rnn_accuracies_{run_id}.png",
-        "summary_path": "/Users/hima_3114/Desktop/Paper_1/experiments/summary_results.txt",
+        "snn_depth": args.snn_depth,
+        "ffn_plot_path": f"ffn_accuracies_{run_id}.png",
+        "rnn_plot_path": f"rnn_accuracies_{run_id}.png",
+        "summary_path": "summary_results.txt",
         "append_summary": True,
     }
     summary_path = Path(config["summary_path"])
@@ -614,7 +626,7 @@ def main() -> None:
             summary_path.write_text(existing + "\n")
     append_summary(
         config["summary_path"],
-        f"RUN {Path(__file__).name} | mode={args.mode} | time={run_ts}",
+        f"RUN {Path(__file__).name} | mode={args.mode} | snn_depth={args.snn_depth} | time={run_ts}",
     )
 
     for params in params_grid:

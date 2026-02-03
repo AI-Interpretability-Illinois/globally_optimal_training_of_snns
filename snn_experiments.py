@@ -2,7 +2,7 @@ import argparse
 import time
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Dict, List, Tuple
+from typing import Dict, List, Tuple, Optional
 import itertools
 
 import cvxpy as cp
@@ -84,7 +84,7 @@ def sample_hyperplane_arrangements(
     z: np.ndarray,
     num_samples: int,
     seed: int,
-) -> np.ndarray:
+) -> Tuple[np.ndarray, np.ndarray]:
     rng = np.random.default_rng(seed)
     n, p = z.shape
     u = rng.normal(size=(p, num_samples)).astype(np.float32)
@@ -93,10 +93,12 @@ def sample_hyperplane_arrangements(
     for idx in range(patterns.shape[1]):
         key = tuple(patterns[:, idx].tolist())
         if key not in uniq:
-            uniq[key] = patterns[:, idx].astype(np.float32)
+            uniq[key] = u[:, idx]
     if not uniq:
         raise ValueError("A_SNN sampling produced no spike patterns from input.")
-    return np.stack(list(uniq.values()), axis=1)
+    d = np.stack(list(uniq.keys()), axis=1).astype(np.float32)
+    u_unique = np.stack(list(uniq.values()), axis=1).astype(np.float32)
+    return d, u_unique
 
 
 def a_snn_operator(
@@ -117,7 +119,7 @@ def a_snn_operator(
     n, p = z.shape
 
     if sampled:
-        return sample_hyperplane_arrangements(z, num_samples, seed)
+        raise ValueError("Sampled A_SNN should be handled by a_snn_operator_sampled.")
 
     # Degenerate: no features
     if p == 0:
@@ -163,6 +165,14 @@ def a_snn_operator(
     return np.stack(list(uniq.values()), axis=1)
 
 
+def a_snn_operator_sampled(
+    z: np.ndarray,
+    num_samples: int,
+    seed: int,
+) -> Tuple[np.ndarray, np.ndarray]:
+    return sample_hyperplane_arrangements(z, num_samples, seed)
+
+
 def a_snn_from_blocks(
     block1: np.ndarray,
     block2: np.ndarray,
@@ -188,51 +198,150 @@ def a_snn_from_blocks(
     return a_snn_operator(z, sampled, num_samples, seed)
 
 
+def a_snn_from_blocks_sampled(
+    block1: np.ndarray,
+    block2: np.ndarray,
+    op: str,
+    bias: np.ndarray,
+    num_samples: int,
+    seed: int,
+) -> Tuple[np.ndarray, np.ndarray]:
+    if op not in {"+", "-"}:
+        raise ValueError(f"Unsupported op '{op}', expected '+' or '-'.")
+    sign = 1.0 if op == "+" else -1.0
+    z = np.concatenate([block1, sign * block2, bias], axis=1)
+    return a_snn_operator_sampled(z, num_samples, seed)
+
+
+@dataclass
+class SNNArrangementSpec:
+    u_t1: List[np.ndarray]
+    u_t2: List[np.ndarray]
+
+
 def build_snn_arrangements(
     x1: np.ndarray,
     x2: np.ndarray,
     seed: int,
     num_samples: int,
     sampled: bool,
-) -> Dict[str, np.ndarray]:
+    depth: int,
+) -> Tuple[Dict[str, np.ndarray], Optional[SNNArrangementSpec]]:
     """
-    HyperplaneArrangementSNN for a 3-layer, T=2 SNN toy model.
+    HyperplaneArrangementSNN for a depth-L, T=2 SNN toy model.
 
     n: number of samples
     x1: X^1 ∈ R^{n×d}
     x2: X^2 ∈ R^{n×d}
 
     Returns:
-      D11 ≈ D^{(1,1)}, D12 ≈ D^{(1,2)},
-      D21 ≈ D^{(2,1)}, D22 ≈ D^{(2,2)}.
+      D_t1, D_t2: lists of patterns for each layer at t=1 and t=2.
+      D_last: patterns for the last layer at t=2.
+      If depth >= 2, also exposes D11/D12/D21/D22 for reconstruction.
     """
+    if depth < 1:
+        raise ValueError("SNN depth must be >= 1.")
     n = x1.shape[0]
 
     # U^1[0] and U^2[0] are taken as 0 here (no pre-input membrane),
     # S[0] = 0, consistent with the theoretical setup.
-    x0 = np.zeros((n, 1), dtype=np.float32)  # acts as "U2[0]" placeholder
-    h0 = np.zeros((n, 1), dtype=np.float32)  # acts as "U1[0]" placeholder
+    zero_block = np.zeros((n, 1), dtype=np.float32)  # acts as "U[0]" placeholder
 
     ones = np.ones((n, 1), dtype=np.float32)
 
-    # D(1,1) = A_SNN([X1, +U1[0], 1])  with U1[0] = 0
-    d11 = a_snn_from_blocks(x1, h0, "+", ones, sampled, num_samples, seed + 1)
+    d_t1_list = []
+    d_t2_list = []
+    u_t1_list = []
+    u_t2_list = []
 
-    # D(1,2) = A_SNN([X2, -S1[1], 1])  with S1[1] patterns coming from D(1,1)
-    d12 = a_snn_from_blocks(x2, d11, "-", ones, sampled, num_samples, seed + 2)
+    for layer_idx in range(depth):
+        if layer_idx == 0:
+            block1_t1 = x1
+            block1_t2 = x2
+        else:
+            block1_t1 = d_t1_list[layer_idx - 1]
+            block1_t2 = d_t2_list[layer_idx - 1]
 
-    # D(2,1) = A_SNN([D(1,1), +U2[0], 1])  with U2[0] = 0
-    d21 = a_snn_from_blocks(d11, x0, "+", ones, sampled, num_samples, seed + 3)
+        if sampled:
+            d1, u1 = a_snn_from_blocks_sampled(
+                block1_t1, zero_block, "+", ones, num_samples, seed + 1 + 2 * layer_idx
+            )
+            d2, u2 = a_snn_from_blocks_sampled(
+                block1_t2, d1, "-", ones, num_samples, seed + 2 + 2 * layer_idx
+            )
+            u_t1_list.append(u1)
+            u_t2_list.append(u2)
+        else:
+            d1 = a_snn_from_blocks(
+                block1_t1, zero_block, "+", ones, sampled, num_samples, seed + 1 + 2 * layer_idx
+            )
+            d2 = a_snn_from_blocks(
+                block1_t2, d1, "-", ones, sampled, num_samples, seed + 2 + 2 * layer_idx
+            )
+        d_t1_list.append(d1.astype(np.float32))
+        d_t2_list.append(d2.astype(np.float32))
 
-    # D(2,2) = A_SNN([D(1,2), -S2[1], 1])  with S2[1] patterns coming from D(2,1)
-    d22 = a_snn_from_blocks(d12, d21, "-", ones, sampled, num_samples, seed + 4)
+    if sampled:
+        spec = SNNArrangementSpec(u_t1=u_t1_list, u_t2=u_t2_list)
+    else:
+        spec = None
 
-    return {
-        "D11": d11.astype(np.float32),
-        "D12": d12.astype(np.float32),
-        "D21": d21.astype(np.float32),
-        "D22": d22.astype(np.float32),
+    d_last = d_t2_list[-1]
+    result = {
+        "D_t1": d_t1_list,
+        "D_t2": d_t2_list,
+        "D_last": d_last,
     }
+    if depth >= 2:
+        result["D11"] = d_t1_list[0]
+        result["D12"] = d_t2_list[0]
+        result["D21"] = d_t1_list[1]
+        result["D22"] = d_t2_list[1]
+
+    return result, spec
+
+
+def transform_snn_arrangements(
+    x1: np.ndarray,
+    x2: np.ndarray,
+    spec: SNNArrangementSpec,
+    depth: int,
+) -> Dict[str, np.ndarray]:
+    if depth < 1:
+        raise ValueError("SNN depth must be >= 1.")
+    n = x1.shape[0]
+    zero_block = np.zeros((n, 1), dtype=np.float32)
+    ones = np.ones((n, 1), dtype=np.float32)
+
+    d_t1_list = []
+    d_t2_list = []
+    for layer_idx in range(depth):
+        if layer_idx == 0:
+            block1_t1 = x1
+            block1_t2 = x2
+        else:
+            block1_t1 = d_t1_list[layer_idx - 1]
+            block1_t2 = d_t2_list[layer_idx - 1]
+
+        d1_input = np.concatenate([block1_t1, zero_block, ones], axis=1)
+        d1 = (d1_input @ spec.u_t1[layer_idx] >= 0).astype(np.float32)
+        d2_input = np.concatenate([block1_t2, -d1, ones], axis=1)
+        d2 = (d2_input @ spec.u_t2[layer_idx] >= 0).astype(np.float32)
+        d_t1_list.append(d1)
+        d_t2_list.append(d2)
+
+    d_last = d_t2_list[-1]
+    result = {
+        "D_t1": d_t1_list,
+        "D_t2": d_t2_list,
+        "D_last": d_last,
+    }
+    if depth >= 2:
+        result["D11"] = d_t1_list[0]
+        result["D12"] = d_t2_list[0]
+        result["D21"] = d_t1_list[1]
+        result["D22"] = d_t2_list[1]
+    return result
 
 
 def solve_primal_convex_snn(d22: np.ndarray, y: np.ndarray, beta: float, m2: int, solver: str) -> Dict[str, float]:
@@ -269,61 +378,72 @@ def train_leaky_snn(
     y: np.ndarray,
     m1: int,
     m2: int,
+    depth: int,
     lr: float,
     epochs: int,
 ) -> Dict[str, float]:
     # Algorithm 5: TrainLeakySnnTorch (snnTorch Leaky neuron)
-    fc1 = nn.Linear(x1.shape[1], m1, bias=False)
-    lif1 = snn.Leaky(beta=0.9)
-    fc2 = nn.Linear(m1, m2, bias=False)
-    lif2 = snn.Leaky(beta=0.9)
-    fc3 = nn.Linear(m2, 1, bias=False)
-    params = list(fc1.parameters()) + list(fc2.parameters()) + list(fc3.parameters())
+    if depth < 1:
+        raise ValueError("SNN depth must be >= 1.")
+    hidden_dims = [m1] + [m2] * (depth - 1)
+    fc_layers = []
+    lif_layers = []
+    in_dim = x1.shape[1]
+    for hidden_dim in hidden_dims:
+        fc_layers.append(nn.Linear(in_dim, hidden_dim, bias=False))
+        lif_layers.append(snn.Leaky(beta=0.9))
+        in_dim = hidden_dim
+    fc_out = nn.Linear(in_dim, 1, bias=False)
+    params = [p for fc in fc_layers for p in fc.parameters()] + list(fc_out.parameters())
     optimizer = torch.optim.Adam(params, lr=lr)
     x1_t = torch.from_numpy(x1)
     x2_t = torch.from_numpy(x2)
     y_t = torch.from_numpy(y)
     for _ in range(epochs):
         optimizer.zero_grad()
-        mem1 = lif1.init_leaky()
-        mem2 = lif2.init_leaky()
-        cur1 = fc1(x1_t)
-        spk1, mem1 = lif1(cur1, mem1)
-        cur2 = fc2(spk1)
-        spk2, mem2 = lif2(cur2, mem2)
-
-        cur1 = fc1(x2_t)
-        spk1, mem1 = lif1(cur1, mem1)
-        cur2 = fc2(spk1)
-        spk2, mem2 = lif2(cur2, mem2)
-        logits = fc3(spk2).squeeze(-1)
+        mems = [lif.init_leaky() for lif in lif_layers]
+        h = x1_t
+        for idx, (fc, lif) in enumerate(zip(fc_layers, lif_layers)):
+            cur = fc(h)
+            h, mems[idx] = lif(cur, mems[idx])
+        h = x2_t
+        for idx, (fc, lif) in enumerate(zip(fc_layers, lif_layers)):
+            cur = fc(h)
+            h, mems[idx] = lif(cur, mems[idx])
+        logits = fc_out(h).squeeze(-1)
         loss = torch.mean((logits - y_t) ** 2)
         loss.backward()
         optimizer.step()
     with torch.no_grad():
-        mem1 = lif1.init_leaky()
-        mem2 = lif2.init_leaky()
-        spk1, mem1 = lif1(fc1(x1_t), mem1)
-        spk2, mem2 = lif2(fc2(spk1), mem2)
-        spk1, mem1 = lif1(fc1(x2_t), mem1)
-        spk2, mem2 = lif2(fc2(spk1), mem2)
-        preds = fc3(spk2).squeeze(-1).sign()
+        mems = [lif.init_leaky() for lif in lif_layers]
+        h = x1_t
+        for idx, (fc, lif) in enumerate(zip(fc_layers, lif_layers)):
+            h, mems[idx] = lif(fc(h), mems[idx])
+        h = x2_t
+        for idx, (fc, lif) in enumerate(zip(fc_layers, lif_layers)):
+            h, mems[idx] = lif(fc(h), mems[idx])
+        preds = fc_out(h).squeeze(-1).sign()
     acc = float((preds == y_t).float().mean().item())
-    return {"acc": acc, "layers": (fc1, lif1, fc2, lif2, fc3)}
+    return {"acc": acc, "layers": (fc_layers, lif_layers, fc_out)}
 
 
-def eval_leaky_snn(layers: Tuple[nn.Linear, snn.Leaky, nn.Linear, snn.Leaky, nn.Linear], x1: np.ndarray, x2: np.ndarray) -> np.ndarray:
-    fc1, lif1, fc2, lif2, fc3 = layers
+def eval_leaky_snn(
+    layers: Tuple[List[nn.Linear], List[snn.Leaky], nn.Linear],
+    x1: np.ndarray,
+    x2: np.ndarray,
+) -> np.ndarray:
+    fc_layers, lif_layers, fc_out = layers
     x1_t = torch.from_numpy(x1)
     x2_t = torch.from_numpy(x2)
     with torch.no_grad():
-        mem1 = lif1.init_leaky()
-        mem2 = lif2.init_leaky()
-        spk1, mem1 = lif1(fc1(x1_t), mem1)
-        spk2, mem2 = lif2(fc2(spk1), mem2)
-        spk1, mem1 = lif1(fc1(x2_t), mem1)
-        spk2, mem2 = lif2(fc2(spk1), mem2)
-        preds = fc3(spk2).squeeze(-1).sign().numpy()
+        mems = [lif.init_leaky() for lif in lif_layers]
+        h = x1_t
+        for idx, (fc, lif) in enumerate(zip(fc_layers, lif_layers)):
+            h, mems[idx] = lif(fc(h), mems[idx])
+        h = x2_t
+        for idx, (fc, lif) in enumerate(zip(fc_layers, lif_layers)):
+            h, mems[idx] = lif(fc(h), mems[idx])
+        preds = fc_out(h).squeeze(-1).sign().numpy()
     return preds
 
 
@@ -460,6 +580,8 @@ def run_snn_pipeline(
 ) -> None:
     zero_gap_tol = 1e-4
     summary_path = config["summary_path"]
+    if config["snn_depth"] != 2:
+        print("[SNN] NOTE: Reconstruction is only implemented for depth=2.")
     for name, (x1, x2, y) in datasets.items():
         h_repr = create_representation_weights(x1.shape[1], params.m_repr, config["seed"] + 11)
         x1_train = x1[: params.n]
@@ -474,59 +596,73 @@ def run_snn_pipeline(
         x2_test_tilde = apply_representation(x2_test, h_repr)
 
         arr_samples = config["arr_samples"]
-        d_arr = build_snn_arrangements(
+        d_arr, d_spec = build_snn_arrangements(
             x1_train_tilde,
             x2_train_tilde,
             config["seed"],
             arr_samples,
             config["sampled_arrangements"],
+            config["snn_depth"],
         )
-        d22 = d_arr["D22"]
-        primal = solve_primal_convex_snn(d22, y_train, params.beta, params.m2, config["solver"])
-        dual = solve_dual_convex_snn(d22, y_train, params.beta, params.m2, config["solver"])
+        d_last = d_arr["D_last"]
+        m_last = params.m1 if config["snn_depth"] == 1 else params.m2
+        primal = solve_primal_convex_snn(d_last, y_train, params.beta, m_last, config["solver"])
+        dual = solve_dual_convex_snn(d_last, y_train, params.beta, m_last, config["solver"])
+        if d_spec is not None:
+            d_arr_test = transform_snn_arrangements(x1_test_tilde, x2_test_tilde, d_spec, config["snn_depth"])
+            d_last_test = d_arr_test["D_last"]
+        else:
+            d_last_test = None
         gap = primal["primal"] - dual["dual"]
         is_zero_gap = abs(gap) <= zero_gap_tol
         if config["sampled_arrangements"]:
             print(
-                f"[SNN:{name}] D11 columns={d_arr['D11'].shape[1]} m1={params.m1} "
-                f"D22 columns={d_arr['D22'].shape[1]} m2={params.m2}"
+                f"[SNN:{name}] D1(t1) columns={d_arr['D_t1'][0].shape[1]} m1={params.m1} "
+                f"D_last columns={d_last.shape[1]} m_last={m_last}"
             )
-        m1_eff = min(params.m1, d_arr["D11"].shape[1], d_arr["D12"].shape[1])
+        m1_eff = min(params.m1, d_arr["D_t1"][0].shape[1], d_arr["D_t2"][0].shape[1])
         if m1_eff < params.m1:
-            print(f"[SNN:{name}] Reducing m1 from {params.m1} to {m1_eff} due to D11 size.")
+            print(f"[SNN:{name}] Reducing m1 from {params.m1} to {m1_eff} due to D1 size.")
         active_idx = np.where(np.abs(primal["w"]) > 1e-8)[0]
         active_hyperplanes = int(active_idx.size)
         if active_hyperplanes == 0:
             active_mean = 0.0
         else:
-            active_mean = float(d22[:, active_idx].sum(axis=1).mean())
-        convex_train_acc = float(np.mean(np.sign(d22 @ primal["w"]) == y_train))
+            active_mean = float(d_last[:, active_idx].sum(axis=1).mean())
+        convex_train_acc = float(np.mean(np.sign(d_last @ primal["w"]) == y_train))
+        if d_last_test is None:
+            convex_test_acc = None
+        else:
+            convex_test_acc = float(np.mean(np.sign(d_last_test @ primal["w"]) == y_test))
 
-        h1_1, h1_2, h2_1, h2_2 = select_activation_patterns(
-            d_arr["D11"],
-            d_arr["D12"],
-            d_arr["D21"],
-            d_arr["D22"],
-            primal["w"],
-            m1_eff,
-            params.m2,
-            config["allow_pattern_repeats"],
-        )
-        P1, P2_in, P2_rec = reconstruct_weights(
-            x1_train_tilde,
-            x2_train_tilde,
-            h1_1,
-            h1_2,
-            h2_1,
-            h2_2,
-            config["svm_C"],
-            config["solver"],
-        )
-        h2_train_hat = forward_reconstructed(x1_train_tilde, x2_train_tilde, P1, P2_in, P2_rec)
-        h2_test_hat = forward_reconstructed(x1_test_tilde, x2_test_tilde, P1, P2_in, P2_rec)
-        v, *_ = np.linalg.lstsq(h2_train_hat, y_train, rcond=None)
-        recon_test_preds = np.sign(h2_test_hat @ v)
-        recon_test_acc = float(np.mean(recon_test_preds == y_test))
+        if config["snn_depth"] == 2:
+            h1_1, h1_2, h2_1, h2_2 = select_activation_patterns(
+                d_arr["D11"],
+                d_arr["D12"],
+                d_arr["D21"],
+                d_arr["D22"],
+                primal["w"],
+                m1_eff,
+                params.m2,
+                config["allow_pattern_repeats"],
+            )
+            P1, P2_in, P2_rec = reconstruct_weights(
+                x1_train_tilde,
+                x2_train_tilde,
+                h1_1,
+                h1_2,
+                h2_1,
+                h2_2,
+                config["svm_C"],
+                config["solver"],
+            )
+            h2_train_hat = forward_reconstructed(x1_train_tilde, x2_train_tilde, P1, P2_in, P2_rec)
+            h2_test_hat = forward_reconstructed(x1_test_tilde, x2_test_tilde, P1, P2_in, P2_rec)
+            v, *_ = np.linalg.lstsq(h2_train_hat, y_train, rcond=None)
+            recon_test_preds = np.sign(h2_test_hat @ v)
+            recon_test_acc = float(np.mean(recon_test_preds == y_test))
+        else:
+            recon_test_acc = None
 
         lif = train_leaky_snn(
             x1_train_tilde,
@@ -534,16 +670,26 @@ def run_snn_pipeline(
             y_train,
             m1_eff,
             params.m2,
+            config["snn_depth"],
             config["lr"],
             config["epochs"],
         )
         lif_test_preds = eval_leaky_snn(lif["layers"], x1_test_tilde, x2_test_tilde)
         lif_test_acc = float(np.mean(lif_test_preds == y_test))
+        if convex_test_acc is None:
+            print(f"[SNN:{name}] Test acc convex=n/a surrogate={lif_test_acc:.3f}")
+        else:
+            print(
+                f"[SNN:{name}] Test acc convex={convex_test_acc:.3f} "
+                f"surrogate={lif_test_acc:.3f}"
+            )
 
+        convex_test_label = "n/a" if convex_test_acc is None else f"{convex_test_acc:.3f}"
+        recon_test_label = "n/a" if recon_test_acc is None else f"{recon_test_acc:.3f}"
         append_summary(
             summary_path,
-            f"SNN:{name} | Convex train={convex_train_acc:.3f} | "
-            f"Reconstructed test={recon_test_acc:.3f} | "
+            f"SNN:{name} | Convex train={convex_train_acc:.3f} test={convex_test_label} | "
+            f"Reconstructed test={recon_test_label} | "
             f"LIF train={lif['acc']:.3f} test={lif_test_acc:.3f} | "
             f"m1_eff={m1_eff} | "
             f"Active hyperplanes={active_hyperplanes} mean_active={active_mean:.3f} | "
@@ -564,6 +710,7 @@ def main() -> None:
     parser.add_argument("--seed", type=int, default=0)
     parser.add_argument("--allow_pattern_repeats", action="store_true")
     parser.add_argument("--sampled_arrangements", action="store_true")
+    parser.add_argument("--snn-depth", type=int, default=2)
     args = parser.parse_args()
 
     set_seed(args.seed)
@@ -578,10 +725,11 @@ def main() -> None:
         "solver": args.solver,
         "n_total": 200 if args.debug else 3000,
         "svm_C": 1000.0,
-        "summary_path": "/Users/hima_3114/Desktop/Paper_1/experiments/summary_results_snn.txt",
+        "summary_path": "summary_results_snn.txt",
         "allow_pattern_repeats": args.allow_pattern_repeats,
         "sampled_arrangements": args.sampled_arrangements,
         "arr_samples": 200 if args.debug else 2000,
+        "snn_depth": args.snn_depth,
     }
     summary_path = Path(config["summary_path"])
     if summary_path.exists():
@@ -592,7 +740,7 @@ def main() -> None:
         summary_path.write_text("")
     append_summary(
         config["summary_path"],
-        f"RUN {Path(__file__).name} | mode={mode} | time={run_ts}",
+        f"RUN {Path(__file__).name} | mode={mode} | snn_depth={args.snn_depth} | time={run_ts}",
     )
 
     for params in params_grid:

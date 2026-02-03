@@ -59,3 +59,47 @@ SNN:rotated_mnist | Convex train=1.000 | Reconstructed test=0.595 | LIF train=1.
 SNN:two_step_xor | Convex train=1.000 | Reconstructed test=1.000 | LIF train=0.940 test=0.955 | m1_eff=16 | Active hyperplanes=141 mean_active=71.960 | Primal=0.000426 Dual=0.000426 Gap=0.000000 zero_gap=True
 SNN:moving_gaussian | Convex train=1.000 | Reconstructed test=0.775 | LIF train=0.970 test=0.940 | m1_eff=175 | Active hyperplanes=182 mean_active=95.170 | Primal=0.001808 Dual=0.001808 Gap=0.000000 zero_gap=True
 SNN:rotated_mnist | Convex train=1.000 | Reconstructed test=0.565 | LIF train=1.000 test=0.775 | m1_eff=183 | Active hyperplanes=178 mean_active=88.620 | Primal=0.002922 Dual=0.002922 Gap=0.000000 zero_gap=True
+
+RUN snn_experiments.py | mode=full | snn_depth=10 | time=1769467705
+
+RUN snn_experiments.py | mode=full | snn_depth=10 | time=1769467732
+SNN:two_step_xor | Convex train=1.000 | Reconstructed test=0.877 | LIF train=0.000 test=0.000 | m1_eff=16 | Active hyperplanes=770 mean_active=383.300 | Primal=0.000422 Dual=0.000422 Gap=0.000000 zero_gap=True
+SNN:moving_gaussian | Convex train=1.000 | Reconstructed test=0.867 | LIF train=0.000 test=0.000 | m1_eff=922 | Active hyperplanes=1409 mean_active=702.800 | Primal=0.000399 Dual=0.000398 Gap=0.000001 zero_gap=True
+
+RUN snn_experiments.py | mode=full | snn_depth=5 | time=1769469104
+SNN:two_step_xor | Convex train=1.000 | Reconstructed test=0.877 | LIF train=0.950 test=0.942 | m1_eff=16 | Active hyperplanes=770 mean_active=383.300 | Primal=0.000422 Dual=0.000422 Gap=0.000000 zero_gap=True
+
+RUN snn_experiments.py | mode=full | snn_depth=3 | time=1769469193
+
+RUN snn_experiments.py | mode=full | snn_depth=5 | time=1769469278
+
+RUN snn_experiments.py | mode=full | snn_depth=5 | time=1769469319
+SNN:two_step_xor | Convex train=1.000 test=0.877 | Reconstructed test=0.877 | LIF train=0.950 test=0.942 | m1_eff=16 | Active hyperplanes=770 mean_active=383.300 | Primal=0.000422 Dual=0.000422 Gap=0.000000 zero_gap=True
+
+RUN snn_experiments.py | mode=full | snn_depth=7 | time=1769469367
+SNN:two_step_xor | Convex train=1.000 test=0.877 | Reconstructed test=0.877 | LIF train=0.600 test=0.620 | m1_eff=16 | Active hyperplanes=770 mean_active=383.300 | Primal=0.000422 Dual=0.000422 Gap=0.000000 zero_gap=True
+
+RUN snn_experiments.py | mode=full | snn_depth=10 | time=1769469418
+SNN:two_step_xor | Convex train=1.000 test=0.877 | Reconstructed test=0.877 | LIF train=0.000 test=0.000 | m1_eff=16 | Active hyperplanes=770 mean_active=383.300 | Primal=0.000422 Dual=0.000422 Gap=0.000000 zero_gap=True
+
+RUN snn_experiments.py | mode=full | snn_depth=5 | time=1769469625
+SNN:two_step_xor | Convex train=1.000 test=0.877 | Reconstructed test=0.877 | LIF train=0.950 test=0.942 | m1_eff=16 | Active hyperplanes=770 mean_active=383.300 | Primal=0.000422 Dual=0.000422 Gap=0.000000 zero_gap=True
+
+RUN snn_experiments.py | mode=full | snn_depth=5 | time=1769469843
+SNN:two_step_xor | Convex train=1.000 test=0.816 | Reconstructed test=n/a | LIF train=0.950 test=0.942 | m1_eff=16 | Active hyperplanes=966 mean_active=479.950 | Primal=0.000395 Dual=0.000395 Gap=0.000000 zero_gap=True
+SNN:moving_gaussian | Convex train=1.000 test=0.690 | Reconstructed test=n/a | LIF train=1.000 test=0.930 | m1_eff=922 | Active hyperplanes=1441 mean_active=709.350 | Primal=0.000519 Dual=0.000518 Gap=0.000001 zero_gap=True
+SNN:rotated_mnist | Convex train=1.000 test=0.512 | Reconstructed test=n/a | LIF train=1.000 test=0.675 | m1_eff=1000 | Active hyperplanes=1424 mean_active=715.450 | Primal=0.000594 Dual=0.000593 Gap=0.000001 zero_gap=True
+
+RUN snn_experiments.py | mode=full | snn_depth=8 | time=1769469860
+SNN:two_step_xor | Convex train=1.000 test=0.877 | Reconstructed test=n/a | LIF train=0.400 test=0.380 | m1_eff=16 | Active hyperplanes=1012 mean_active=499.200 | Primal=0.000396 Dual=0.000395 Gap=0.000001 zero_gap=True
+
+RUN snn_experiments.py | mode=full | snn_depth=8 | time=1770094021
+SNN:two_step_xor | Convex train=1.000 test=0.877 | Reconstructed test=n/a | LIF train=0.400 test=0.380 | m1_eff=16 | Active hyperplanes=1012 mean_active=499.200 | Primal=0.000396 Dual=0.000395 Gap=0.000001 zero_gap=True
+SNN:moving_gaussian | Convex train=1.000 test=0.505 | Reconstructed test=n/a | LIF train=0.950 test=0.851 | m1_eff=922 | Active hyperplanes=1403 mean_active=698.900 | Primal=0.000578 Dual=0.000577 Gap=0.000001 zero_gap=True
+SNN:rotated_mnist | Convex train=1.000 test=0.484 | Reconstructed test=n/a | LIF train=0.550 test=0.481 | m1_eff=1000 | Active hyperplanes=1404 mean_active=704.900 | Primal=0.000607 Dual=0.000606 Gap=0.000001 zero_gap=True
+SNN:two_step_xor | Convex train=1.000 test=0.874 | Reconstructed test=n/a | LIF train=0.860 test=0.743 | m1_eff=16 | Active hyperplanes=1203 mean_active=609.240 | Primal=0.000342 Dual=0.000341 Gap=0.000001 zero_gap=True
+SNN:moving_gaussian | Convex train=1.000 test=0.535 | Reconstructed test=n/a | LIF train=0.940 test=0.911 | m1_eff=1000 | Active hyperplanes=1620 mean_active=810.380 | Primal=0.000775 Dual=0.000774 Gap=0.000001 zero_gap=True
+SNN:rotated_mnist | Convex train=1.000 test=0.514 | Reconstructed test=n/a | LIF train=0.600 test=0.481 | m1_eff=1000 | Active hyperplanes=1629 mean_active=822.980 | Primal=0.000859 Dual=0.000859 Gap=0.000001 zero_gap=True
+SNN:two_step_xor | Convex train=1.000 test=1.000 | Reconstructed test=n/a | LIF train=0.800 test=0.741 | m1_eff=16 | Active hyperplanes=1317 mean_active=658.390 | Primal=0.000270 Dual=0.000269 Gap=0.000001 zero_gap=True
+SNN:moving_gaussian | Convex train=1.000 test=0.622 | Reconstructed test=n/a | LIF train=0.970 test=0.929 | m1_eff=1000 | Active hyperplanes=1734 mean_active=870.150 | Primal=0.000928 Dual=0.000927 Gap=0.000000 zero_gap=True
+SNN:rotated_mnist | Convex train=1.000 test=0.505 | Reconstructed test=n/a | LIF train=0.570 test=0.481 | m1_eff=1000 | Active hyperplanes=1741 mean_active=883.270 | Primal=0.000962 Dual=0.000962 Gap=0.000000 zero_gap=True
