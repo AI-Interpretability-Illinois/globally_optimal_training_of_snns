@@ -8,7 +8,6 @@ import numpy as np
 import torch
 import torch.nn as nn
 import snntorch as snn
-from snntorch import surrogate
 
 from snn_experiments import a_snn_from_blocks, solve_svm_hyperplane
 
@@ -93,6 +92,64 @@ def generate_moving_gaussian_sequence(
         x_t = rng.normal(size=(n, d)).astype(np.float32) + centers[labels]
         x_list.append(x_t)
     y = labels * 2 - 1
+    return x_list, y.astype(np.float32)
+
+
+def generate_two_step_xor_sequence(
+    n: int,
+    d: int,
+    timesteps: int,
+    seed: int,
+) -> Tuple[List[np.ndarray], np.ndarray]:
+    rng = np.random.default_rng(seed)
+    if d < 2:
+        raise ValueError("two_step_xor requires d >= 2.")
+    x_list = []
+    predicates = []
+    w = np.zeros((d,), dtype=np.float32)
+    w[0] = 1.0
+    w[1] = -1.0
+    for _ in range(timesteps):
+        x_t = rng.integers(0, 2, size=(n, d)).astype(np.float32)
+        x_list.append(x_t)
+        predicates.append((x_t @ w >= 0).astype(np.int32))
+    xor_val = predicates[0]
+    for pred in predicates[1:]:
+        xor_val = np.bitwise_xor(xor_val, pred)
+    y = xor_val * 2 - 1
+    return x_list, y.astype(np.float32)
+
+
+def generate_rotated_mnist_sequence(
+    n: int,
+    timesteps: int,
+    seed: int,
+    angle_step: float = 15.0,
+) -> Tuple[List[np.ndarray], np.ndarray]:
+    from torchvision import datasets, transforms
+
+    rng = np.random.default_rng(seed)
+    transform = transforms.ToTensor()
+    mnist = datasets.MNIST(root="data", train=True, download=True, transform=transform)
+    indices = rng.choice(len(mnist), size=n, replace=False)
+    images = []
+    labels = []
+    for idx in indices:
+        img, label = mnist[idx]
+        images.append(img.squeeze(0).numpy())
+        labels.append(label)
+    base = np.stack(images, axis=0).astype(np.float32)
+    x_list = []
+    for t in range(timesteps):
+        angle = (t + 1) * angle_step
+        rot = transforms.RandomRotation((angle, angle))
+        x_t = np.stack(
+            [rot(torch.tensor(img).unsqueeze(0)).squeeze(0).numpy() for img in base],
+            axis=0,
+        ).astype(np.float32)
+        x_list.append(x_t.reshape(n, -1))
+    y = np.array(labels, dtype=np.int64)
+    y = (y > (y.mean())).astype(np.float32) * 2 - 1
     return x_list, y.astype(np.float32)
 
 
@@ -262,11 +319,11 @@ def train_lif_baseline(
     y_t = torch.from_numpy(y)
 
     fcs = []
-    lifs = []
+    lifs: List[snn.Leaky] = []
     in_dim = x_list[0].shape[1]
     for _ in range(layers):
         fcs.append(nn.Linear(in_dim, width, bias=False))
-        lifs.append(snn.Leaky(beta=0.9, spike_grad=surrogate.fast_sigmoid()))
+        lifs.append(snn.Leaky(beta=0.5))
         in_dim = width
     fc_out = nn.Linear(width, 1, bias=False)
 
@@ -318,6 +375,39 @@ def eval_lif_baseline(
     return preds
 
 
+def parse_timesteps_list(t_list: str) -> List[int]:
+    values = []
+    for item in t_list.split(","):
+        item = item.strip()
+        if not item:
+            continue
+        values.append(int(item))
+    if not values:
+        raise ValueError("timesteps list is empty.")
+    return values
+
+
+def parse_datasets_list(d_list: str) -> List[str]:
+    values = []
+    for item in d_list.split(","):
+        item = item.strip()
+        if not item:
+            continue
+        values.append(item)
+    if not values:
+        raise ValueError("datasets list is empty.")
+    return values
+
+
+def describe_layer_params(layers: int, input_dim: int, width: int) -> str:
+    dims = []
+    in_dim = input_dim
+    for layer_idx in range(1, layers + 1):
+        dims.append(f"L{layer_idx}:{in_dim}->{width}")
+        in_dim = width
+    return " | ".join(dims)
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="Generalized L-layer, T-timestep SNN experiment.")
     parser.add_argument("--seed", type=int, default=0)
@@ -326,105 +416,138 @@ def main() -> None:
     parser.add_argument("--solver", type=str, default="SCS")
     parser.add_argument("--full-arrangements", action="store_true")
     parser.add_argument("--debug", action="store_true")
+    parser.add_argument("--timesteps-list", type=str, default="")
+    parser.add_argument("--datasets", type=str, default="moving_gaussian")
     args = parser.parse_args()
 
     config = build_config(args)
     set_seed(config.seed)
 
-    t0 = time.perf_counter()
-    print("[LT] stage=init")
-    x_list, y = generate_moving_gaussian_sequence(
-        config.n,
-        config.d,
-        config.timesteps,
-        config.seed + 1,
-    )
-    print(f"[LT] stage=data_ready elapsed_s={time.perf_counter() - t0:.2f}")
-    d_map = build_arrangements_lt(
-        x_list,
-        config.layers,
-        config.timesteps,
-        config.seed,
-        config.arr_samples,
-        config.sampled_arrangements,
-    )
-    print(f"[LT] stage=arrangements_done elapsed_s={time.perf_counter() - t0:.2f}")
-    for l in range(1, config.layers + 1):
-        for t in range(1, config.timesteps + 1):
-            d_curr = d_map[(l, t)]
-            print(f"D({l},{t}) shape = {d_curr.shape}")
+    if args.timesteps_list:
+        timesteps_list = parse_timesteps_list(args.timesteps_list)
+    else:
+        timesteps_list = [config.timesteps]
 
-    d_last = d_map[(config.layers, config.timesteps)]
-    print(f"[LT] stage=convex_solve start elapsed_s={time.perf_counter() - t0:.2f}")
-    w_last = solve_convex_lasso(
-        d_last,
-        y,
-        config.beta,
-        config.width,
-        config.solver,
-        config.solver_opts,
-    )
-    print(f"[LT] stage=convex_solve done elapsed_s={time.perf_counter() - t0:.2f}")
-    print(f"[LT] stage=pattern_select start elapsed_s={time.perf_counter() - t0:.2f}")
-    h_map = select_patterns_lt(
-        d_map,
-        w_last,
-        config.layers,
-        config.timesteps,
-        config.width,
-    )
-    print(f"[LT] stage=pattern_select done elapsed_s={time.perf_counter() - t0:.2f}")
-    print(f"[LT] stage=reconstruction start elapsed_s={time.perf_counter() - t0:.2f}")
-    p_in_list, p_rec_list = reconstruct_weights_lt(
-        x_list,
-        h_map,
-        config.layers,
-        config.timesteps,
-        config.width,
-        config.solver,
-        config.solver_opts,
-        C=1000.0,
-    )
-    print(f"[LT] stage=reconstruction done elapsed_s={time.perf_counter() - t0:.2f}")
-    print(f"[LT] stage=forward_recon start elapsed_s={time.perf_counter() - t0:.2f}")
-    h_hat = forward_reconstructed_lt(
-        x_list,
-        p_in_list,
-        p_rec_list,
-        config.layers,
-        config.timesteps,
-        config.width,
-    )
-    print(f"[LT] stage=forward_recon done elapsed_s={time.perf_counter() - t0:.2f}")
-    v = solve_svm_hyperplane(
-        h_hat[(config.layers, config.timesteps)],
-        y,
-        1000.0,
-        config.solver,
-        config.solver_opts,
-    )
-    recon_preds = np.sign(h_hat[(config.layers, config.timesteps)] @ v)
-    recon_acc = float(np.mean(recon_preds == y))
+    datasets = parse_datasets_list(args.datasets)
+    for dataset_name in datasets:
+        for t_steps in timesteps_list:
+            t0 = time.perf_counter()
+            print(f"[LT] stage=init dataset={dataset_name} timesteps={t_steps}")
+            if dataset_name == "two_step_xor":
+                x_list, y = generate_two_step_xor_sequence(
+                    config.n,
+                    2,
+                    t_steps,
+                    config.seed + 1,
+                )
+            elif dataset_name == "moving_gaussian":
+                x_list, y = generate_moving_gaussian_sequence(
+                    config.n,
+                    config.d,
+                    t_steps,
+                    config.seed + 1,
+                )
+            elif dataset_name == "rotated_mnist":
+                x_list, y = generate_rotated_mnist_sequence(
+                    config.n,
+                    t_steps,
+                    config.seed + 1,
+                )
+            else:
+                raise ValueError(f"Unsupported dataset '{dataset_name}'.")
+            input_dim = x_list[0].shape[1]
+            print(
+                "[LT] layer_params "
+                f"layers={config.layers} width={config.width} "
+                f"input_dim={input_dim} lif_beta=0.5"
+            )
+            print(f"[LT] layer_dims {describe_layer_params(config.layers, input_dim, config.width)}")
+        print(f"[LT] stage=data_ready elapsed_s={time.perf_counter() - t0:.2f}")
+        d_map = build_arrangements_lt(
+            x_list,
+            config.layers,
+            t_steps,
+            config.seed,
+            config.arr_samples,
+            config.sampled_arrangements,
+        )
+        print(f"[LT] stage=arrangements_done elapsed_s={time.perf_counter() - t0:.2f}")
+        for l in range(1, config.layers + 1):
+            for t in range(1, t_steps + 1):
+                d_curr = d_map[(l, t)]
+                print(f"D({l},{t}) shape = {d_curr.shape}")
 
-    print(f"[LT] stage=lif_train start elapsed_s={time.perf_counter() - t0:.2f}")
-    lif_train_acc, lif_model = train_lif_baseline(
-        x_list,
-        y,
-        config.layers,
-        config.width,
-        config.lr,
-        config.epochs,
-    )
-    print(f"[LT] stage=lif_train done elapsed_s={time.perf_counter() - t0:.2f}")
-    lif_preds = eval_lif_baseline(lif_model, x_list)
-    lif_acc = float(np.mean(lif_preds == y))
+        d_last = d_map[(config.layers, t_steps)]
+        print(f"[LT] stage=convex_solve start elapsed_s={time.perf_counter() - t0:.2f}")
+        w_last = solve_convex_lasso(
+            d_last,
+            y,
+            config.beta,
+            config.width,
+            config.solver,
+            config.solver_opts,
+        )
+        print(f"[LT] stage=convex_solve done elapsed_s={time.perf_counter() - t0:.2f}")
+        print(f"[LT] stage=pattern_select start elapsed_s={time.perf_counter() - t0:.2f}")
+        h_map = select_patterns_lt(
+            d_map,
+            w_last,
+            config.layers,
+            t_steps,
+            config.width,
+        )
+        print(f"[LT] stage=pattern_select done elapsed_s={time.perf_counter() - t0:.2f}")
+        print(f"[LT] stage=reconstruction start elapsed_s={time.perf_counter() - t0:.2f}")
+        p_in_list, p_rec_list = reconstruct_weights_lt(
+            x_list,
+            h_map,
+            config.layers,
+            t_steps,
+            config.width,
+            config.solver,
+            config.solver_opts,
+            C=1000.0,
+        )
+        print(f"[LT] stage=reconstruction done elapsed_s={time.perf_counter() - t0:.2f}")
+        print(f"[LT] stage=forward_recon start elapsed_s={time.perf_counter() - t0:.2f}")
+        h_hat = forward_reconstructed_lt(
+            x_list,
+            p_in_list,
+            p_rec_list,
+            config.layers,
+            t_steps,
+            config.width,
+        )
+        print(f"[LT] stage=forward_recon done elapsed_s={time.perf_counter() - t0:.2f}")
+        v = solve_svm_hyperplane(
+            h_hat[(config.layers, t_steps)],
+            y,
+            1000.0,
+            config.solver,
+            config.solver_opts,
+        )
+        recon_preds = np.sign(h_hat[(config.layers, t_steps)] @ v)
+        recon_acc = float(np.mean(recon_preds == y))
 
-    print(
-        f"[LT] sampled={config.sampled_arrangements} "
-        f"layers={config.layers} timesteps={config.timesteps} "
-        f"recon_acc={recon_acc:.3f} lif_train_acc={lif_train_acc:.3f} lif_acc={lif_acc:.3f}"
-    )
-    print(f"[LT] stage=done total_elapsed_s={time.perf_counter() - t0:.2f}")
+        print(f"[LT] stage=lif_train start elapsed_s={time.perf_counter() - t0:.2f}")
+        lif_train_acc, lif_model = train_lif_baseline(
+            x_list,
+            y,
+            config.layers,
+            config.width,
+            config.lr,
+            config.epochs,
+        )
+        print(f"[LT] stage=lif_train done elapsed_s={time.perf_counter() - t0:.2f}")
+        lif_preds = eval_lif_baseline(lif_model, x_list)
+        lif_acc = float(np.mean(lif_preds == y))
+
+        print(
+            f"[LT] sampled={config.sampled_arrangements} "
+            f"dataset={dataset_name} layers={config.layers} timesteps={t_steps} "
+            f"recon_acc={recon_acc:.3f} lif_train_acc={lif_train_acc:.3f} lif_acc={lif_acc:.3f}"
+        )
+        print(f"[LT] stage=done total_elapsed_s={time.perf_counter() - t0:.2f}")
 
 
 if __name__ == "__main__":
