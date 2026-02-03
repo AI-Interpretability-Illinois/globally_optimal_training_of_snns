@@ -1,0 +1,37 @@
+/Users/hima_3114/Desktop/Paper_1/experiments/.venv/lib/python3.14/site-packages/cvxpy/problems/problem.py:1539: UserWarning: Solution may be inaccurate. Try another solver, adjusting the solver settings, or solve with verbose=True for more information.
+  warnings.warn(
+[LT] stage=init
+[LT] stage=data_ready elapsed_s=0.00
+[LT] stage=arrangements_done elapsed_s=0.23
+D(1,1) shape = (200, 1000)
+D(1,2) shape = (200, 982)
+D(2,1) shape = (200, 977)
+D(2,2) shape = (200, 935)
+D(3,1) shape = (200, 930)
+D(3,2) shape = (200, 894)
+D(4,1) shape = (200, 921)
+D(4,2) shape = (200, 884)
+D(5,1) shape = (200, 904)
+D(5,2) shape = (200, 885)
+D(6,1) shape = (200, 900)
+D(6,2) shape = (200, 894)
+D(7,1) shape = (200, 876)
+D(7,2) shape = (200, 890)
+D(8,1) shape = (200, 902)
+D(8,2) shape = (200, 881)
+D(9,1) shape = (200, 908)
+D(9,2) shape = (200, 884)
+D(10,1) shape = (200, 896)
+D(10,2) shape = (200, 891)
+[LT] stage=convex_solve start elapsed_s=0.23
+[LT] stage=convex_solve done elapsed_s=49.73
+[LT] stage=pattern_select start elapsed_s=49.73
+[LT] stage=pattern_select done elapsed_s=49.74
+[LT] stage=reconstruction start elapsed_s=49.74
+[LT] stage=reconstruction done elapsed_s=255.08
+[LT] stage=forward_recon start elapsed_s=255.08
+[LT] stage=forward_recon done elapsed_s=255.08
+[LT] stage=lif_train start elapsed_s=255.21
+[LT] stage=lif_train done elapsed_s=257.34
+[LT] sampled=True layers=10 timesteps=2 recon_acc=0.980 lif_train_acc=0.000 lif_acc=0.000
+[LT] stage=done total_elapsed_s=257.34
