@@ -1,0 +1,45 @@
+FFN:parity | STE train=1.000 test=0.491 | Convex train=1.000 test=0.494 | Primal=0.006918 Dual=0.002523 Gap=0.004395 zero_gap=False
+FFN:gaussian | STE train=1.000 test=1.000 | Convex train=1.000 test=1.000 | Primal=0.002280 Dual=0.002000 Gap=0.000280 zero_gap=False
+FFN:ground_truth | STE train=1.000 test=0.508 | Convex train=1.000 test=0.503 | Primal=0.006742 Dual=0.002421 Gap=0.004321 zero_gap=False
+RNN:two_step_xor | STE train=0.900 test=0.812 | Convex train=1.000 test=0.880 | Primal=0.000667 Dual=0.000662 Gap=0.000005 zero_gap=True
+RNN:moving_gaussian | STE train=1.000 test=0.903 | Convex train=1.000 test=0.835 | Primal=0.000528 Dual=0.000520 Gap=0.000009 zero_gap=True
+RNN:rotated_mnist | STE train=1.000 test=0.514 | Convex train=1.000 test=0.557 | Primal=0.000709 Dual=0.000705 Gap=0.000004 zero_gap=True
+FFN:parity | STE train=1.000 test=0.496 | Convex train=1.000 test=0.495 | Primal=0.004618 Dual=0.004160 Gap=0.000458 zero_gap=False
+FFN:gaussian | STE train=1.000 test=0.930 | Convex train=1.000 test=0.875 | Primal=0.003364 Dual=0.002167 Gap=0.001196 zero_gap=False
+FFN:ground_truth | STE train=0.980 test=0.545 | Convex train=1.000 test=0.602 | Primal=0.004591 Dual=0.004179 Gap=0.000412 zero_gap=False
+RNN:two_step_xor | STE train=0.740 test=0.633 | Convex train=1.000 test=1.000 | Primal=0.000487 Dual=0.000471 Gap=0.000015 zero_gap=True
+RNN:moving_gaussian | STE train=0.940 test=0.896 | Convex train=1.000 test=0.924 | Primal=0.000491 Dual=0.000488 Gap=0.000002 zero_gap=True
+RNN:rotated_mnist | STE train=0.940 test=0.668 | Convex train=1.000 test=0.602 | Primal=0.000794 Dual=0.000788 Gap=0.000006 zero_gap=True
+
+NEW RUN Increase the last layer to n + 20 -> returned a positive zero gap.
+
+FFN:parity | STE train=0.850 test=0.510 | Convex train=1.000 test=0.505 | Primal=0.002685 Dual=0.002630 Gap=0.000054 zero_gap=True
+FFN:gaussian | STE train=1.000 test=1.000 | Convex train=1.000 test=0.965 | Primal=0.002007 Dual=0.002000 Gap=0.000007 zero_gap=True
+FFN:ground_truth | STE train=1.000 test=0.530 | Convex train=1.000 test=0.500 | Primal=0.002955 Dual=0.002888 Gap=0.000067 zero_gap=True
+RNN:two_step_xor | STE train=0.800 test=0.745 | Convex train=1.000 test=0.925 | Primal=0.000479 Dual=0.000474 Gap=0.000004 zero_gap=True
+RNN:moving_gaussian | STE train=0.900 test=0.875 | Convex train=1.000 test=0.890 | Primal=0.000555 Dual=0.000549 Gap=0.000006 zero_gap=True
+FFN:parity | STE train=0.640 test=0.455 | Convex train=1.000 test=0.500 | Primal=0.005056 Dual=0.004999 Gap=0.000056 zero_gap=True
+FFN:gaussian | STE train=1.000 test=0.970 | Convex train=1.000 test=0.995 | Primal=0.002757 Dual=0.002707 Gap=0.000050 zero_gap=True
+FFN:ground_truth | STE train=0.980 test=0.585 | Convex train=1.000 test=0.505 | Primal=0.005052 Dual=0.004998 Gap=0.000054 zero_gap=True
+RNN:two_step_xor | STE train=0.940 test=0.805 | Convex train=1.000 test=0.935 | Primal=0.000544 Dual=0.000539 Gap=0.000005 zero_gap=True
+RNN:moving_gaussian | STE train=0.920 test=0.905 | Convex train=1.000 test=0.885 | Primal=0.000765 Dual=0.000769 Gap=-0.000004 zero_gap=True
+FFN:parity | STE train=0.790 test=0.485 | Convex train=1.000 test=0.460 | Primal=0.007894 Dual=0.007841 Gap=0.000053 zero_gap=True
+FFN:gaussian | STE train=0.910 test=0.960 | Convex train=1.000 test=0.995 | Primal=0.003296 Dual=0.003234 Gap=0.000062 zero_gap=True
+FFN:ground_truth | STE train=0.560 test=0.530 | Convex train=1.000 test=0.665 | Primal=0.007197 Dual=0.007139 Gap=0.000059 zero_gap=True
+RNN:two_step_xor | STE train=0.750 test=0.785 | Convex train=1.000 test=1.000 | Primal=0.000448 Dual=0.000452 Gap=-0.000004 zero_gap=True
+RNN:moving_gaussian | STE train=0.950 test=0.865 | Convex train=1.000 test=0.910 | Primal=0.000809 Dual=0.000819 Gap=-0.000010 zero_gap=True
+
+RUN run_experiments.py | mode=all | time=1769431589
+FFN:parity | STE train=1.000 test=0.489 | Convex train=1.000 test=0.487 | Primal=0.003482 Dual=0.002222 Gap=0.001260 zero_gap=False
+FFN:gaussian | STE train=1.000 test=0.999 | Convex train=1.000 test=1.000 | Primal=0.002641 Dual=0.002000 Gap=0.000641 zero_gap=False
+FFN:ground_truth | STE train=1.000 test=0.500 | Convex train=1.000 test=0.525 | Primal=0.365531 Dual=0.002526 Gap=0.363005 zero_gap=False
+RNN:two_step_xor | STE train=0.900 test=0.748 | Convex train=1.000 test=0.880 | Primal=0.000477 Dual=0.000471 Gap=0.000006 zero_gap=True
+RNN:moving_gaussian | STE train=1.000 test=0.905 | Convex train=1.000 test=0.852 | Primal=0.000379 Dual=0.000368 Gap=0.000011 zero_gap=True
+RNN:rotated_mnist | STE train=0.950 test=0.551 | Convex train=1.000 test=0.559 | Primal=0.000506 Dual=0.000502 Gap=0.000004 zero_gap=True
+FFN:parity | STE train=1.000 test=0.505 | Convex train=1.000 test=0.507 | Primal=0.004618 Dual=0.004127 Gap=0.000491 zero_gap=False
+FFN:gaussian | STE train=1.000 test=0.986 | Convex train=1.000 test=1.000 | Primal=0.006942 Dual=0.002341 Gap=0.004601 zero_gap=False
+FFN:ground_truth | STE train=1.000 test=0.497 | Convex train=1.000 test=0.554 | Primal=0.004543 Dual=0.004200 Gap=0.000344 zero_gap=False
+RNN:two_step_xor | STE train=0.880 test=0.818 | Convex train=1.000 test=1.000 | Primal=0.000416 Dual=0.000401 Gap=0.000015 zero_gap=True
+RNN:moving_gaussian | STE train=0.940 test=0.896 | Convex train=1.000 test=0.927 | Primal=0.000414 Dual=0.000413 Gap=0.000001 zero_gap=True
+RNN:rotated_mnist | STE train=0.800 test=0.669 | Convex train=1.000 test=0.606 | Primal=0.000676 Dual=0.000666 Gap=0.000010 zero_gap=True
+FFN:parity | STE train=1.000 test=0.507 | Convex train=1.000 test=0.511 | Primal=0.006818 Dual=0.006324 Gap=0.000494 zero_gap=False
