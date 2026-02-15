@@ -602,9 +602,9 @@ def main() -> None:
         "lr": 1e-2,
         "solver": args.solver,
         "n_test": 200 if args.debug else 3000,
-        "ffn_plot_path": f"/Users/hima_3114/Desktop/Paper_1/experiments/ffn_accuracies_{run_id}.png",
-        "rnn_plot_path": f"/Users/hima_3114/Desktop/Paper_1/experiments/rnn_accuracies_{run_id}.png",
-        "summary_path": "/Users/hima_3114/Desktop/Paper_1/experiments/summary_results.txt",
+        "ffn_plot_path": str(Path(__file__).with_name(f"ffn_accuracies_{run_id}.png")),
+        "rnn_plot_path": str(Path(__file__).with_name(f"rnn_accuracies_{run_id}.png")),
+        "summary_path": str(Path(__file__).with_name("summary_results.txt")),
         "append_summary": True,
     }
     summary_path = Path(config["summary_path"])

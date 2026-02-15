@@ -1,0 +1,195 @@
+RUN snn_generalized_lt.py dataset=moving_gaussian layers=8 timesteps=2 train_ratio=0.8
+layer_params layers=8 width=100 input_dim=20 lif_beta=0.9
+layer_dims L1:20->100 | L2:100->100 | L3:100->100 | L4:100->100 | L5:100->100 | L6:100->100 | L7:100->100 | L8:100->100
+D(1,1) shape = (320, 1000)
+D(1,2) shape = (320, 996)
+D(2,1) shape = (320, 982)
+D(2,2) shape = (320, 954)
+D(3,1) shape = (320, 957)
+D(3,2) shape = (320, 916)
+D(4,1) shape = (320, 922)
+D(4,2) shape = (320, 910)
+D(5,1) shape = (320, 917)
+D(5,2) shape = (320, 897)
+D(6,1) shape = (320, 901)
+D(6,2) shape = (320, 885)
+D(7,1) shape = (320, 891)
+D(7,2) shape = (320, 912)
+D(8,1) shape = (320, 919)
+D(8,2) shape = (320, 905)
+RUN snn_generalized_lt.py dataset=moving_gaussian layers=8 timesteps=2 train_ratio=0.8
+layer_params layers=8 width=100 input_dim=20 lif_beta=0.9
+layer_dims L1:20->100 | L2:100->100 | L3:100->100 | L4:100->100 | L5:100->100 | L6:100->100 | L7:100->100 | L8:100->100
+D(1,1) shape = (320, 1000)
+D(1,2) shape = (320, 996)
+D(2,1) shape = (320, 982)
+D(2,2) shape = (320, 954)
+D(3,1) shape = (320, 957)
+D(3,2) shape = (320, 916)
+D(4,1) shape = (320, 922)
+D(4,2) shape = (320, 910)
+D(5,1) shape = (320, 917)
+D(5,2) shape = (320, 897)
+D(6,1) shape = (320, 901)
+D(6,2) shape = (320, 885)
+D(7,1) shape = (320, 891)
+D(7,2) shape = (320, 912)
+D(8,1) shape = (320, 919)
+D(8,2) shape = (320, 905)
+convex_primal=3.640386e-03 convex_dual=3.640386e-03 duality_gap=0.000000e+00
+convex_train_acc=1.000000
+recon_train_acc=0.800000 recon_test_acc=0.600000 lif_train_acc=0.000000 lif_test_acc=0.000000
+lif_train_acc_plot=snn_generalized_lt_L8_T2_split_0.80_moving_gaussian_lif_train_acc.png
+total_elapsed_s=308.29
+
+RUN snn_generalized_lt.py dataset=rotated_mnist layers=8 timesteps=2 train_ratio=0.8
+layer_params layers=8 width=100 input_dim=784 lif_beta=0.9
+layer_dims L1:784->100 | L2:100->100 | L3:100->100 | L4:100->100 | L5:100->100 | L6:100->100 | L7:100->100 | L8:100->100
+D(1,1) shape = (320, 1000)
+D(1,2) shape = (320, 978)
+D(2,1) shape = (320, 972)
+D(2,2) shape = (320, 938)
+D(3,1) shape = (320, 936)
+D(3,2) shape = (320, 908)
+D(4,1) shape = (320, 908)
+D(4,2) shape = (320, 908)
+D(5,1) shape = (320, 921)
+D(5,2) shape = (320, 896)
+D(6,1) shape = (320, 903)
+D(6,2) shape = (320, 918)
+D(7,1) shape = (320, 909)
+D(7,2) shape = (320, 897)
+D(8,1) shape = (320, 901)
+D(8,2) shape = (320, 900)
+convex_primal=4.256843e-03 convex_dual=4.256822e-03 duality_gap=0.000000e+00
+convex_train_acc=1.000000
+recon_train_acc=0.737500 recon_test_acc=0.475000 lif_train_acc=0.000000 lif_test_acc=0.000000
+lif_train_acc_plot=snn_generalized_lt_L8_T2_split_0.80_rotated_mnist_lif_train_acc.png
+total_elapsed_s=407.95
+
+RUN snn_generalized_lt.py dataset=moving_gaussian layers=8 seed =0 timesteps=2 train_ratio=0.8
+layer_params layers=8 width=100 input_dim=20 lif_beta=0.9
+layer_dims L1:20->100 | L2:100->100 | L3:100->100 | L4:100->100 | L5:100->100 | L6:100->100 | L7:100->100 | L8:100->100
+D(1,1) shape = (320, 1000)
+D(1,2) shape = (320, 996)
+D(2,1) shape = (320, 982)
+D(2,2) shape = (320, 954)
+D(3,1) shape = (320, 957)
+D(3,2) shape = (320, 916)
+D(4,1) shape = (320, 922)
+D(4,2) shape = (320, 910)
+D(5,1) shape = (320, 917)
+D(5,2) shape = (320, 897)
+D(6,1) shape = (320, 901)
+D(6,2) shape = (320, 885)
+D(7,1) shape = (320, 891)
+D(7,2) shape = (320, 912)
+D(8,1) shape = (320, 919)
+D(8,2) shape = (320, 905)
+RUN snn_generalized_lt.py dataset=moving_gaussian layers=8 seed =0 timesteps=2 train_ratio=0.8
+layer_params layers=8 width=100 input_dim=20 lif_beta=0.9
+layer_dims L1:20->100 | L2:100->100 | L3:100->100 | L4:100->100 | L5:100->100 | L6:100->100 | L7:100->100 | L8:100->100
+D(1,1) shape = (320, 1000)
+D(1,2) shape = (320, 996)
+D(2,1) shape = (320, 982)
+D(2,2) shape = (320, 954)
+D(3,1) shape = (320, 957)
+D(3,2) shape = (320, 916)
+D(4,1) shape = (320, 922)
+D(4,2) shape = (320, 910)
+D(5,1) shape = (320, 917)
+D(5,2) shape = (320, 897)
+D(6,1) shape = (320, 901)
+D(6,2) shape = (320, 885)
+D(7,1) shape = (320, 891)
+D(7,2) shape = (320, 912)
+D(8,1) shape = (320, 919)
+D(8,2) shape = (320, 905)
+RUN snn_generalized_lt.py dataset=moving_gaussian layers=8 seed =0 timesteps=2 train_ratio=0.8
+layer_params layers=8 width=100 input_dim=20 lif_beta=0.9
+layer_dims L1:20->100 | L2:100->100 | L3:100->100 | L4:100->100 | L5:100->100 | L6:100->100 | L7:100->100 | L8:100->100
+RUN snn_generalized_lt.py dataset=moving_gaussian layers=8 seed =0 timesteps=2 train_ratio=0.8
+layer_params layers=8 width=100 input_dim=20 lif_beta=0.9
+layer_dims L1:20->100 | L2:100->100 | L3:100->100 | L4:100->100 | L5:100->100 | L6:100->100 | L7:100->100 | L8:100->100
+lif_train_acc=0.000000 lif_test_acc=0.462500
+lif_train_acc_plot=snn_generalized_lt_L8_T2_split_0.80_moving_gaussian_lif_train_acc.png
+total_elapsed_s=3.06
+
+RUN snn_generalized_lt.py dataset=moving_gaussian layers=8 seed =0 timesteps=2 train_ratio=0.8
+layer_params layers=8 width=100 input_dim=20 lif_beta=0.9
+layer_dims L1:20->100 | L2:100->100 | L3:100->100 | L4:100->100 | L5:100->100 | L6:100->100 | L7:100->100 | L8:100->100
+lif_train_acc=0.528125 lif_test_acc=0.537500
+lif_train_acc_plot=snn_generalized_lt_L8_T2_split_0.80_moving_gaussian_lif_train_acc.png
+total_elapsed_s=3.22
+
+RUN snn_generalized_lt.py dataset=moving_gaussian layers=8 seed =0 timesteps=2 train_ratio=0.8
+layer_params layers=8 width=100 input_dim=20 lif_beta=0.9
+layer_dims L1:20->100 | L2:100->100 | L3:100->100 | L4:100->100 | L5:100->100 | L6:100->100 | L7:100->100 | L8:100->100
+lif_train_acc=0.993750 lif_test_acc=0.987500
+lif_train_acc_plot=snn_generalized_lt_L8_T2_split_0.80_moving_gaussian_lif_train_acc.png
+total_elapsed_s=3.66
+
+RUN snn_generalized_lt.py dataset=rotated_mnist layers=8 seed =0 timesteps=2 train_ratio=0.8
+layer_params layers=8 width=100 input_dim=784 lif_beta=0.9
+layer_dims L1:784->100 | L2:100->100 | L3:100->100 | L4:100->100 | L5:100->100 | L6:100->100 | L7:100->100 | L8:100->100
+lif_train_acc=0.556250 lif_test_acc=0.562500
+lif_train_acc_plot=snn_generalized_lt_L8_T2_split_0.80_rotated_mnist_lif_train_acc.png
+total_elapsed_s=4.41
+
+RUN snn_generalized_lt.py dataset=moving_gaussian layers=8 seed =0 timesteps=2 train_ratio=0.8
+layer_params layers=8 width=100 input_dim=20 lif_beta=0.9
+layer_dims L1:20->100 | L2:100->100 | L3:100->100 | L4:100->100 | L5:100->100 | L6:100->100 | L7:100->100 | L8:100->100
+lif_train_acc=0.993750 lif_test_acc=0.987500
+lif_train_acc_plot=snn_generalized_lt_L8_T2_split_0.80_moving_gaussian_lif_train_acc.png
+total_elapsed_s=3.65
+
+RUN snn_generalized_lt.py dataset=moving_gaussian layers=8 seed =0 timesteps=2 train_ratio=0.8
+layer_params layers=8 width=100 input_dim=20 lif_beta=0.9
+layer_dims L1:20->100 | L2:100->100 | L3:100->100 | L4:100->100 | L5:100->100 | L6:100->100 | L7:100->100 | L8:100->100
+D(1,1) shape = (320, 1000)
+D(1,2) shape = (320, 996)
+D(2,1) shape = (320, 982)
+D(2,2) shape = (320, 954)
+D(3,1) shape = (320, 957)
+D(3,2) shape = (320, 916)
+D(4,1) shape = (320, 922)
+D(4,2) shape = (320, 910)
+D(5,1) shape = (320, 917)
+D(5,2) shape = (320, 897)
+D(6,1) shape = (320, 901)
+D(6,2) shape = (320, 885)
+D(7,1) shape = (320, 891)
+D(7,2) shape = (320, 912)
+D(8,1) shape = (320, 919)
+D(8,2) shape = (320, 905)
+convex_primal=3.640386e-03 convex_dual=3.640386e-03 duality_gap=0.000000e+00
+convex_train_acc=1.000000
+recon_train_acc=0.528125 recon_test_acc=0.537500 lif_train_acc=0.993750 lif_test_acc=0.987500
+lif_train_acc_plot=snn_generalized_lt_L8_T2_split_0.80_moving_gaussian_lif_train_acc.png
+total_elapsed_s=149.89
+
+RUN snn_generalized_lt.py dataset=rotated_mnist layers=8 seed =0 timesteps=2 train_ratio=0.8
+layer_params layers=8 width=100 input_dim=784 lif_beta=0.9
+layer_dims L1:784->100 | L2:100->100 | L3:100->100 | L4:100->100 | L5:100->100 | L6:100->100 | L7:100->100 | L8:100->100
+D(1,1) shape = (320, 1000)
+D(1,2) shape = (320, 978)
+D(2,1) shape = (320, 972)
+D(2,2) shape = (320, 938)
+D(3,1) shape = (320, 936)
+D(3,2) shape = (320, 908)
+D(4,1) shape = (320, 908)
+D(4,2) shape = (320, 908)
+D(5,1) shape = (320, 921)
+D(5,2) shape = (320, 896)
+D(6,1) shape = (320, 903)
+D(6,2) shape = (320, 918)
+D(7,1) shape = (320, 909)
+D(7,2) shape = (320, 897)
+D(8,1) shape = (320, 901)
+D(8,2) shape = (320, 900)
+convex_primal=4.256843e-03 convex_dual=4.256822e-03 duality_gap=0.000000e+00
+convex_train_acc=1.000000
+recon_train_acc=0.556250 recon_test_acc=0.562500 lif_train_acc=0.556250 lif_test_acc=0.562500
+lif_train_acc_plot=snn_generalized_lt_L8_T2_split_0.80_rotated_mnist_lif_train_acc.png
+total_elapsed_s=245.62
+

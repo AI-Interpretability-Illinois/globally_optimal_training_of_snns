@@ -409,44 +409,57 @@ def reconstruct_weights(
     C: float,
     solver: str,
     solver_opts: Dict[str, float],
-) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
-    # Algorithm 1: Reconstruction of shared weights from activations.
+) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+    # Reconstruction with P1_rec and P2_rec using the provided timestep equations.
     n = x1.shape[0]
     m1 = h1_1.shape[1]
     m2 = h2_2.shape[1]
-    x_layer1 = np.vstack([x1, x2])
-    P1 = np.zeros((x1.shape[1], m1), dtype=np.float32)
+
+    zeros_rec1 = np.zeros((n, m1 + 1), dtype=np.float32)
+    rec_feat1 = np.hstack([-h1_1, np.ones((n, 1), dtype=np.float32)])
+    x_t1 = np.hstack([x1, zeros_rec1])
+    x_t2 = np.hstack([x2, rec_feat1])
+    x_layer1 = np.vstack([x_t1, x_t2])
+    P1_in = np.zeros((x1.shape[1], m1), dtype=np.float32)
+    P1_rec = np.zeros((m1 + 1, m1), dtype=np.float32)
     for j in range(m1):
         y_stack = np.concatenate([2 * h1_1[:, j] - 1, 2 * h1_2[:, j] - 1])
-        p = solve_svm_hyperplane(x_layer1, y_stack, C, solver, solver_opts)
-        P1[:, j] = p
-    h2_0 = np.zeros((n, m2), dtype=np.float32)
-    x_t1 = np.hstack([h1_1, h2_0])
-    x_t2 = np.hstack([h1_2, h2_1])
-    x_layer2 = np.vstack([x_t1, x_t2])
+        w = solve_svm_hyperplane(x_layer1, y_stack, C, solver, solver_opts)
+        P1_in[:, j] = w[: x1.shape[1]]
+        P1_rec[:, j] = w[x1.shape[1] :]
+
+    zeros_rec2 = np.zeros((n, m2 + 1), dtype=np.float32)
+    rec_feat2 = np.hstack([-h2_1, np.ones((n, 1), dtype=np.float32)])
+    x2_t1 = np.hstack([h1_1, zeros_rec2])
+    x2_t2 = np.hstack([h1_2, rec_feat2])
+    x_layer2 = np.vstack([x2_t1, x2_t2])
     P2_in = np.zeros((m1, m2), dtype=np.float32)
-    P2_rec = np.zeros((m2, m2), dtype=np.float32)
+    P2_rec = np.zeros((m2 + 1, m2), dtype=np.float32)
     for j in range(m2):
         y_stack = np.concatenate([2 * h2_1[:, j] - 1, 2 * h2_2[:, j] - 1])
         w = solve_svm_hyperplane(x_layer2, y_stack, C, solver, solver_opts)
         P2_in[:, j] = w[:m1]
         P2_rec[:, j] = w[m1:]
-    return P1, P2_in, P2_rec
+    return P1_in, P1_rec, P2_in, P2_rec
 
 
 def forward_reconstructed(
     x1: np.ndarray,
     x2: np.ndarray,
-    P1: np.ndarray,
+    P1_in: np.ndarray,
+    P1_rec: np.ndarray,
     P2_in: np.ndarray,
     P2_rec: np.ndarray,
 ) -> np.ndarray:
     # Threshold activations for the reconstructed SNN weights (T=2).
-    h1_1 = (x1 @ P1 >= 0).astype(np.float32)
+    h1_1 = (x1 @ P1_in >= 0).astype(np.float32)
+    h1_rec = np.hstack([-h1_1, np.ones((x1.shape[0], 1), dtype=np.float32)])
+    h1_2 = (x2 @ P1_in + h1_rec @ P1_rec >= 0).astype(np.float32)
+
     h2_0 = np.zeros((x1.shape[0], P2_rec.shape[0]), dtype=np.float32)
     h2_1 = (h1_1 @ P2_in + h2_0 @ P2_rec >= 0).astype(np.float32)
-    h1_2 = (x2 @ P1 >= 0).astype(np.float32)
-    h2_2 = (h1_2 @ P2_in + h2_1 @ P2_rec >= 0).astype(np.float32)
+    h2_rec = np.hstack([-h2_1, np.ones((x1.shape[0], 1), dtype=np.float32)])
+    h2_2 = (h1_2 @ P2_in + h2_rec @ P2_rec >= 0).astype(np.float32)
     return h2_2
 
 
@@ -550,7 +563,7 @@ def run_snn_pipeline(
             params.m2,
             config["allow_pattern_repeats"],
         )
-        P1, P2_in, P2_rec = reconstruct_weights(
+        P1_in, P1_rec, P2_in, P2_rec = reconstruct_weights(
             x1_train_tilde,
             x2_train_tilde,
             h1_1,
@@ -561,8 +574,22 @@ def run_snn_pipeline(
             config["solver"],
             config["solver_opts"],
         )
-        h2_train_hat = forward_reconstructed(x1_train_tilde, x2_train_tilde, P1, P2_in, P2_rec)
-        h2_test_hat = forward_reconstructed(x1_test_tilde, x2_test_tilde, P1, P2_in, P2_rec)
+        h2_train_hat = forward_reconstructed(
+            x1_train_tilde,
+            x2_train_tilde,
+            P1_in,
+            P1_rec,
+            P2_in,
+            P2_rec,
+        )
+        h2_test_hat = forward_reconstructed(
+            x1_test_tilde,
+            x2_test_tilde,
+            P1_in,
+            P1_rec,
+            P2_in,
+            P2_rec,
+        )
         v = solve_svm_hyperplane(
             h2_train_hat,
             y_train,
@@ -616,14 +643,20 @@ def main() -> None:
     mode = "debug" if args.debug else "full"
     run_id = f"{mode}_{run_ts}"
     params_grid = b4_param_grid()
+    solver_name = args.solver
+    if solver_name.upper() == "SCS":
+        solver_opts = {"eps": 1e-9, "max_iters": 200000}
+    else:
+        solver_opts = {"abstol": 1e-9, "reltol": 1e-9, "feastol": 1e-9, "max_iters": 50000}
+
     config = {
         "seed": args.seed,
         "epochs": 50 if args.debug else 500,
         "lr": 1e-2,
-        "solver": args.solver,
+        "solver": solver_name,
         "n_total": 200 if args.debug else 3000,
         "svm_C": 1000.0,
-        "solver_opts": {"abstol": 1e-9, "reltol": 1e-9, "feastol": 1e-9, "max_iters": 50000},
+        "solver_opts": solver_opts,
         "summary_path": "/Users/hima_3114/Desktop/Paper_1/experiments/summary_results_snn.txt",
         "allow_pattern_repeats": args.allow_pattern_repeats,
         "sampled_arrangements": args.sampled_arrangements,

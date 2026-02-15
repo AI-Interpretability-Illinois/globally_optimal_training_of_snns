@@ -1,0 +1,68 @@
+/Users/hima_3114/Desktop/Paper_1/experiments/.venv/lib/python3.14/site-packages/cvxpy/problems/problem.py:1539: UserWarning: Solution may be inaccurate. Try another solver, adjusting the solver settings, or solve with verbose=True for more information.
+  warnings.warn(
+[LT] stage=init dataset=moving_gaussian timesteps=2
+[LT] layer_params layers=8 width=100 input_dim=20 lif_beta=0.9
+[LT] layer_dims L1:20->100 | L2:100->100 | L3:100->100 | L4:100->100 | L5:100->100 | L6:100->100 | L7:100->100 | L8:100->100
+[LT] stage=data_ready elapsed_s=0.00
+[LT] stage=arrangements_done elapsed_s=0.18
+D(1,1) shape = (200, 1000)
+D(1,2) shape = (200, 986)
+D(2,1) shape = (200, 976)
+D(2,2) shape = (200, 930)
+D(3,1) shape = (200, 944)
+D(3,2) shape = (200, 907)
+D(4,1) shape = (200, 918)
+D(4,2) shape = (200, 890)
+D(5,1) shape = (200, 910)
+D(5,2) shape = (200, 893)
+D(6,1) shape = (200, 893)
+D(6,2) shape = (200, 901)
+D(7,1) shape = (200, 881)
+D(7,2) shape = (200, 905)
+D(8,1) shape = (200, 900)
+D(8,2) shape = (200, 877)
+[LT] stage=convex_solve start elapsed_s=0.18
+[LT] stage=convex_solve done elapsed_s=31.32
+[LT] stage=pattern_select start elapsed_s=31.32
+[LT] stage=pattern_select done elapsed_s=31.33
+[LT] stage=reconstruction start elapsed_s=31.33
+[LT] stage=reconstruction done elapsed_s=186.48
+[LT] stage=forward_recon start elapsed_s=186.48
+[LT] stage=forward_recon done elapsed_s=186.49
+[LT] stage=lif_train start elapsed_s=186.56
+[LT] stage=lif_train done elapsed_s=188.23
+[LT] sampled=True dataset=moving_gaussian layers=8 timesteps=2 recon_train_acc=1.000 recon_test_acc=0.475 lif_train_acc=1.000 lif_test_acc=1.000
+[LT] stage=done total_elapsed_s=188.23
+[LT] stage=init dataset=rotated_mnist timesteps=2
+[LT] layer_params layers=8 width=100 input_dim=784 lif_beta=0.9
+[LT] layer_dims L1:784->100 | L2:100->100 | L3:100->100 | L4:100->100 | L5:100->100 | L6:100->100 | L7:100->100 | L8:100->100
+[LT] stage=data_ready elapsed_s=0.19
+[LT] stage=arrangements_done elapsed_s=0.38
+D(1,1) shape = (200, 999)
+D(1,2) shape = (200, 970)
+D(2,1) shape = (200, 961)
+D(2,2) shape = (200, 929)
+D(3,1) shape = (200, 924)
+D(3,2) shape = (200, 898)
+D(4,1) shape = (200, 915)
+D(4,2) shape = (200, 896)
+D(5,1) shape = (200, 879)
+D(5,2) shape = (200, 888)
+D(6,1) shape = (200, 903)
+D(6,2) shape = (200, 896)
+D(7,1) shape = (200, 883)
+D(7,2) shape = (200, 886)
+D(8,1) shape = (200, 908)
+D(8,2) shape = (200, 907)
+[LT] stage=convex_solve start elapsed_s=0.38
+[LT] stage=convex_solve done elapsed_s=51.16
+[LT] stage=pattern_select start elapsed_s=51.16
+[LT] stage=pattern_select done elapsed_s=51.17
+[LT] stage=reconstruction start elapsed_s=51.17
+[LT] stage=reconstruction done elapsed_s=227.57
+[LT] stage=forward_recon start elapsed_s=227.57
+[LT] stage=forward_recon done elapsed_s=227.57
+[LT] stage=lif_train start elapsed_s=227.93
+[LT] stage=lif_train done elapsed_s=229.34
+[LT] sampled=True dataset=rotated_mnist layers=8 timesteps=2 recon_train_acc=0.975 recon_test_acc=0.510 lif_train_acc=0.570 lif_test_acc=0.545
+[LT] stage=done total_elapsed_s=229.34

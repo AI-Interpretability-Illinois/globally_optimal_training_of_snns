@@ -1,0 +1,56 @@
+/Users/hima_3114/Desktop/Paper_1/experiments/.venv/lib/python3.14/site-packages/cvxpy/problems/problem.py:1539: UserWarning: Solution may be inaccurate. Try another solver, adjusting the solver settings, or solve with verbose=True for more information.
+  warnings.warn(
+[LT] stage=init dataset=moving_gaussian timesteps=2
+[LT] layer_params layers=5 width=100 input_dim=20 lif_beta=0.9
+[LT] layer_dims L1:20->100 | L2:100->100 | L3:100->100 | L4:100->100 | L5:100->100
+[LT] stage=data_ready elapsed_s=0.00
+[LT] stage=arrangements_done elapsed_s=0.11
+D(1,1) shape = (200, 1000)
+D(1,2) shape = (200, 986)
+D(2,1) shape = (200, 976)
+D(2,2) shape = (200, 930)
+D(3,1) shape = (200, 944)
+D(3,2) shape = (200, 907)
+D(4,1) shape = (200, 918)
+D(4,2) shape = (200, 890)
+D(5,1) shape = (200, 910)
+D(5,2) shape = (200, 893)
+[LT] stage=convex_solve start elapsed_s=0.11
+[LT] stage=convex_solve done elapsed_s=49.74
+[LT] stage=pattern_select start elapsed_s=49.74
+[LT] stage=pattern_select done elapsed_s=49.75
+[LT] stage=reconstruction start elapsed_s=49.75
+[LT] stage=reconstruction done elapsed_s=136.71
+[LT] stage=forward_recon start elapsed_s=136.71
+[LT] stage=forward_recon done elapsed_s=136.71
+[LT] stage=lif_train start elapsed_s=136.75
+[LT] stage=lif_train done elapsed_s=138.15
+[LT] sampled=True dataset=moving_gaussian layers=5 timesteps=2 recon_train_acc=1.000 recon_test_acc=0.570 lif_train_acc=1.000 lif_test_acc=1.000
+[LT] stage=done total_elapsed_s=138.15
+[LT] stage=init dataset=rotated_mnist timesteps=2
+[LT] layer_params layers=5 width=100 input_dim=784 lif_beta=0.9
+[LT] layer_dims L1:784->100 | L2:100->100 | L3:100->100 | L4:100->100 | L5:100->100
+[LT] stage=data_ready elapsed_s=0.25
+[LT] stage=arrangements_done elapsed_s=0.37
+D(1,1) shape = (200, 999)
+D(1,2) shape = (200, 970)
+D(2,1) shape = (200, 961)
+D(2,2) shape = (200, 929)
+D(3,1) shape = (200, 924)
+D(3,2) shape = (200, 898)
+D(4,1) shape = (200, 915)
+D(4,2) shape = (200, 896)
+D(5,1) shape = (200, 879)
+D(5,2) shape = (200, 888)
+[LT] stage=convex_solve start elapsed_s=0.37
+[LT] stage=convex_solve done elapsed_s=5.68
+[LT] stage=pattern_select start elapsed_s=5.68
+[LT] stage=pattern_select done elapsed_s=5.69
+[LT] stage=reconstruction start elapsed_s=5.69
+[LT] stage=reconstruction done elapsed_s=107.51
+[LT] stage=forward_recon start elapsed_s=107.51
+[LT] stage=forward_recon done elapsed_s=107.52
+[LT] stage=lif_train start elapsed_s=107.56
+[LT] stage=lif_train done elapsed_s=108.50
+[LT] sampled=True dataset=rotated_mnist layers=5 timesteps=2 recon_train_acc=1.000 recon_test_acc=0.575 lif_train_acc=0.990 lif_test_acc=0.845
+[LT] stage=done total_elapsed_s=108.50

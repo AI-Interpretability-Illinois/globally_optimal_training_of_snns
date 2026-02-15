@@ -1,0 +1,28 @@
+[LT] stage=init dataset=moving_gaussian timesteps=2
+[LT] layer_params layers=5 width=100 input_dim=20 lif_beta=0.9 lif_beta_min=0.5 spike_floor=0.001
+[LT] layer_dims L1:20->100 | L2:100->100 | L3:100->100 | L4:100->100 | L5:100->100
+[LT] stage=data_ready elapsed_s=0.00
+[LT] stage=arrangements_done elapsed_s=0.11
+D(1,1) shape = (200, 1000)
+D(1,2) shape = (200, 982)
+D(2,1) shape = (200, 977)
+D(2,2) shape = (200, 935)
+D(3,1) shape = (200, 930)
+D(3,2) shape = (200, 894)
+D(4,1) shape = (200, 921)
+D(4,2) shape = (200, 884)
+D(5,1) shape = (200, 904)
+D(5,2) shape = (200, 885)
+[LT] stage=convex_solve start elapsed_s=0.11
+[LT] stage=convex_solve done elapsed_s=14.97
+[LT] stage=pattern_select start elapsed_s=14.97
+[LT] stage=pattern_select done elapsed_s=14.98
+[LT] stage=reconstruction start elapsed_s=14.98
+[LT] stage=reconstruction done elapsed_s=101.13
+[LT] stage=forward_recon start elapsed_s=101.13
+[LT] stage=forward_recon done elapsed_s=101.13
+[LT] stage=lif_train start elapsed_s=101.17
+[LT] lif_beta adjusted to 0.5 at epoch=0 spike_rate=0.00e+00
+[LT] stage=lif_train done elapsed_s=102.52
+[LT] sampled=True dataset=moving_gaussian layers=5 timesteps=2 recon_acc=1.000 lif_train_acc=0.000 lif_acc=0.000
+[LT] stage=done total_elapsed_s=102.52
