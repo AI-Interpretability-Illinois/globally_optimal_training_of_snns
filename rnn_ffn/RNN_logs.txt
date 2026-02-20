@@ -1,0 +1,886 @@
+(.venv) hima_3114@Himanshus-MacBook-Pro-2 rnn_ffn % cd /Users/hima_3114/Desktop/Paper_1/experiments/rnn_ffn && python3 RRN.py \           
+  --task moving_blobs_seq \
+  --L 3 \       
+  --T 6 \               
+  --P_in 2000 --P_rec 2000 --P_last 5000 \
+  --n_train_total 5000 \
+  --val_frac 0.2 \    
+  --n_test 5000 \       
+  --epochs 100 \      
+  --batch 128 \         
+  --loss hinge \      
+  --cvx_optimizer adam \
+  --cvx_step_size 30 \                                                                                                              <....
+[info] device=mps task=moving_blobs_seq T=6 L=3 epochs=100 batch=128
+[info] n_train_total=5000 val_frac=0.2 n_test=5000
+[info] P_in=2000 P_rec=2000 P_last(target)=5000
+[info] CVX grid betas=[1e-06, 0.001, 0.01, 0.1, 0.5, 1.0] lrs=[0.01, 0.005, 0.001] loss=hinge
+[rnn hypers] layer 1: U_in=(50, 2000) U_rec=(2000, 2000) (shared across all T)
+[rnn hypers] layer 2: U_in=(2000, 2000) U_rec=(2000, 2000) (shared across all T)
+[rnn patterns] last-layer enforce: round=1/300 uniques=5000/5000
+[rnn patterns] P_last_unique=5000 (target=5000, n_train=4000)
+[seed 0] patterns done: P_last_unique=5000 (target=5000, n_train=4000)
+[seed 0] re-train CVX best for logging: beta=1e-06 lr=0.005
+[CVX] ep=000/100 train_acc=0.5062 val_acc=0.5140 lr=5.00e-03
+[CVX] ep=001/100 last_loss=0.0000 train_acc=0.9812 val_acc=0.9710 lr=5.00e-03
+[CVX] ep=002/100 last_loss=0.0003 train_acc=0.9980 val_acc=0.9980 lr=5.00e-03
+[CVX] ep=003/100 last_loss=0.0021 train_acc=0.9995 val_acc=0.9980 lr=5.00e-03
+[CVX] ep=004/100 last_loss=0.0000 train_acc=1.0000 val_acc=0.9990 lr=5.00e-03
+[CVX] ep=005/100 last_loss=0.0000 train_acc=1.0000 val_acc=0.9990 lr=5.00e-03
+[CVX] ep=010/100 last_loss=0.0210 train_acc=1.0000 val_acc=0.9960 lr=5.00e-03
+[CVX] ep=020/100 last_loss=0.0000 train_acc=1.0000 val_acc=0.9980 lr=5.00e-03
+[CVX] ep=030/100 last_loss=0.0000 train_acc=1.0000 val_acc=0.9980 lr=2.50e-03
+[CVX] ep=040/100 last_loss=0.0000 train_acc=1.0000 val_acc=0.9980 lr=2.50e-03
+[CVX] ep=050/100 last_loss=0.0000 train_acc=1.0000 val_acc=0.9980 lr=2.50e-03
+[CVX] ep=060/100 last_loss=0.0000 train_acc=1.0000 val_acc=0.9980 lr=1.25e-03
+[CVX] ep=070/100 last_loss=0.0000 train_acc=1.0000 val_acc=0.9980 lr=1.25e-03
+[CVX] ep=080/100 last_loss=0.0000 train_acc=1.0000 val_acc=0.9980 lr=1.25e-03
+[CVX] ep=090/100 last_loss=0.0000 train_acc=1.0000 val_acc=0.9980 lr=6.25e-04
+[CVX] ep=100/100 last_loss=0.0000 train_acc=1.0000 val_acc=0.9980 lr=6.25e-04
+[STE] ep=000/100 train_acc=0.4858 val_acc=0.4650 lr=1.00e-03
+[STE] ep=001/100 last_loss=0.7917 train_acc=0.4938 val_acc=0.4860 lr=1.00e-03
+[STE] ep=002/100 last_loss=0.9317 train_acc=0.5607 val_acc=0.5530 lr=1.00e-03
+[STE] ep=003/100 last_loss=1.3977 train_acc=0.4248 val_acc=0.4550 lr=1.00e-03
+[STE] ep=004/100 last_loss=0.7263 train_acc=0.5062 val_acc=0.5140 lr=1.00e-03
+[STE] ep=005/100 last_loss=0.6946 train_acc=0.5062 val_acc=0.5140 lr=1.00e-03
+[STE] ep=010/100 last_loss=0.6793 train_acc=0.4938 val_acc=0.4860 lr=1.00e-03
+[STE] ep=020/100 last_loss=0.7117 train_acc=0.5062 val_acc=0.5140 lr=1.00e-03
+[STE] ep=030/100 last_loss=0.6964 train_acc=0.5062 val_acc=0.5140 lr=5.00e-04
+[STE] ep=040/100 last_loss=0.6953 train_acc=0.4938 val_acc=0.4860 lr=5.00e-04
+[STE] ep=050/100 last_loss=0.6887 train_acc=0.5062 val_acc=0.5140 lr=5.00e-04
+[STE] ep=060/100 last_loss=0.6944 train_acc=0.5062 val_acc=0.5140 lr=2.50e-04
+[STE] ep=070/100 last_loss=0.6908 train_acc=0.5062 val_acc=0.5140 lr=2.50e-04
+[STE] ep=080/100 last_loss=0.7429 train_acc=0.5062 val_acc=0.5140 lr=2.50e-04
+[STE] ep=090/100 last_loss=0.6986 train_acc=0.5062 val_acc=0.5140 lr=1.25e-04
+[STE] ep=100/100 last_loss=0.6986 train_acc=0.4938 val_acc=0.4860 lr=1.25e-04
+[seed 0] CVX test=0.9922 (val=0.9990, beta=1e-06, lr=0.005, P_last=5000) | STE test=0.5474 (val=0.5530, width=2000)
+
+=== FINAL (mean ± std over seeds) ===
+CVX test_acc = 0.9922 ± 0.0000
+STE test_acc = 0.5474 ± 0.0000
+
+(.venv) hima_3114@Himanshus-MacBook-Pro-2 rnn_ffn % cd /Users/hima_3114/Desktop/Paper_1/experiments/rnn_ffn && python3 RRN.py \           
+  --task moving_blobs_seq \
+  --L 5 \       
+  --T 20 \              
+  --P_in 2000 --P_rec 2000 --P_last 5000 \
+  --n_train_total 5000 \
+  --val_frac 0.2 \    
+  --n_test 5000 \       
+  --epochs 100 \      
+  --batch 128 \         
+  --loss hinge \      
+  --cvx_optimizer adam \
+  --cvx_step_size 30 \                                                                                                              <....
+[info] device=mps task=moving_blobs_seq T=20 L=5 epochs=100 batch=128
+[info] n_train_total=5000 val_frac=0.2 n_test=5000
+[info] P_in=2000 P_rec=2000 P_last(target)=5000
+[info] CVX grid betas=[1e-06, 0.001, 0.01, 0.1, 0.5, 1.0] lrs=[0.01, 0.005, 0.001] loss=hinge
+[rnn hypers] layer 1: U_in=(50, 2000) U_rec=(2000, 2000) (shared across all T)
+[rnn hypers] layer 2: U_in=(2000, 2000) U_rec=(2000, 2000) (shared across all T)
+[rnn hypers] layer 3: U_in=(2000, 2000) U_rec=(2000, 2000) (shared across all T)
+[rnn hypers] layer 4: U_in=(2000, 2000) U_rec=(2000, 2000) (shared across all T)
+[rnn patterns] last-layer enforce: round=1/300 uniques=5000/5000
+[rnn patterns] P_last_unique=5000 (target=5000, n_train=4000)
+[seed 0] patterns done: P_last_unique=5000 (target=5000, n_train=4000)
+[seed 0] re-train CVX best for logging: beta=0.01 lr=0.001
+[CVX] ep=000/100 train_acc=0.5030 val_acc=0.5080 lr=1.00e-03
+[CVX] ep=001/100 last_loss=0.2437 train_acc=0.9587 val_acc=0.9430 lr=1.00e-03
+[CVX] ep=002/100 last_loss=0.2903 train_acc=0.9738 val_acc=0.9520 lr=1.00e-03
+[CVX] ep=003/100 last_loss=0.0758 train_acc=0.9692 val_acc=0.9290 lr=1.00e-03
+[CVX] ep=004/100 last_loss=0.0523 train_acc=0.9765 val_acc=0.9330 lr=1.00e-03
+[CVX] ep=005/100 last_loss=0.0402 train_acc=0.9915 val_acc=0.9680 lr=1.00e-03
+[CVX] ep=010/100 last_loss=0.0300 train_acc=0.9970 val_acc=0.9550 lr=1.00e-03
+[CVX] ep=020/100 last_loss=0.0347 train_acc=0.9998 val_acc=0.9570 lr=1.00e-03
+[CVX] ep=030/100 last_loss=0.0237 train_acc=1.0000 val_acc=0.9510 lr=5.00e-04
+[CVX] ep=040/100 last_loss=0.0208 train_acc=1.0000 val_acc=0.9540 lr=5.00e-04
+[CVX] ep=050/100 last_loss=0.0207 train_acc=1.0000 val_acc=0.9570 lr=5.00e-04
+[CVX] ep=060/100 last_loss=0.0287 train_acc=1.0000 val_acc=0.9530 lr=2.50e-04
+[CVX] ep=070/100 last_loss=0.0185 train_acc=1.0000 val_acc=0.9490 lr=2.50e-04
+[CVX] ep=080/100 last_loss=0.0191 train_acc=1.0000 val_acc=0.9520 lr=2.50e-04
+[CVX] ep=090/100 last_loss=0.0184 train_acc=1.0000 val_acc=0.9500 lr=1.25e-04
+[CVX] ep=100/100 last_loss=0.0172 train_acc=1.0000 val_acc=0.9530 lr=1.25e-04
+[STE] ep=000/100 train_acc=0.4600 val_acc=0.4790 lr=1.00e-03
+[STE] ep=001/100 last_loss=2.2603 train_acc=0.5172 val_acc=0.5080 lr=1.00e-03
+[STE] ep=002/100 last_loss=0.7774 train_acc=0.5030 val_acc=0.5080 lr=1.00e-03
+[STE] ep=003/100 last_loss=0.7513 train_acc=0.5030 val_acc=0.5080 lr=1.00e-03
+[STE] ep=004/100 last_loss=0.7271 train_acc=0.8998 val_acc=0.8980 lr=1.00e-03
+[STE] ep=005/100 last_loss=0.1892 train_acc=0.9270 val_acc=0.9240 lr=1.00e-03
+[STE] ep=010/100 last_loss=0.2158 train_acc=0.9257 val_acc=0.9250 lr=1.00e-03
+[STE] ep=020/100 last_loss=0.2917 train_acc=0.9225 val_acc=0.9220 lr=1.00e-03
+[STE] ep=030/100 last_loss=0.4426 train_acc=0.9270 val_acc=0.9230 lr=5.00e-04
+[STE] ep=040/100 last_loss=0.4508 train_acc=0.9270 val_acc=0.9240 lr=5.00e-04
+[STE] ep=050/100 last_loss=0.4749 train_acc=0.9270 val_acc=0.9240 lr=5.00e-04
+[STE] ep=060/100 last_loss=0.5148 train_acc=0.9270 val_acc=0.9230 lr=2.50e-04
+[STE] ep=070/100 last_loss=0.4266 train_acc=0.9270 val_acc=0.9240 lr=2.50e-04
+[STE] ep=080/100 last_loss=0.3457 train_acc=0.9270 val_acc=0.9240 lr=2.50e-04
+[STE] ep=090/100 last_loss=0.4727 train_acc=0.9270 val_acc=0.9240 lr=1.25e-04
+[STE] ep=100/100 last_loss=0.3960 train_acc=0.9270 val_acc=0.9240 lr=1.25e-04
+[seed 0] CVX test=0.9676 (val=0.9680, beta=0.01, lr=0.001, P_last=5000) | STE test=0.9174 (val=0.9270, width=2000)
+
+=== FINAL (mean ± std over seeds) ===
+CVX test_acc = 0.9676 ± 0.0000
+STE test_acc = 0.9174 ± 0.0000
+
+(.venv) hima_3114@Himanshus-MacBook-Pro-2 rnn_ffn % cd /Users/hima_3114/Desktop/Paper_1/experiments/rnn_ffn && python3 RRN.py \          
+  --task two_step_xor_seq \
+  --L 3 \        
+  --T 2 \       
+  --P_in 8000 --P_rec 8000 --P_last 6000 \
+  --n_train_total 6000 \
+  --val_frac 0.2 \      
+  --n_test 5000 \     
+  --epochs 100 \   
+  --batch 128 \   
+  --loss hinge \        
+  --cvx_optimizer adam \
+  --cvx_step_size 30 \
+  --cvx_gamma 0.5 \
+  --ste_lr 0.001 \
+  --ste_beta_path 1e-4 \                                                                                                           <....
+[info] device=mps task=two_step_xor_seq T=2 L=3 epochs=100 batch=128
+[info] n_train_total=6000 val_frac=0.2 n_test=5000
+[info] P_in=8000 P_rec=8000 P_last(target)=6000
+[info] CVX grid betas=[1e-06, 0.001, 0.01, 0.1, 0.5, 1.0] lrs=[0.01, 0.005, 0.001] loss=hinge
+[rnn hypers] layer 1: U_in=(2, 8000) U_rec=(8000, 8000) (shared across all T)
+[rnn hypers] layer 2: U_in=(8000, 8000) U_rec=(8000, 8000) (shared across all T)
+[rnn patterns] last-layer enforce: round=1/300 uniques=6000/6000
+[rnn patterns] P_last_unique=6000 (target=6000, n_train=4800)
+[seed 0] patterns done: P_last_unique=6000 (target=6000, n_train=4800)
+[seed 0] re-train CVX best for logging: beta=1e-06 lr=0.01
+[CVX] ep=000/100 train_acc=0.6196 val_acc=0.5883 lr=1.00e-02
+[CVX] ep=001/100 last_loss=0.0000 train_acc=1.0000 val_acc=1.0000 lr=1.00e-02
+[CVX] ep=002/100 last_loss=0.0000 train_acc=1.0000 val_acc=1.0000 lr=1.00e-02
+[CVX] ep=003/100 last_loss=0.0000 train_acc=1.0000 val_acc=1.0000 lr=1.00e-02
+[CVX] ep=004/100 last_loss=0.0000 train_acc=1.0000 val_acc=1.0000 lr=1.00e-02
+[CVX] ep=005/100 last_loss=0.0000 train_acc=1.0000 val_acc=1.0000 lr=1.00e-02
+[CVX] ep=010/100 last_loss=0.0000 train_acc=1.0000 val_acc=1.0000 lr=1.00e-02
+[CVX] ep=020/100 last_loss=0.0000 train_acc=1.0000 val_acc=1.0000 lr=1.00e-02
+[CVX] ep=030/100 last_loss=0.0000 train_acc=1.0000 val_acc=1.0000 lr=5.00e-03
+[CVX] ep=040/100 last_loss=0.0000 train_acc=1.0000 val_acc=1.0000 lr=5.00e-03
+[CVX] ep=050/100 last_loss=0.0000 train_acc=1.0000 val_acc=1.0000 lr=5.00e-03
+[CVX] ep=060/100 last_loss=0.0000 train_acc=1.0000 val_acc=1.0000 lr=2.50e-03
+[CVX] ep=070/100 last_loss=0.0000 train_acc=1.0000 val_acc=1.0000 lr=2.50e-03
+[CVX] ep=080/100 last_loss=0.0000 train_acc=1.0000 val_acc=1.0000 lr=2.50e-03
+[CVX] ep=090/100 last_loss=0.0000 train_acc=1.0000 val_acc=1.0000 lr=1.25e-03
+[CVX] ep=100/100 last_loss=0.0000 train_acc=1.0000 val_acc=1.0000 lr=1.25e-03
+[STE] ep=000/100 train_acc=0.3804 val_acc=0.4117 lr=1.00e-03
+[STE] ep=001/100 last_loss=1.4317 train_acc=0.6196 val_acc=0.5883 lr=1.00e-03
+[STE] ep=002/100 last_loss=0.6232 train_acc=0.7462 val_acc=0.7417 lr=1.00e-03
+[STE] ep=003/100 last_loss=0.5738 train_acc=0.7462 val_acc=0.7417 lr=1.00e-03
+[STE] ep=004/100 last_loss=0.5765 train_acc=0.7462 val_acc=0.7417 lr=1.00e-03
+[STE] ep=005/100 last_loss=0.5991 train_acc=0.7462 val_acc=0.7417 lr=1.00e-03
+[STE] ep=010/100 last_loss=0.7547 train_acc=0.7462 val_acc=0.7417 lr=1.00e-03
+[STE] ep=020/100 last_loss=0.5967 train_acc=0.7462 val_acc=0.7417 lr=1.00e-03
+[STE] ep=030/100 last_loss=0.8539 train_acc=0.2537 val_acc=0.2583 lr=5.00e-04
+[STE] ep=040/100 last_loss=0.6846 train_acc=0.6196 val_acc=0.5883 lr=5.00e-04
+[STE] ep=050/100 last_loss=0.6454 train_acc=0.6196 val_acc=0.5883 lr=5.00e-04
+[STE] ep=060/100 last_loss=0.7097 train_acc=0.6196 val_acc=0.5883 lr=2.50e-04
+[STE] ep=070/100 last_loss=0.6223 train_acc=0.6196 val_acc=0.5883 lr=2.50e-04
+[STE] ep=080/100 last_loss=0.6563 train_acc=0.6196 val_acc=0.5883 lr=2.50e-04
+[STE] ep=090/100 last_loss=0.6308 train_acc=0.6196 val_acc=0.5883 lr=1.25e-04
+[STE] ep=100/100 last_loss=0.6596 train_acc=0.6196 val_acc=0.5883 lr=1.25e-04
+[seed 0] CVX test=1.0000 (val=1.0000, beta=1e-06, lr=0.01, P_last=6000) | STE test=0.7400 (val=0.7417, width=8000)
+
+(.venv) hima_3114@Himanshus-MacBook-Pro-2 rnn_ffn % cd /Users/hima_3114/Desktop/Paper_1/experiments/rnn_ffn && python3 RRN.py \
+  --task two_step_xor_seq \
+  --L 3 \       
+  --T 15 \     
+  --P_in 4000 --P_rec 4000 --P_last 6000 \
+  --n_train_total 6000 \
+  --val_frac 0.2 \    
+  --n_test 5000 \  
+  --epochs 100 \  
+  --batch 128 \         
+  --loss hinge \      
+  --cvx_optimizer adam \
+  --cvx_step_size 30 \
+  --cvx_gamma 0.5 \
+  --ste_lr 0.001 \                                                                      <....
+[info] device=mps task=two_step_xor_seq T=15 L=3 epochs=100 batch=128
+[info] n_train_total=6000 val_frac=0.2 n_test=5000
+[info] P_in=4000 P_rec=4000 P_last(target)=6000
+[info] CVX grid betas=[1e-06, 0.001, 0.01, 0.1, 0.5, 1.0] lrs=[0.01, 0.005, 0.001] loss=hinge
+[rnn hypers] layer 1: U_in=(2, 4000) U_rec=(4000, 4000) (shared across all T)
+[rnn hypers] layer 2: U_in=(4000, 4000) U_rec=(4000, 4000) (shared across all T)
+[rnn patterns] last-layer enforce: round=1/300 uniques=6000/6000
+[rnn patterns] P_last_unique=6000 (target=6000, n_train=4800)
+[seed 0] patterns done: P_last_unique=6000 (target=6000, n_train=4800)
+[CVX] ep=000/100 train_acc=0.6233 val_acc=0.6425 lr=1.00e-02
+[CVX] ep=001/100 last_loss=6.6251 train_acc=0.3802 val_acc=0.3575 lr=1.00e-02
+[CVX] ep=002/100 last_loss=1.8104 train_acc=0.6265 val_acc=0.6433 lr=1.00e-02
+[CVX] ep=003/100 last_loss=0.7474 train_acc=0.6454 val_acc=0.5008 lr=1.00e-02
+[CVX] ep=004/100 last_loss=0.5096 train_acc=0.8273 val_acc=0.6600 lr=1.00e-02
+[CVX] ep=005/100 last_loss=0.9077 train_acc=0.8306 val_acc=0.7025 lr=1.00e-02
+[CVX] ep=010/100 last_loss=0.3236 train_acc=0.9160 val_acc=0.6367 lr=1.00e-02
+[CVX] ep=020/100 last_loss=0.2386 train_acc=0.9594 val_acc=0.6350 lr=1.00e-02
+[CVX] ep=030/100 last_loss=0.1264 train_acc=0.9604 val_acc=0.6350 lr=5.00e-03
+[CVX] ep=040/100 last_loss=0.0092 train_acc=0.9962 val_acc=0.6183 lr=5.00e-03
+[CVX] ep=050/100 last_loss=0.0054 train_acc=1.0000 val_acc=0.5933 lr=5.00e-03
+[CVX] ep=060/100 last_loss=0.0444 train_acc=0.9996 val_acc=0.6083 lr=2.50e-03
+[CVX] ep=070/100 last_loss=0.0000 train_acc=1.0000 val_acc=0.5958 lr=2.50e-03
+[CVX] ep=080/100 last_loss=0.0000 train_acc=1.0000 val_acc=0.5917 lr=2.50e-03
+[CVX] ep=090/100 last_loss=0.0000 train_acc=1.0000 val_acc=0.5917 lr=1.25e-03
+[CVX] ep=100/100 last_loss=0.0000 train_acc=1.0000 val_acc=0.5917 lr=1.25e-03
+[CVX] ep=000/100 train_acc=0.6233 val_acc=0.6425 lr=5.00e-03
+[CVX] ep=001/100 last_loss=1.0676 train_acc=0.6831 val_acc=0.6642 lr=5.00e-03
+[CVX] ep=002/100 last_loss=0.6049 train_acc=0.7850 val_acc=0.7117 lr=5.00e-03
+[CVX] ep=003/100 last_loss=0.5337 train_acc=0.7727 val_acc=0.7058 lr=5.00e-03
+[CVX] ep=004/100 last_loss=2.6178 train_acc=0.7077 val_acc=0.6625 lr=5.00e-03
+[CVX] ep=005/100 last_loss=0.3837 train_acc=0.8435 val_acc=0.6608 lr=5.00e-03
+[CVX] ep=010/100 last_loss=0.2659 train_acc=0.7094 val_acc=0.5075 lr=5.00e-03
+[CVX] ep=020/100 last_loss=0.2652 train_acc=0.8406 val_acc=0.6792 lr=5.00e-03
+[CVX] ep=030/100 last_loss=0.0676 train_acc=0.9883 val_acc=0.6075 lr=2.50e-03
+[CVX] ep=040/100 last_loss=0.0069 train_acc=0.9994 val_acc=0.5942 lr=2.50e-03
+[CVX] ep=050/100 last_loss=0.0579 train_acc=0.9998 val_acc=0.6000 lr=2.50e-03
+[CVX] ep=060/100 last_loss=0.0000 train_acc=1.0000 val_acc=0.5875 lr=1.25e-03
+[CVX] ep=070/100 last_loss=0.0000 train_acc=1.0000 val_acc=0.5925 lr=1.25e-03
+[CVX] ep=080/100 last_loss=0.0000 train_acc=1.0000 val_acc=0.5900 lr=1.25e-03
+[CVX] ep=090/100 last_loss=0.0000 train_acc=1.0000 val_acc=0.5883 lr=6.25e-04
+[CVX] ep=100/100 last_loss=0.0000 train_acc=1.0000 val_acc=0.5867 lr=6.25e-04
+[CVX] ep=000/100 train_acc=0.6233 val_acc=0.6425 lr=1.00e-03
+[CVX] ep=001/100 last_loss=0.4672 train_acc=0.7523 val_acc=0.7350 lr=1.00e-03
+[CVX] ep=002/100 last_loss=0.3950 train_acc=0.7523 val_acc=0.7350 lr=1.00e-03
+[CVX] ep=003/100 last_loss=0.3434 train_acc=0.7529 val_acc=0.7342 lr=1.00e-03
+[CVX] ep=004/100 last_loss=0.3623 train_acc=0.7612 val_acc=0.7308 lr=1.00e-03
+[CVX] ep=005/100 last_loss=0.5612 train_acc=0.7873 val_acc=0.5858 lr=1.00e-03
+[CVX] ep=010/100 last_loss=0.4382 train_acc=0.8083 val_acc=0.7017 lr=1.00e-03
+[CVX] ep=020/100 last_loss=0.4430 train_acc=0.8983 val_acc=0.6717 lr=1.00e-03
+[CVX] ep=030/100 last_loss=0.2042 train_acc=0.9479 val_acc=0.6300 lr=5.00e-04
+[CVX] ep=040/100 last_loss=0.1358 train_acc=0.9600 val_acc=0.6100 lr=5.00e-04
+[CVX] ep=050/100 last_loss=0.0372 train_acc=0.9656 val_acc=0.6175 lr=5.00e-04
+[CVX] ep=060/100 last_loss=0.0510 train_acc=0.9704 val_acc=0.6283 lr=2.50e-04
+[CVX] ep=070/100 last_loss=0.1291 train_acc=0.9794 val_acc=0.5967 lr=2.50e-04
+[CVX] ep=080/100 last_loss=0.0917 train_acc=0.9808 val_acc=0.6100 lr=2.50e-04
+[CVX] ep=090/100 last_loss=0.0658 train_acc=0.9858 val_acc=0.5950 lr=1.25e-04
+[CVX] ep=100/100 last_loss=0.0745 train_acc=0.9865 val_acc=0.5983 lr=1.25e-04
+[CVX] ep=000/100 train_acc=0.6233 val_acc=0.6425 lr=1.00e-02
+[CVX] ep=001/100 last_loss=2.4371 train_acc=0.7538 val_acc=0.7350 lr=1.00e-02
+[CVX] ep=002/100 last_loss=0.7353 train_acc=0.7452 val_acc=0.5975 lr=1.00e-02
+[CVX] ep=003/100 last_loss=0.7855 train_acc=0.6737 val_acc=0.5150 lr=1.00e-02
+[CVX] ep=004/100 last_loss=0.8343 train_acc=0.7504 val_acc=0.6792 lr=1.00e-02
+[CVX] ep=005/100 last_loss=0.9980 train_acc=0.8340 val_acc=0.7058 lr=1.00e-02
+[CVX] ep=010/100 last_loss=0.7496 train_acc=0.8087 val_acc=0.5317 lr=1.00e-02
+[CVX] ep=020/100 last_loss=1.0818 train_acc=0.8527 val_acc=0.6358 lr=1.00e-02
+[CVX] ep=030/100 last_loss=0.3781 train_acc=0.9940 val_acc=0.6117 lr=5.00e-03
+[CVX] ep=040/100 last_loss=0.0264 train_acc=0.9998 val_acc=0.5825 lr=5.00e-03
+[CVX] ep=050/100 last_loss=0.0347 train_acc=0.9994 val_acc=0.6067 lr=5.00e-03
+[CVX] ep=060/100 last_loss=0.0352 train_acc=0.9896 val_acc=0.6133 lr=2.50e-03
+[CVX] ep=070/100 last_loss=0.0212 train_acc=1.0000 val_acc=0.5925 lr=2.50e-03
+[CVX] ep=080/100 last_loss=0.0207 train_acc=1.0000 val_acc=0.5892 lr=2.50e-03
+[CVX] ep=090/100 last_loss=0.0202 train_acc=0.9815 val_acc=0.5608 lr=1.25e-03
+[CVX] ep=100/100 last_loss=0.0200 train_acc=1.0000 val_acc=0.5992 lr=1.25e-03
+[CVX] ep=000/100 train_acc=0.6233 val_acc=0.6425 lr=5.00e-03
+[CVX] ep=001/100 last_loss=0.9035 train_acc=0.6587 val_acc=0.6525 lr=5.00e-03
+[CVX] ep=002/100 last_loss=0.6656 train_acc=0.7542 val_acc=0.5908 lr=5.00e-03
+[CVX] ep=003/100 last_loss=0.7248 train_acc=0.7871 val_acc=0.7000 lr=5.00e-03
+[CVX] ep=004/100 last_loss=0.5563 train_acc=0.8446 val_acc=0.6208 lr=5.00e-03
+[CVX] ep=005/100 last_loss=0.5936 train_acc=0.7725 val_acc=0.5608 lr=5.00e-03
+[CVX] ep=010/100 last_loss=0.2965 train_acc=0.8558 val_acc=0.6583 lr=5.00e-03
+[CVX] ep=020/100 last_loss=0.4836 train_acc=0.8675 val_acc=0.5508 lr=5.00e-03
+[CVX] ep=030/100 last_loss=0.4171 train_acc=0.9852 val_acc=0.6117 lr=2.50e-03
+[CVX] ep=040/100 last_loss=0.0181 train_acc=0.9994 val_acc=0.6042 lr=2.50e-03
+[CVX] ep=050/100 last_loss=0.0175 train_acc=0.9992 val_acc=0.5817 lr=2.50e-03
+[CVX] ep=060/100 last_loss=0.0132 train_acc=1.0000 val_acc=0.6142 lr=1.25e-03
+[CVX] ep=070/100 last_loss=0.0130 train_acc=1.0000 val_acc=0.5833 lr=1.25e-03
+[CVX] ep=080/100 last_loss=0.0143 train_acc=1.0000 val_acc=0.5667 lr=1.25e-03
+[CVX] ep=090/100 last_loss=0.0127 train_acc=1.0000 val_acc=0.5975 lr=6.25e-04
+[CVX] ep=100/100 last_loss=0.0126 train_acc=1.0000 val_acc=0.5925 lr=6.25e-04
+[CVX] ep=000/100 train_acc=0.6233 val_acc=0.6425 lr=1.00e-03
+[CVX] ep=001/100 last_loss=0.7704 train_acc=0.7523 val_acc=0.7350 lr=1.00e-03
+[CVX] ep=002/100 last_loss=0.5663 train_acc=0.7523 val_acc=0.7350 lr=1.00e-03
+[CVX] ep=003/100 last_loss=0.5870 train_acc=0.7523 val_acc=0.7350 lr=1.00e-03
+[CVX] ep=004/100 last_loss=0.5097 train_acc=0.7604 val_acc=0.7342 lr=1.00e-03
+[CVX] ep=005/100 last_loss=0.7692 train_acc=0.7771 val_acc=0.7192 lr=1.00e-03
+[CVX] ep=010/100 last_loss=0.4057 train_acc=0.8590 val_acc=0.6942 lr=1.00e-03
+[CVX] ep=020/100 last_loss=0.2409 train_acc=0.9177 val_acc=0.6500 lr=1.00e-03
+[CVX] ep=030/100 last_loss=0.1904 train_acc=0.9379 val_acc=0.6450 lr=5.00e-04
+[CVX] ep=040/100 last_loss=0.1515 train_acc=0.9579 val_acc=0.6000 lr=5.00e-04
+[CVX] ep=050/100 last_loss=0.2498 train_acc=0.9648 val_acc=0.5900 lr=5.00e-04
+[CVX] ep=060/100 last_loss=0.0862 train_acc=0.9733 val_acc=0.6175 lr=2.50e-04
+[CVX] ep=070/100 last_loss=0.1432 train_acc=0.9779 val_acc=0.5983 lr=2.50e-04
+[CVX] ep=080/100 last_loss=0.1083 train_acc=0.9802 val_acc=0.6083 lr=2.50e-04
+[CVX] ep=090/100 last_loss=0.1466 train_acc=0.9821 val_acc=0.6108 lr=1.25e-04
+[CVX] ep=100/100 last_loss=0.0962 train_acc=0.9844 val_acc=0.5967 lr=1.25e-04
+[CVX] ep=000/100 train_acc=0.6233 val_acc=0.6425 lr=1.00e-02
+[CVX] ep=001/100 last_loss=1.7759 train_acc=0.6192 val_acc=0.5283 lr=1.00e-02
+[CVX] ep=002/100 last_loss=2.8024 train_acc=0.5719 val_acc=0.5050 lr=1.00e-02
+[CVX] ep=003/100 last_loss=0.9684 train_acc=0.6854 val_acc=0.5075 lr=1.00e-02
+[CVX] ep=004/100 last_loss=0.7365 train_acc=0.5375 val_acc=0.4158 lr=1.00e-02
+[CVX] ep=005/100 last_loss=1.0389 train_acc=0.7369 val_acc=0.6683 lr=1.00e-02
+[CVX] ep=010/100 last_loss=1.3624 train_acc=0.8533 val_acc=0.6242 lr=1.00e-02
+[CVX] ep=020/100 last_loss=0.3388 train_acc=0.9592 val_acc=0.5950 lr=1.00e-02
+[CVX] ep=030/100 last_loss=0.3022 train_acc=0.5942 val_acc=0.4725 lr=5.00e-03
+[CVX] ep=040/100 last_loss=0.1322 train_acc=0.9985 val_acc=0.6033 lr=5.00e-03
+[CVX] ep=050/100 last_loss=0.5222 train_acc=0.9946 val_acc=0.5992 lr=5.00e-03
+[CVX] ep=060/100 last_loss=0.2084 train_acc=0.9990 val_acc=0.6100 lr=2.50e-03
+[CVX] ep=070/100 last_loss=0.1197 train_acc=1.0000 val_acc=0.5983 lr=2.50e-03
+[CVX] ep=080/100 last_loss=0.1209 train_acc=1.0000 val_acc=0.5917 lr=2.50e-03
+[CVX] ep=090/100 last_loss=0.1152 train_acc=0.9902 val_acc=0.6208 lr=1.25e-03
+[CVX] ep=100/100 last_loss=0.1054 train_acc=1.0000 val_acc=0.5975 lr=1.25e-03
+[CVX] ep=000/100 train_acc=0.6233 val_acc=0.6425 lr=5.00e-03
+[CVX] ep=001/100 last_loss=0.9134 train_acc=0.7523 val_acc=0.7350 lr=5.00e-03
+[CVX] ep=002/100 last_loss=0.5957 train_acc=0.7683 val_acc=0.7200 lr=5.00e-03
+[CVX] ep=003/100 last_loss=0.8776 train_acc=0.8071 val_acc=0.7017 lr=5.00e-03
+[CVX] ep=004/100 last_loss=0.8767 train_acc=0.7462 val_acc=0.6808 lr=5.00e-03
+[CVX] ep=005/100 last_loss=1.1966 train_acc=0.7698 val_acc=0.5658 lr=5.00e-03
+[CVX] ep=010/100 last_loss=0.6333 train_acc=0.8481 val_acc=0.6725 lr=5.00e-03
+[CVX] ep=020/100 last_loss=0.9078 train_acc=0.8906 val_acc=0.5925 lr=5.00e-03
+[CVX] ep=030/100 last_loss=0.1627 train_acc=0.9542 val_acc=0.6125 lr=2.50e-03
+[CVX] ep=040/100 last_loss=0.1471 train_acc=0.9975 val_acc=0.5942 lr=2.50e-03
+[CVX] ep=050/100 last_loss=0.1109 train_acc=0.9992 val_acc=0.6000 lr=2.50e-03
+[CVX] ep=060/100 last_loss=0.1368 train_acc=0.9921 val_acc=0.5750 lr=1.25e-03
+[CVX] ep=070/100 last_loss=0.0925 train_acc=1.0000 val_acc=0.5983 lr=1.25e-03
+[CVX] ep=080/100 last_loss=0.0800 train_acc=1.0000 val_acc=0.5817 lr=1.25e-03
+[CVX] ep=090/100 last_loss=0.1000 train_acc=0.9756 val_acc=0.6275 lr=6.25e-04
+[CVX] ep=100/100 last_loss=0.0795 train_acc=1.0000 val_acc=0.5933 lr=6.25e-04
+[CVX] ep=000/100 train_acc=0.6233 val_acc=0.6425 lr=1.00e-03
+[CVX] ep=001/100 last_loss=0.6005 train_acc=0.7523 val_acc=0.7350 lr=1.00e-03
+[CVX] ep=002/100 last_loss=0.5898 train_acc=0.7531 val_acc=0.7350 lr=1.00e-03
+[CVX] ep=003/100 last_loss=0.4137 train_acc=0.7598 val_acc=0.7325 lr=1.00e-03
+[CVX] ep=004/100 last_loss=0.5070 train_acc=0.7723 val_acc=0.7242 lr=1.00e-03
+[CVX] ep=005/100 last_loss=0.4651 train_acc=0.7848 val_acc=0.7058 lr=1.00e-03
+[CVX] ep=010/100 last_loss=0.3884 train_acc=0.8612 val_acc=0.6858 lr=1.00e-03
+[CVX] ep=020/100 last_loss=0.1944 train_acc=0.8860 val_acc=0.6742 lr=1.00e-03
+[CVX] ep=030/100 last_loss=0.3054 train_acc=0.9017 val_acc=0.6667 lr=5.00e-04
+[CVX] ep=040/100 last_loss=0.3079 train_acc=0.9460 val_acc=0.6408 lr=5.00e-04
+[CVX] ep=050/100 last_loss=0.1486 train_acc=0.9615 val_acc=0.6133 lr=5.00e-04
+[CVX] ep=060/100 last_loss=0.2953 train_acc=0.9669 val_acc=0.6158 lr=2.50e-04
+[CVX] ep=070/100 last_loss=0.1842 train_acc=0.9715 val_acc=0.6108 lr=2.50e-04
+[CVX] ep=080/100 last_loss=0.0790 train_acc=0.9744 val_acc=0.6025 lr=2.50e-04
+[CVX] ep=090/100 last_loss=0.1437 train_acc=0.9760 val_acc=0.6083 lr=1.25e-04
+[CVX] ep=100/100 last_loss=0.0663 train_acc=0.9777 val_acc=0.6050 lr=1.25e-04
+[CVX] ep=000/100 train_acc=0.6233 val_acc=0.6425 lr=1.00e-02
+[CVX] ep=001/100 last_loss=2.7645 train_acc=0.6781 val_acc=0.6717 lr=1.00e-02
+[CVX] ep=002/100 last_loss=0.8847 train_acc=0.7635 val_acc=0.6950 lr=1.00e-02
+[CVX] ep=003/100 last_loss=0.8545 train_acc=0.7998 val_acc=0.7083 lr=1.00e-02
+[CVX] ep=004/100 last_loss=1.8571 train_acc=0.7556 val_acc=0.7350 lr=1.00e-02
+[CVX] ep=005/100 last_loss=1.7359 train_acc=0.7442 val_acc=0.6883 lr=1.00e-02
+[CVX] ep=010/100 last_loss=1.8844 train_acc=0.8254 val_acc=0.6483 lr=1.00e-02
+[CVX] ep=020/100 last_loss=0.7696 train_acc=0.5415 val_acc=0.4175 lr=1.00e-02
+[CVX] ep=030/100 last_loss=1.0998 train_acc=0.6733 val_acc=0.6583 lr=5.00e-03
+[CVX] ep=040/100 last_loss=0.8156 train_acc=0.7242 val_acc=0.5000 lr=5.00e-03
+[CVX] ep=050/100 last_loss=0.5401 train_acc=0.8469 val_acc=0.6383 lr=5.00e-03
+[CVX] ep=060/100 last_loss=0.7992 train_acc=0.8777 val_acc=0.6733 lr=2.50e-03
+[CVX] ep=070/100 last_loss=0.4573 train_acc=0.7712 val_acc=0.6583 lr=2.50e-03
+[CVX] ep=080/100 last_loss=0.6162 train_acc=0.6608 val_acc=0.4883 lr=2.50e-03
+[CVX] ep=090/100 last_loss=0.5313 train_acc=0.8867 val_acc=0.6800 lr=1.25e-03
+[CVX] ep=100/100 last_loss=0.6419 train_acc=0.9058 val_acc=0.6608 lr=1.25e-03
+[CVX] ep=000/100 train_acc=0.6233 val_acc=0.6425 lr=5.00e-03
+[CVX] ep=001/100 last_loss=0.9227 train_acc=0.7527 val_acc=0.7242 lr=5.00e-03
+[CVX] ep=002/100 last_loss=0.5997 train_acc=0.4346 val_acc=0.3842 lr=5.00e-03
+[CVX] ep=003/100 last_loss=0.8376 train_acc=0.7169 val_acc=0.6750 lr=5.00e-03
+[CVX] ep=004/100 last_loss=0.6017 train_acc=0.6362 val_acc=0.4908 lr=5.00e-03
+[CVX] ep=005/100 last_loss=0.6906 train_acc=0.4975 val_acc=0.3992 lr=5.00e-03
+[CVX] ep=010/100 last_loss=1.7399 train_acc=0.7963 val_acc=0.7042 lr=5.00e-03
+[CVX] ep=020/100 last_loss=0.6954 train_acc=0.5521 val_acc=0.4425 lr=5.00e-03
+[CVX] ep=030/100 last_loss=0.6530 train_acc=0.8156 val_acc=0.6842 lr=2.50e-03
+[CVX] ep=040/100 last_loss=0.5300 train_acc=0.9248 val_acc=0.5833 lr=2.50e-03
+[CVX] ep=050/100 last_loss=0.4663 train_acc=0.8888 val_acc=0.5758 lr=2.50e-03
+[CVX] ep=060/100 last_loss=0.6731 train_acc=0.8844 val_acc=0.5658 lr=1.25e-03
+[CVX] ep=070/100 last_loss=0.5416 train_acc=0.9281 val_acc=0.6508 lr=1.25e-03
+[CVX] ep=080/100 last_loss=0.4163 train_acc=0.9394 val_acc=0.5992 lr=1.25e-03
+[CVX] ep=090/100 last_loss=0.5319 train_acc=0.9419 val_acc=0.6233 lr=6.25e-04
+[CVX] ep=100/100 last_loss=0.3353 train_acc=0.9096 val_acc=0.6658 lr=6.25e-04
+[CVX] ep=000/100 train_acc=0.6233 val_acc=0.6425 lr=1.00e-03
+[CVX] ep=001/100 last_loss=0.5348 train_acc=0.6913 val_acc=0.6742 lr=1.00e-03
+[CVX] ep=002/100 last_loss=0.5034 train_acc=0.7571 val_acc=0.7333 lr=1.00e-03
+[CVX] ep=003/100 last_loss=0.5192 train_acc=0.7638 val_acc=0.7267 lr=1.00e-03
+[CVX] ep=004/100 last_loss=0.5584 train_acc=0.7525 val_acc=0.7350 lr=1.00e-03
+[CVX] ep=005/100 last_loss=0.5377 train_acc=0.7640 val_acc=0.7317 lr=1.00e-03
+[CVX] ep=010/100 last_loss=0.6086 train_acc=0.7646 val_acc=0.7325 lr=1.00e-03
+[CVX] ep=020/100 last_loss=0.5802 train_acc=0.8387 val_acc=0.7025 lr=1.00e-03
+[CVX] ep=030/100 last_loss=0.5217 train_acc=0.8581 val_acc=0.6892 lr=5.00e-04
+[CVX] ep=040/100 last_loss=0.4551 train_acc=0.8923 val_acc=0.6450 lr=5.00e-04
+[CVX] ep=050/100 last_loss=0.3953 train_acc=0.8858 val_acc=0.6708 lr=5.00e-04
+[CVX] ep=060/100 last_loss=0.3624 train_acc=0.8992 val_acc=0.6542 lr=2.50e-04
+[CVX] ep=070/100 last_loss=0.4323 train_acc=0.9015 val_acc=0.6608 lr=2.50e-04
+[CVX] ep=080/100 last_loss=0.3766 train_acc=0.9044 val_acc=0.6583 lr=2.50e-04
+[CVX] ep=090/100 last_loss=0.3357 train_acc=0.9017 val_acc=0.6658 lr=1.25e-04
+[CVX] ep=100/100 last_loss=0.5581 train_acc=0.9100 val_acc=0.6525 lr=1.25e-04
+[CVX] ep=000/100 train_acc=0.6233 val_acc=0.6425 lr=1.00e-02
+[CVX] ep=001/100 last_loss=2.3732 train_acc=0.7523 val_acc=0.7350 lr=1.00e-02
+[CVX] ep=002/100 last_loss=5.5094 train_acc=0.3767 val_acc=0.3575 lr=1.00e-02
+[CVX] ep=003/100 last_loss=1.0329 train_acc=0.3767 val_acc=0.3575 lr=1.00e-02
+[CVX] ep=004/100 last_loss=2.8586 train_acc=0.7565 val_acc=0.7325 lr=1.00e-02
+[CVX] ep=005/100 last_loss=0.9584 train_acc=0.6233 val_acc=0.6425 lr=1.00e-02
+[CVX] ep=010/100 last_loss=2.2889 train_acc=0.6233 val_acc=0.6425 lr=1.00e-02
+[CVX] ep=020/100 last_loss=1.7810 train_acc=0.7590 val_acc=0.7267 lr=1.00e-02
+[CVX] ep=030/100 last_loss=2.5688 train_acc=0.5454 val_acc=0.4758 lr=5.00e-03
+[CVX] ep=040/100 last_loss=1.4474 train_acc=0.6869 val_acc=0.6792 lr=5.00e-03
+[CVX] ep=050/100 last_loss=2.6124 train_acc=0.6300 val_acc=0.6458 lr=5.00e-03
+[CVX] ep=060/100 last_loss=1.1357 train_acc=0.7525 val_acc=0.7342 lr=2.50e-03
+[CVX] ep=070/100 last_loss=0.9759 train_acc=0.6954 val_acc=0.6800 lr=2.50e-03
+[CVX] ep=080/100 last_loss=0.8980 train_acc=0.6735 val_acc=0.6658 lr=2.50e-03
+[CVX] ep=090/100 last_loss=1.1121 train_acc=0.6417 val_acc=0.6517 lr=1.25e-03
+[CVX] ep=100/100 last_loss=0.7011 train_acc=0.7562 val_acc=0.7358 lr=1.25e-03
+[CVX] ep=000/100 train_acc=0.6233 val_acc=0.6425 lr=5.00e-03
+[CVX] ep=001/100 last_loss=1.6333 train_acc=0.7271 val_acc=0.7025 lr=5.00e-03
+[CVX] ep=002/100 last_loss=2.0236 train_acc=0.6233 val_acc=0.6425 lr=5.00e-03
+[CVX] ep=003/100 last_loss=0.7990 train_acc=0.6233 val_acc=0.6425 lr=5.00e-03
+[CVX] ep=004/100 last_loss=1.1348 train_acc=0.6233 val_acc=0.6425 lr=5.00e-03
+[CVX] ep=005/100 last_loss=1.0375 train_acc=0.6233 val_acc=0.6425 lr=5.00e-03
+[CVX] ep=010/100 last_loss=0.7744 train_acc=0.7431 val_acc=0.7017 lr=5.00e-03
+[CVX] ep=020/100 last_loss=1.0572 train_acc=0.7525 val_acc=0.7350 lr=5.00e-03
+[CVX] ep=030/100 last_loss=0.8197 train_acc=0.7558 val_acc=0.7292 lr=2.50e-03
+[CVX] ep=040/100 last_loss=1.1468 train_acc=0.7469 val_acc=0.7000 lr=2.50e-03
+[CVX] ep=050/100 last_loss=1.0051 train_acc=0.7590 val_acc=0.7300 lr=2.50e-03
+[CVX] ep=060/100 last_loss=0.8421 train_acc=0.7573 val_acc=0.7292 lr=1.25e-03
+[CVX] ep=070/100 last_loss=0.6514 train_acc=0.7569 val_acc=0.7283 lr=1.25e-03
+[CVX] ep=080/100 last_loss=0.6673 train_acc=0.7590 val_acc=0.7317 lr=1.25e-03
+[CVX] ep=090/100 last_loss=0.6968 train_acc=0.7262 val_acc=0.6900 lr=6.25e-04
+[CVX] ep=100/100 last_loss=0.6921 train_acc=0.7529 val_acc=0.7350 lr=6.25e-04
+[CVX] ep=000/100 train_acc=0.6233 val_acc=0.6425 lr=1.00e-03
+[CVX] ep=001/100 last_loss=0.7614 train_acc=0.7523 val_acc=0.7350 lr=1.00e-03
+[CVX] ep=002/100 last_loss=0.7811 train_acc=0.7523 val_acc=0.7350 lr=1.00e-03
+[CVX] ep=003/100 last_loss=0.6291 train_acc=0.7523 val_acc=0.7350 lr=1.00e-03
+[CVX] ep=004/100 last_loss=0.8753 train_acc=0.7531 val_acc=0.7350 lr=1.00e-03
+[CVX] ep=005/100 last_loss=0.7713 train_acc=0.7546 val_acc=0.7083 lr=1.00e-03
+[CVX] ep=010/100 last_loss=0.8268 train_acc=0.7525 val_acc=0.7350 lr=1.00e-03
+[CVX] ep=020/100 last_loss=0.4419 train_acc=0.7533 val_acc=0.7342 lr=1.00e-03
+[CVX] ep=030/100 last_loss=0.8615 train_acc=0.7531 val_acc=0.7075 lr=5.00e-04
+[CVX] ep=040/100 last_loss=0.5991 train_acc=0.7527 val_acc=0.7350 lr=5.00e-04
+[CVX] ep=050/100 last_loss=0.5103 train_acc=0.7527 val_acc=0.7350 lr=5.00e-04
+[CVX] ep=060/100 last_loss=0.8528 train_acc=0.7523 val_acc=0.7350 lr=2.50e-04
+[CVX] ep=070/100 last_loss=0.6160 train_acc=0.7525 val_acc=0.7350 lr=2.50e-04
+[CVX] ep=080/100 last_loss=0.5048 train_acc=0.7525 val_acc=0.7350 lr=2.50e-04
+[CVX] ep=090/100 last_loss=0.6851 train_acc=0.7525 val_acc=0.7350 lr=1.25e-04
+[CVX] ep=100/100 last_loss=0.6658 train_acc=0.7525 val_acc=0.7350 lr=1.25e-04
+[CVX] ep=000/100 train_acc=0.6233 val_acc=0.6425 lr=1.00e-02
+[CVX] ep=001/100 last_loss=1.9577 train_acc=0.3767 val_acc=0.3575 lr=1.00e-02
+[CVX] ep=002/100 last_loss=1.8444 train_acc=0.4860 val_acc=0.4625 lr=1.00e-02
+[CVX] ep=003/100 last_loss=2.3896 train_acc=0.7467 val_acc=0.7208 lr=1.00e-02
+[CVX] ep=004/100 last_loss=1.0867 train_acc=0.3767 val_acc=0.3575 lr=1.00e-02
+[CVX] ep=005/100 last_loss=1.7357 train_acc=0.6235 val_acc=0.6425 lr=1.00e-02
+[CVX] ep=010/100 last_loss=4.0869 train_acc=0.4225 val_acc=0.3900 lr=1.00e-02
+[CVX] ep=020/100 last_loss=1.9749 train_acc=0.6233 val_acc=0.6425 lr=1.00e-02
+[CVX] ep=030/100 last_loss=1.4422 train_acc=0.6635 val_acc=0.6333 lr=5.00e-03
+[CVX] ep=040/100 last_loss=0.9875 train_acc=0.5208 val_acc=0.4867 lr=5.00e-03
+[CVX] ep=050/100 last_loss=1.4051 train_acc=0.6329 val_acc=0.5992 lr=5.00e-03
+[CVX] ep=060/100 last_loss=0.6239 train_acc=0.6510 val_acc=0.6558 lr=2.50e-03
+[CVX] ep=070/100 last_loss=0.6761 train_acc=0.7502 val_acc=0.7308 lr=2.50e-03
+[CVX] ep=080/100 last_loss=1.0038 train_acc=0.7498 val_acc=0.7275 lr=2.50e-03
+[CVX] ep=090/100 last_loss=0.8310 train_acc=0.7519 val_acc=0.7333 lr=1.25e-03
+[CVX] ep=100/100 last_loss=0.9851 train_acc=0.7525 val_acc=0.7342 lr=1.25e-03
+[CVX] ep=000/100 train_acc=0.6233 val_acc=0.6425 lr=5.00e-03
+[CVX] ep=001/100 last_loss=3.2805 train_acc=0.6458 val_acc=0.5933 lr=5.00e-03
+[CVX] ep=002/100 last_loss=1.7145 train_acc=0.7531 val_acc=0.7333 lr=5.00e-03
+[CVX] ep=003/100 last_loss=0.8380 train_acc=0.7525 val_acc=0.7317 lr=5.00e-03
+[CVX] ep=004/100 last_loss=1.0671 train_acc=0.7544 val_acc=0.7225 lr=5.00e-03
+[CVX] ep=005/100 last_loss=2.2463 train_acc=0.3771 val_acc=0.3575 lr=5.00e-03
+[CVX] ep=010/100 last_loss=1.5918 train_acc=0.6277 val_acc=0.6450 lr=5.00e-03
+[CVX] ep=020/100 last_loss=2.1756 train_acc=0.7527 val_acc=0.7325 lr=5.00e-03
+[CVX] ep=030/100 last_loss=1.0547 train_acc=0.7485 val_acc=0.7258 lr=2.50e-03
+[CVX] ep=040/100 last_loss=1.4358 train_acc=0.7498 val_acc=0.7283 lr=2.50e-03
+[CVX] ep=050/100 last_loss=1.2747 train_acc=0.6258 val_acc=0.6433 lr=2.50e-03
+[CVX] ep=060/100 last_loss=0.7311 train_acc=0.7512 val_acc=0.7292 lr=1.25e-03
+[CVX] ep=070/100 last_loss=0.8123 train_acc=0.7517 val_acc=0.7342 lr=1.25e-03
+[CVX] ep=080/100 last_loss=0.7688 train_acc=0.7527 val_acc=0.7350 lr=1.25e-03
+[CVX] ep=090/100 last_loss=1.1860 train_acc=0.6450 val_acc=0.6483 lr=6.25e-04
+[CVX] ep=100/100 last_loss=0.8867 train_acc=0.7465 val_acc=0.7075 lr=6.25e-04
+[CVX] ep=000/100 train_acc=0.6233 val_acc=0.6425 lr=1.00e-03
+[CVX] ep=001/100 last_loss=0.8109 train_acc=0.7527 val_acc=0.7350 lr=1.00e-03
+[CVX] ep=002/100 last_loss=0.7680 train_acc=0.7548 val_acc=0.7267 lr=1.00e-03
+[CVX] ep=003/100 last_loss=0.9083 train_acc=0.7544 val_acc=0.7317 lr=1.00e-03
+[CVX] ep=004/100 last_loss=0.6497 train_acc=0.7525 val_acc=0.7300 lr=1.00e-03
+[CVX] ep=005/100 last_loss=0.7800 train_acc=0.7523 val_acc=0.7350 lr=1.00e-03
+[CVX] ep=010/100 last_loss=0.8928 train_acc=0.7523 val_acc=0.7350 lr=1.00e-03
+[CVX] ep=020/100 last_loss=0.6049 train_acc=0.7521 val_acc=0.7333 lr=1.00e-03
+[CVX] ep=030/100 last_loss=0.6293 train_acc=0.7523 val_acc=0.7350 lr=5.00e-04
+[CVX] ep=040/100 last_loss=0.6014 train_acc=0.7525 val_acc=0.7350 lr=5.00e-04
+[CVX] ep=050/100 last_loss=0.6474 train_acc=0.7525 val_acc=0.7350 lr=5.00e-04
+[CVX] ep=060/100 last_loss=0.5600 train_acc=0.7521 val_acc=0.7350 lr=2.50e-04
+[CVX] ep=070/100 last_loss=0.6426 train_acc=0.7525 val_acc=0.7350 lr=2.50e-04
+[CVX] ep=080/100 last_loss=0.5679 train_acc=0.7523 val_acc=0.7350 lr=2.50e-04
+[CVX] ep=090/100 last_loss=0.7774 train_acc=0.7529 val_acc=0.7350 lr=1.25e-04
+[CVX] ep=100/100 last_loss=0.8355 train_acc=0.7525 val_acc=0.7350 lr=1.25e-04
+[seed 0] re-train CVX best for logging: beta=0.5 lr=0.01
+[CVX] ep=000/100 train_acc=0.6233 val_acc=0.6425 lr=1.00e-02
+[CVX] ep=001/100 last_loss=3.5168 train_acc=0.7481 val_acc=0.7242 lr=1.00e-02
+[CVX] ep=002/100 last_loss=2.5002 train_acc=0.5069 val_acc=0.4708 lr=1.00e-02
+[CVX] ep=003/100 last_loss=2.4831 train_acc=0.6233 val_acc=0.6425 lr=1.00e-02
+[CVX] ep=004/100 last_loss=3.5915 train_acc=0.7535 val_acc=0.7350 lr=1.00e-02
+[CVX] ep=005/100 last_loss=2.0901 train_acc=0.6708 val_acc=0.6600 lr=1.00e-02
+[CVX] ep=010/100 last_loss=2.8703 train_acc=0.7312 val_acc=0.6975 lr=1.00e-02
+[CVX] ep=020/100 last_loss=2.5241 train_acc=0.7529 val_acc=0.7350 lr=1.00e-02
+[CVX] ep=030/100 last_loss=1.6668 train_acc=0.6233 val_acc=0.6425 lr=5.00e-03
+[CVX] ep=040/100 last_loss=1.3078 train_acc=0.7423 val_acc=0.7067 lr=5.00e-03
+[CVX] ep=050/100 last_loss=2.4144 train_acc=0.3767 val_acc=0.3575 lr=5.00e-03
+[CVX] ep=060/100 last_loss=1.2009 train_acc=0.7317 val_acc=0.6525 lr=2.50e-03
+[CVX] ep=070/100 last_loss=1.2740 train_acc=0.7527 val_acc=0.7350 lr=2.50e-03
+[CVX] ep=080/100 last_loss=0.6755 train_acc=0.7612 val_acc=0.7217 lr=2.50e-03
+[CVX] ep=090/100 last_loss=0.6318 train_acc=0.7579 val_acc=0.7250 lr=1.25e-03
+[CVX] ep=100/100 last_loss=0.4372 train_acc=0.7621 val_acc=0.7117 lr=1.25e-03
+[STE] ep=000/100 train_acc=0.3948 val_acc=0.3925 lr=1.00e-03
+[STE] ep=001/100 last_loss=0.8394 train_acc=0.6233 val_acc=0.6425 lr=1.00e-03
+[STE] ep=002/100 last_loss=0.7546 train_acc=0.6233 val_acc=0.6425 lr=1.00e-03
+[STE] ep=003/100 last_loss=0.6908 train_acc=0.6233 val_acc=0.6425 lr=1.00e-03
+[STE] ep=004/100 last_loss=0.5839 train_acc=0.7360 val_acc=0.7542 lr=1.00e-03
+[STE] ep=005/100 last_loss=0.5629 train_acc=0.7344 val_acc=0.7517 lr=1.00e-03
+[STE] ep=010/100 last_loss=0.5469 train_acc=0.7352 val_acc=0.7517 lr=1.00e-03
+[STE] ep=020/100 last_loss=0.7366 train_acc=0.6873 val_acc=0.7067 lr=1.00e-03
+[STE] ep=030/100 last_loss=0.6013 train_acc=0.7365 val_acc=0.7558 lr=5.00e-04
+[STE] ep=040/100 last_loss=0.6266 train_acc=0.7365 val_acc=0.7558 lr=5.00e-04
+[STE] ep=050/100 last_loss=0.6678 train_acc=0.7365 val_acc=0.7558 lr=5.00e-04
+[STE] ep=060/100 last_loss=0.6409 train_acc=0.7365 val_acc=0.7558 lr=2.50e-04
+[STE] ep=070/100 last_loss=0.5590 train_acc=0.7365 val_acc=0.7558 lr=2.50e-04
+[STE] ep=080/100 last_loss=0.6226 train_acc=0.7365 val_acc=0.7558 lr=2.50e-04
+[STE] ep=090/100 last_loss=0.6438 train_acc=0.7365 val_acc=0.7558 lr=1.25e-04
+[STE] ep=100/100 last_loss=0.6082 train_acc=0.7365 val_acc=0.7558 lr=1.25e-04
+[seed 0] CVX test=0.7490 (val=0.7375, beta=0.5, lr=0.01, P_last=6000) | STE test=0.7512 (val=0.7558, width=4000)
+
+=== FINAL (mean ± std over seeds) ===
+CVX test_acc = 0.7490 ± 0.0000
+STE test_acc = 0.7512 ± 0.0000
+
+(.venv) hima_3114@Himanshus-MacBook-Pro-2 rnn_ffn % >....                                     
+  --val_frac 0.2 \
+  --n_test 5000 \
+  --epochs 100 \
+  --batch 128 \
+  --loss hinge \
+  --cvx_optimizer adam \
+  --cvx_step_size 30 \
+  --cvx_gamma 0.5 \
+  --ste_lr 0.001 \
+  --ste_beta_path 1e-4 \
+  --ste_step_size 30 \
+  --ste_gamma 0.5 \
+  --device mps \
+  --seeds 0 \
+
+[info] device=mps task=two_step_xor_seq T=5 L=3 epochs=100 batch=128
+[info] n_train_total=6000 val_frac=0.2 n_test=5000
+[info] P_in=4000 P_rec=4000 P_last(target)=6000
+[info] CVX grid betas=[1e-06, 0.001, 0.01, 0.1, 0.5, 1.0] lrs=[0.01, 0.005, 0.001] loss=hinge
+[rnn hypers] layer 1: U_in=(2, 4000) U_rec=(4000, 4000) (shared across all T)
+[rnn hypers] layer 2: U_in=(4000, 4000) U_rec=(4000, 4000) (shared across all T)
+[rnn patterns] last-layer enforce: round=1/300 uniques=6000/6000
+[rnn patterns] P_last_unique=6000 (target=6000, n_train=4800)
+[seed 0] patterns done: P_last_unique=6000 (target=6000, n_train=4800)
+[CVX] ep=000/100 train_acc=0.6167 val_acc=0.6250 lr=1.00e-02
+[CVX] ep=001/100 last_loss=0.2116 train_acc=0.9446 val_acc=0.9175 lr=1.00e-02
+[CVX] ep=002/100 last_loss=0.0300 train_acc=0.9694 val_acc=0.9542 lr=1.00e-02
+[CVX] ep=003/100 last_loss=0.0376 train_acc=0.9054 val_acc=0.9008 lr=1.00e-02
+[CVX] ep=004/100 last_loss=0.0497 train_acc=0.9773 val_acc=0.9642 lr=1.00e-02
+[CVX] ep=005/100 last_loss=0.0000 train_acc=0.9985 val_acc=0.9958 lr=1.00e-02
+[CVX] ep=010/100 last_loss=0.0000 train_acc=1.0000 val_acc=1.0000 lr=1.00e-02
+[CVX] ep=020/100 last_loss=0.0000 train_acc=1.0000 val_acc=1.0000 lr=1.00e-02
+[CVX] ep=030/100 last_loss=0.0000 train_acc=1.0000 val_acc=1.0000 lr=5.00e-03
+[CVX] ep=040/100 last_loss=0.0000 train_acc=1.0000 val_acc=1.0000 lr=5.00e-03
+[CVX] ep=050/100 last_loss=0.0000 train_acc=1.0000 val_acc=1.0000 lr=5.00e-03
+[CVX] ep=060/100 last_loss=0.0000 train_acc=1.0000 val_acc=1.0000 lr=2.50e-03
+[CVX] ep=070/100 last_loss=0.0000 train_acc=1.0000 val_acc=1.0000 lr=2.50e-03
+[CVX] ep=080/100 last_loss=0.0000 train_acc=1.0000 val_acc=1.0000 lr=2.50e-03
+[CVX] ep=090/100 last_loss=0.0000 train_acc=1.0000 val_acc=1.0000 lr=1.25e-03
+[CVX] ep=100/100 last_loss=0.0000 train_acc=1.0000 val_acc=1.0000 lr=1.25e-03
+[CVX] ep=000/100 train_acc=0.6167 val_acc=0.6250 lr=5.00e-03
+[CVX] ep=001/100 last_loss=0.2513 train_acc=0.9033 val_acc=0.8975 lr=5.00e-03
+[CVX] ep=002/100 last_loss=0.1642 train_acc=0.9817 val_acc=0.9767 lr=5.00e-03
+[CVX] ep=003/100 last_loss=0.0416 train_acc=0.9965 val_acc=0.9925 lr=5.00e-03
+[CVX] ep=004/100 last_loss=0.0000 train_acc=0.9998 val_acc=0.9992 lr=5.00e-03
+[CVX] ep=005/100 last_loss=0.0000 train_acc=0.9998 val_acc=0.9992 lr=5.00e-03
+[CVX] ep=010/100 last_loss=0.0029 train_acc=0.9994 val_acc=0.9992 lr=5.00e-03
+[CVX] ep=020/100 last_loss=0.0000 train_acc=1.0000 val_acc=1.0000 lr=5.00e-03
+[CVX] ep=030/100 last_loss=0.0000 train_acc=1.0000 val_acc=1.0000 lr=2.50e-03
+[CVX] ep=040/100 last_loss=0.0000 train_acc=1.0000 val_acc=1.0000 lr=2.50e-03
+[CVX] ep=050/100 last_loss=0.0000 train_acc=1.0000 val_acc=1.0000 lr=2.50e-03
+[CVX] ep=060/100 last_loss=0.0000 train_acc=1.0000 val_acc=1.0000 lr=1.25e-03
+[CVX] ep=070/100 last_loss=0.0000 train_acc=1.0000 val_acc=1.0000 lr=1.25e-03
+[CVX] ep=080/100 last_loss=0.0000 train_acc=1.0000 val_acc=1.0000 lr=1.25e-03
+[CVX] ep=090/100 last_loss=0.0000 train_acc=1.0000 val_acc=1.0000 lr=6.25e-04
+[CVX] ep=100/100 last_loss=0.0000 train_acc=1.0000 val_acc=1.0000 lr=6.25e-04
+[CVX] ep=000/100 train_acc=0.6167 val_acc=0.6250 lr=1.00e-03
+[CVX] ep=001/100 last_loss=0.5385 train_acc=0.7990 val_acc=0.8033 lr=1.00e-03
+[CVX] ep=002/100 last_loss=0.2673 train_acc=0.9373 val_acc=0.9342 lr=1.00e-03
+[CVX] ep=003/100 last_loss=0.0861 train_acc=0.9750 val_acc=0.9625 lr=1.00e-03
+[CVX] ep=004/100 last_loss=0.1415 train_acc=0.9867 val_acc=0.9650 lr=1.00e-03
+[CVX] ep=005/100 last_loss=0.0473 train_acc=0.9925 val_acc=0.9783 lr=1.00e-03
+[CVX] ep=010/100 last_loss=0.0000 train_acc=0.9994 val_acc=0.9992 lr=1.00e-03
+[CVX] ep=020/100 last_loss=0.0000 train_acc=1.0000 val_acc=1.0000 lr=1.00e-03
+[CVX] ep=030/100 last_loss=0.0000 train_acc=1.0000 val_acc=1.0000 lr=5.00e-04
+[CVX] ep=040/100 last_loss=0.0000 train_acc=1.0000 val_acc=1.0000 lr=5.00e-04
+[CVX] ep=050/100 last_loss=0.0000 train_acc=1.0000 val_acc=1.0000 lr=5.00e-04
+[CVX] ep=060/100 last_loss=0.0000 train_acc=1.0000 val_acc=1.0000 lr=2.50e-04
+[CVX] ep=070/100 last_loss=0.0000 train_acc=1.0000 val_acc=1.0000 lr=2.50e-04
+[CVX] ep=080/100 last_loss=0.0000 train_acc=1.0000 val_acc=1.0000 lr=2.50e-04
+[CVX] ep=090/100 last_loss=0.0000 train_acc=1.0000 val_acc=1.0000 lr=1.25e-04
+[CVX] ep=100/100 last_loss=0.0000 train_acc=1.0000 val_acc=1.0000 lr=1.25e-04
+[CVX] ep=000/100 train_acc=0.6167 val_acc=0.6250 lr=1.00e-02
+[CVX] ep=001/100 last_loss=2.8112 train_acc=0.7304 val_acc=0.7467 lr=1.00e-02
+[CVX] ep=002/100 last_loss=0.0472 train_acc=0.9333 val_acc=0.9117 lr=1.00e-02
+[CVX] ep=003/100 last_loss=0.0212 train_acc=0.9981 val_acc=0.9975 lr=1.00e-02
+[CVX] ep=004/100 last_loss=0.1551 train_acc=0.9908 val_acc=0.9817 lr=1.00e-02
+[CVX] ep=005/100 last_loss=0.0355 train_acc=0.9998 val_acc=0.9992 lr=1.00e-02
+[CVX] ep=010/100 last_loss=0.0124 train_acc=0.9996 val_acc=0.9983 lr=1.00e-02
+[CVX] ep=020/100 last_loss=0.0114 train_acc=1.0000 val_acc=1.0000 lr=1.00e-02
+[CVX] ep=030/100 last_loss=0.0102 train_acc=1.0000 val_acc=1.0000 lr=5.00e-03
+[CVX] ep=040/100 last_loss=0.0095 train_acc=1.0000 val_acc=1.0000 lr=5.00e-03
+[CVX] ep=050/100 last_loss=0.0094 train_acc=1.0000 val_acc=1.0000 lr=5.00e-03
+[CVX] ep=060/100 last_loss=0.0086 train_acc=1.0000 val_acc=1.0000 lr=2.50e-03
+[CVX] ep=070/100 last_loss=0.0081 train_acc=1.0000 val_acc=1.0000 lr=2.50e-03
+[CVX] ep=080/100 last_loss=0.0076 train_acc=1.0000 val_acc=1.0000 lr=2.50e-03
+[CVX] ep=090/100 last_loss=0.0072 train_acc=1.0000 val_acc=1.0000 lr=1.25e-03
+[CVX] ep=100/100 last_loss=0.0068 train_acc=1.0000 val_acc=1.0000 lr=1.25e-03
+[CVX] ep=000/100 train_acc=0.6167 val_acc=0.6250 lr=5.00e-03
+[CVX] ep=001/100 last_loss=0.9876 train_acc=0.7552 val_acc=0.7767 lr=5.00e-03
+[CVX] ep=002/100 last_loss=0.3436 train_acc=0.9387 val_acc=0.9450 lr=5.00e-03
+[CVX] ep=003/100 last_loss=0.0302 train_acc=0.9448 val_acc=0.9192 lr=5.00e-03
+[CVX] ep=004/100 last_loss=0.0868 train_acc=0.9958 val_acc=0.9900 lr=5.00e-03
+[CVX] ep=005/100 last_loss=0.0047 train_acc=0.9973 val_acc=0.9933 lr=5.00e-03
+[CVX] ep=010/100 last_loss=0.0046 train_acc=1.0000 val_acc=1.0000 lr=5.00e-03
+[CVX] ep=020/100 last_loss=0.0073 train_acc=1.0000 val_acc=1.0000 lr=5.00e-03
+[CVX] ep=030/100 last_loss=0.0094 train_acc=1.0000 val_acc=1.0000 lr=2.50e-03
+[CVX] ep=040/100 last_loss=0.0090 train_acc=1.0000 val_acc=1.0000 lr=2.50e-03
+[CVX] ep=050/100 last_loss=0.0086 train_acc=1.0000 val_acc=1.0000 lr=2.50e-03
+[CVX] ep=060/100 last_loss=0.0081 train_acc=1.0000 val_acc=1.0000 lr=1.25e-03
+[CVX] ep=070/100 last_loss=0.0078 train_acc=1.0000 val_acc=1.0000 lr=1.25e-03
+[CVX] ep=080/100 last_loss=0.0075 train_acc=1.0000 val_acc=1.0000 lr=1.25e-03
+[CVX] ep=090/100 last_loss=0.0072 train_acc=1.0000 val_acc=1.0000 lr=6.25e-04
+[CVX] ep=100/100 last_loss=0.0070 train_acc=1.0000 val_acc=1.0000 lr=6.25e-04
+[CVX] ep=000/100 train_acc=0.6167 val_acc=0.6250 lr=1.00e-03
+[CVX] ep=001/100 last_loss=0.6808 train_acc=0.8015 val_acc=0.8067 lr=1.00e-03
+[CVX] ep=002/100 last_loss=0.2247 train_acc=0.9062 val_acc=0.8933 lr=1.00e-03
+[CVX] ep=003/100 last_loss=0.1415 train_acc=0.9619 val_acc=0.9500 lr=1.00e-03
+[CVX] ep=004/100 last_loss=0.0852 train_acc=0.9735 val_acc=0.9692 lr=1.00e-03
+[CVX] ep=005/100 last_loss=0.0579 train_acc=0.9888 val_acc=0.9750 lr=1.00e-03
+[CVX] ep=010/100 last_loss=0.0042 train_acc=0.9994 val_acc=0.9992 lr=1.00e-03
+[CVX] ep=020/100 last_loss=0.0023 train_acc=1.0000 val_acc=1.0000 lr=1.00e-03
+[CVX] ep=030/100 last_loss=0.0022 train_acc=1.0000 val_acc=1.0000 lr=5.00e-04
+[CVX] ep=040/100 last_loss=0.0021 train_acc=1.0000 val_acc=1.0000 lr=5.00e-04
+[CVX] ep=050/100 last_loss=0.0023 train_acc=1.0000 val_acc=1.0000 lr=5.00e-04
+[CVX] ep=060/100 last_loss=0.0022 train_acc=1.0000 val_acc=1.0000 lr=2.50e-04
+[CVX] ep=070/100 last_loss=0.0021 train_acc=1.0000 val_acc=1.0000 lr=2.50e-04
+[CVX] ep=080/100 last_loss=0.0021 train_acc=1.0000 val_acc=1.0000 lr=2.50e-04
+[CVX] ep=090/100 last_loss=0.0020 train_acc=1.0000 val_acc=1.0000 lr=1.25e-04
+[CVX] ep=100/100 last_loss=0.0020 train_acc=1.0000 val_acc=1.0000 lr=1.25e-04
+[CVX] ep=000/100 train_acc=0.6167 val_acc=0.6250 lr=1.00e-02
+[CVX] ep=001/100 last_loss=2.9126 train_acc=0.8840 val_acc=0.8725 lr=1.00e-02
+[CVX] ep=002/100 last_loss=0.0801 train_acc=0.9688 val_acc=0.9625 lr=1.00e-02
+[CVX] ep=003/100 last_loss=0.0977 train_acc=0.9852 val_acc=0.9742 lr=1.00e-02
+[CVX] ep=004/100 last_loss=0.0620 train_acc=0.9852 val_acc=0.9725 lr=1.00e-02
+[CVX] ep=005/100 last_loss=0.0555 train_acc=0.9996 val_acc=0.9992 lr=1.00e-02
+[CVX] ep=010/100 last_loss=0.0748 train_acc=0.9648 val_acc=0.9542 lr=1.00e-02
+[CVX] ep=020/100 last_loss=0.0420 train_acc=1.0000 val_acc=0.9992 lr=1.00e-02
+[CVX] ep=030/100 last_loss=0.1076 train_acc=1.0000 val_acc=1.0000 lr=5.00e-03
+[CVX] ep=040/100 last_loss=0.0840 train_acc=1.0000 val_acc=1.0000 lr=5.00e-03
+[CVX] ep=050/100 last_loss=0.0652 train_acc=1.0000 val_acc=1.0000 lr=5.00e-03
+[CVX] ep=060/100 last_loss=0.0584 train_acc=1.0000 val_acc=1.0000 lr=2.50e-03
+[CVX] ep=070/100 last_loss=0.0425 train_acc=1.0000 val_acc=1.0000 lr=2.50e-03
+[CVX] ep=080/100 last_loss=0.0384 train_acc=1.0000 val_acc=1.0000 lr=2.50e-03
+[CVX] ep=090/100 last_loss=0.0469 train_acc=1.0000 val_acc=1.0000 lr=1.25e-03
+[CVX] ep=100/100 last_loss=0.0362 train_acc=1.0000 val_acc=1.0000 lr=1.25e-03
+[CVX] ep=000/100 train_acc=0.6167 val_acc=0.6250 lr=5.00e-03
+[CVX] ep=001/100 last_loss=0.7805 train_acc=0.7771 val_acc=0.7942 lr=5.00e-03
+[CVX] ep=002/100 last_loss=0.0536 train_acc=0.9702 val_acc=0.9525 lr=5.00e-03
+[CVX] ep=003/100 last_loss=0.0862 train_acc=0.9948 val_acc=0.9925 lr=5.00e-03
+[CVX] ep=004/100 last_loss=0.2590 train_acc=0.9910 val_acc=0.9850 lr=5.00e-03
+[CVX] ep=005/100 last_loss=0.0988 train_acc=0.9969 val_acc=0.9900 lr=5.00e-03
+[CVX] ep=010/100 last_loss=0.0392 train_acc=1.0000 val_acc=1.0000 lr=5.00e-03
+[CVX] ep=020/100 last_loss=0.0580 train_acc=0.9981 val_acc=0.9950 lr=5.00e-03
+[CVX] ep=030/100 last_loss=0.0508 train_acc=1.0000 val_acc=1.0000 lr=2.50e-03
+[CVX] ep=040/100 last_loss=0.0402 train_acc=1.0000 val_acc=1.0000 lr=2.50e-03
+[CVX] ep=050/100 last_loss=0.0314 train_acc=1.0000 val_acc=1.0000 lr=2.50e-03
+[CVX] ep=060/100 last_loss=0.0363 train_acc=1.0000 val_acc=1.0000 lr=1.25e-03
+[CVX] ep=070/100 last_loss=0.0309 train_acc=1.0000 val_acc=1.0000 lr=1.25e-03
+[CVX] ep=080/100 last_loss=0.0268 train_acc=1.0000 val_acc=1.0000 lr=1.25e-03
+[CVX] ep=090/100 last_loss=0.0237 train_acc=1.0000 val_acc=1.0000 lr=6.25e-04
+[CVX] ep=100/100 last_loss=0.0201 train_acc=1.0000 val_acc=1.0000 lr=6.25e-04
+[CVX] ep=000/100 train_acc=0.6167 val_acc=0.6250 lr=1.00e-03
+[CVX] ep=001/100 last_loss=0.3920 train_acc=0.7619 val_acc=0.7858 lr=1.00e-03
+[CVX] ep=002/100 last_loss=0.2421 train_acc=0.9300 val_acc=0.9233 lr=1.00e-03
+[CVX] ep=003/100 last_loss=0.1033 train_acc=0.9558 val_acc=0.9592 lr=1.00e-03
+[CVX] ep=004/100 last_loss=0.0500 train_acc=0.9856 val_acc=0.9717 lr=1.00e-03
+[CVX] ep=005/100 last_loss=0.0783 train_acc=0.9785 val_acc=0.9725 lr=1.00e-03
+[CVX] ep=010/100 last_loss=0.0191 train_acc=0.9994 val_acc=0.9992 lr=1.00e-03
+[CVX] ep=020/100 last_loss=0.0209 train_acc=1.0000 val_acc=1.0000 lr=1.00e-03
+[CVX] ep=030/100 last_loss=0.0165 train_acc=1.0000 val_acc=1.0000 lr=5.00e-04
+[CVX] ep=040/100 last_loss=0.0186 train_acc=1.0000 val_acc=1.0000 lr=5.00e-04
+[CVX] ep=050/100 last_loss=0.0152 train_acc=1.0000 val_acc=1.0000 lr=5.00e-04
+[CVX] ep=060/100 last_loss=0.0146 train_acc=1.0000 val_acc=1.0000 lr=2.50e-04
+[CVX] ep=070/100 last_loss=0.0132 train_acc=1.0000 val_acc=1.0000 lr=2.50e-04
+[CVX] ep=080/100 last_loss=0.0126 train_acc=1.0000 val_acc=1.0000 lr=2.50e-04
+[CVX] ep=090/100 last_loss=0.0130 train_acc=1.0000 val_acc=1.0000 lr=1.25e-04
+[CVX] ep=100/100 last_loss=0.0121 train_acc=1.0000 val_acc=1.0000 lr=1.25e-04
+[CVX] ep=000/100 train_acc=0.6167 val_acc=0.6250 lr=1.00e-02
+[CVX] ep=001/100 last_loss=2.2280 train_acc=0.8029 val_acc=0.8217 lr=1.00e-02
+[CVX] ep=002/100 last_loss=0.4656 train_acc=0.9521 val_acc=0.9350 lr=1.00e-02
+[CVX] ep=003/100 last_loss=0.2767 train_acc=0.9571 val_acc=0.9367 lr=1.00e-02
+[CVX] ep=004/100 last_loss=0.8519 train_acc=0.9683 val_acc=0.9625 lr=1.00e-02
+[CVX] ep=005/100 last_loss=2.5975 train_acc=0.8431 val_acc=0.8617 lr=1.00e-02
+[CVX] ep=010/100 last_loss=1.5953 train_acc=0.8810 val_acc=0.8833 lr=1.00e-02
+[CVX] ep=020/100 last_loss=0.3016 train_acc=0.9996 val_acc=1.0000 lr=1.00e-02
+[CVX] ep=030/100 last_loss=1.1976 train_acc=0.9548 val_acc=0.9500 lr=5.00e-03
+[CVX] ep=040/100 last_loss=0.3181 train_acc=0.9925 val_acc=0.9900 lr=5.00e-03
+[CVX] ep=050/100 last_loss=0.1810 train_acc=0.9985 val_acc=0.9992 lr=5.00e-03
+[CVX] ep=060/100 last_loss=0.2817 train_acc=1.0000 val_acc=1.0000 lr=2.50e-03
+[CVX] ep=070/100 last_loss=0.1405 train_acc=1.0000 val_acc=1.0000 lr=2.50e-03
+[CVX] ep=080/100 last_loss=0.1508 train_acc=1.0000 val_acc=1.0000 lr=2.50e-03
+[CVX] ep=090/100 last_loss=0.6062 train_acc=0.9983 val_acc=0.9975 lr=1.25e-03
+[CVX] ep=100/100 last_loss=0.1338 train_acc=1.0000 val_acc=1.0000 lr=1.25e-03
+[CVX] ep=000/100 train_acc=0.6167 val_acc=0.6250 lr=5.00e-03
+[CVX] ep=001/100 last_loss=0.6533 train_acc=0.7979 val_acc=0.7942 lr=5.00e-03
+[CVX] ep=002/100 last_loss=0.2518 train_acc=0.9829 val_acc=0.9767 lr=5.00e-03
+[CVX] ep=003/100 last_loss=0.3464 train_acc=0.8835 val_acc=0.8817 lr=5.00e-03
+[CVX] ep=004/100 last_loss=0.2174 train_acc=0.9965 val_acc=0.9942 lr=5.00e-03
+[CVX] ep=005/100 last_loss=0.2320 train_acc=0.6896 val_acc=0.6867 lr=5.00e-03
+[CVX] ep=010/100 last_loss=0.7695 train_acc=0.7538 val_acc=0.7417 lr=5.00e-03
+[CVX] ep=020/100 last_loss=0.2986 train_acc=0.6687 val_acc=0.6675 lr=5.00e-03
+[CVX] ep=030/100 last_loss=0.2536 train_acc=0.9725 val_acc=0.9667 lr=2.50e-03
+[CVX] ep=040/100 last_loss=0.1821 train_acc=1.0000 val_acc=1.0000 lr=2.50e-03
+[CVX] ep=050/100 last_loss=0.3433 train_acc=0.9988 val_acc=0.9975 lr=2.50e-03
+[CVX] ep=060/100 last_loss=0.1802 train_acc=0.9996 val_acc=0.9983 lr=1.25e-03
+[CVX] ep=070/100 last_loss=0.1182 train_acc=1.0000 val_acc=1.0000 lr=1.25e-03
+[CVX] ep=080/100 last_loss=0.1333 train_acc=0.9998 val_acc=0.9992 lr=1.25e-03
+[CVX] ep=090/100 last_loss=0.1233 train_acc=1.0000 val_acc=1.0000 lr=6.25e-04
+[CVX] ep=100/100 last_loss=0.1065 train_acc=1.0000 val_acc=1.0000 lr=6.25e-04
+[CVX] ep=000/100 train_acc=0.6167 val_acc=0.6250 lr=1.00e-03
+[CVX] ep=001/100 last_loss=0.5596 train_acc=0.7469 val_acc=0.7733 lr=1.00e-03
+[CVX] ep=002/100 last_loss=0.3824 train_acc=0.9246 val_acc=0.9292 lr=1.00e-03
+[CVX] ep=003/100 last_loss=0.3234 train_acc=0.9415 val_acc=0.9483 lr=1.00e-03
+[CVX] ep=004/100 last_loss=0.2849 train_acc=0.9721 val_acc=0.9592 lr=1.00e-03
+[CVX] ep=005/100 last_loss=0.2109 train_acc=0.9815 val_acc=0.9725 lr=1.00e-03
+[CVX] ep=010/100 last_loss=0.1131 train_acc=0.9942 val_acc=0.9917 lr=1.00e-03
+[CVX] ep=020/100 last_loss=0.1990 train_acc=0.9988 val_acc=0.9992 lr=1.00e-03
+[CVX] ep=030/100 last_loss=0.1136 train_acc=0.9992 val_acc=0.9992 lr=5.00e-04
+[CVX] ep=040/100 last_loss=0.0903 train_acc=0.9994 val_acc=0.9992 lr=5.00e-04
+[CVX] ep=050/100 last_loss=0.0992 train_acc=0.9994 val_acc=0.9992 lr=5.00e-04
+[CVX] ep=060/100 last_loss=0.0927 train_acc=0.9998 val_acc=0.9992 lr=2.50e-04
+[CVX] ep=070/100 last_loss=0.0889 train_acc=1.0000 val_acc=1.0000 lr=2.50e-04
+[CVX] ep=080/100 last_loss=0.0836 train_acc=1.0000 val_acc=1.0000 lr=2.50e-04
+[CVX] ep=090/100 last_loss=0.0838 train_acc=1.0000 val_acc=1.0000 lr=1.25e-04
+[CVX] ep=100/100 last_loss=0.0786 train_acc=1.0000 val_acc=1.0000 lr=1.25e-04
+[CVX] ep=000/100 train_acc=0.6167 val_acc=0.6250 lr=1.00e-02
+[CVX] ep=001/100 last_loss=3.0668 train_acc=0.8554 val_acc=0.8500 lr=1.00e-02
+[CVX] ep=002/100 last_loss=0.9240 train_acc=0.7010 val_acc=0.6683 lr=1.00e-02
+[CVX] ep=003/100 last_loss=4.0604 train_acc=0.6167 val_acc=0.6250 lr=1.00e-02
+[CVX] ep=004/100 last_loss=0.7855 train_acc=0.9202 val_acc=0.9217 lr=1.00e-02
+[CVX] ep=005/100 last_loss=4.1764 train_acc=0.6167 val_acc=0.6250 lr=1.00e-02
+[CVX] ep=010/100 last_loss=1.1980 train_acc=0.6512 val_acc=0.6650 lr=1.00e-02
+[CVX] ep=020/100 last_loss=1.5836 train_acc=0.9285 val_acc=0.9333 lr=1.00e-02
+[CVX] ep=030/100 last_loss=1.8065 train_acc=0.9423 val_acc=0.9325 lr=5.00e-03
+[CVX] ep=040/100 last_loss=1.0888 train_acc=0.8390 val_acc=0.8158 lr=5.00e-03
+[CVX] ep=050/100 last_loss=0.6508 train_acc=0.8279 val_acc=0.8000 lr=5.00e-03
+[CVX] ep=060/100 last_loss=0.7889 train_acc=0.9569 val_acc=0.9433 lr=2.50e-03
+[CVX] ep=070/100 last_loss=0.4062 train_acc=0.9788 val_acc=0.9742 lr=2.50e-03
+[CVX] ep=080/100 last_loss=0.4195 train_acc=0.9223 val_acc=0.9033 lr=2.50e-03
+[CVX] ep=090/100 last_loss=0.4220 train_acc=0.9615 val_acc=0.9600 lr=1.25e-03
+[CVX] ep=100/100 last_loss=0.3589 train_acc=0.9773 val_acc=0.9708 lr=1.25e-03
+[CVX] ep=000/100 train_acc=0.6167 val_acc=0.6250 lr=5.00e-03
+[CVX] ep=001/100 last_loss=2.0567 train_acc=0.8108 val_acc=0.8342 lr=5.00e-03
+[CVX] ep=002/100 last_loss=1.3613 train_acc=0.9204 val_acc=0.9300 lr=5.00e-03
+[CVX] ep=003/100 last_loss=1.5350 train_acc=0.7781 val_acc=0.7633 lr=5.00e-03
+[CVX] ep=004/100 last_loss=1.0692 train_acc=0.6569 val_acc=0.6708 lr=5.00e-03
+[CVX] ep=005/100 last_loss=2.4554 train_acc=0.6167 val_acc=0.6250 lr=5.00e-03
+[CVX] ep=010/100 last_loss=0.5869 train_acc=0.9602 val_acc=0.9550 lr=5.00e-03
+[CVX] ep=020/100 last_loss=0.5963 train_acc=0.8156 val_acc=0.7967 lr=5.00e-03
+[CVX] ep=030/100 last_loss=0.6497 train_acc=0.9383 val_acc=0.9400 lr=2.50e-03
+[CVX] ep=040/100 last_loss=0.6230 train_acc=0.9802 val_acc=0.9742 lr=2.50e-03
+[CVX] ep=050/100 last_loss=0.4271 train_acc=0.9792 val_acc=0.9775 lr=2.50e-03
+[CVX] ep=060/100 last_loss=0.4093 train_acc=0.9783 val_acc=0.9750 lr=1.25e-03
+[CVX] ep=070/100 last_loss=0.3923 train_acc=0.9779 val_acc=0.9750 lr=1.25e-03
+[CVX] ep=080/100 last_loss=0.5825 train_acc=0.9756 val_acc=0.9717 lr=1.25e-03
+[CVX] ep=090/100 last_loss=0.4259 train_acc=0.9769 val_acc=0.9742 lr=6.25e-04
+[CVX] ep=100/100 last_loss=0.4059 train_acc=0.9815 val_acc=0.9792 lr=6.25e-04
+[CVX] ep=000/100 train_acc=0.6167 val_acc=0.6250 lr=1.00e-03
+[CVX] ep=001/100 last_loss=0.6350 train_acc=0.7356 val_acc=0.7600 lr=1.00e-03
+[CVX] ep=002/100 last_loss=0.5373 train_acc=0.8352 val_acc=0.8492 lr=1.00e-03
+[CVX] ep=003/100 last_loss=0.5798 train_acc=0.8821 val_acc=0.8842 lr=1.00e-03
+[CVX] ep=004/100 last_loss=0.3596 train_acc=0.9294 val_acc=0.9358 lr=1.00e-03
+[CVX] ep=005/100 last_loss=0.7012 train_acc=0.9092 val_acc=0.9108 lr=1.00e-03
+[CVX] ep=010/100 last_loss=0.6100 train_acc=0.9313 val_acc=0.9317 lr=1.00e-03
+[CVX] ep=020/100 last_loss=0.6927 train_acc=0.9400 val_acc=0.9450 lr=1.00e-03
+[CVX] ep=030/100 last_loss=0.4229 train_acc=0.9585 val_acc=0.9575 lr=5.00e-04
+[CVX] ep=040/100 last_loss=0.3430 train_acc=0.9702 val_acc=0.9708 lr=5.00e-04
+[CVX] ep=050/100 last_loss=0.4022 train_acc=0.9785 val_acc=0.9758 lr=5.00e-04
+[CVX] ep=060/100 last_loss=0.3328 train_acc=0.9742 val_acc=0.9742 lr=2.50e-04
+[CVX] ep=070/100 last_loss=0.3144 train_acc=0.9798 val_acc=0.9775 lr=2.50e-04
+[CVX] ep=080/100 last_loss=0.3551 train_acc=0.9742 val_acc=0.9733 lr=2.50e-04
+[CVX] ep=090/100 last_loss=0.3799 train_acc=0.9794 val_acc=0.9775 lr=1.25e-04
+[CVX] ep=100/100 last_loss=0.3015 train_acc=0.9802 val_acc=0.9775 lr=1.25e-04
+[CVX] ep=000/100 train_acc=0.6167 val_acc=0.6250 lr=1.00e-02
+[CVX] ep=001/100 last_loss=2.1911 train_acc=0.6167 val_acc=0.6250 lr=1.00e-02
+[CVX] ep=002/100 last_loss=1.4233 train_acc=0.6167 val_acc=0.6250 lr=1.00e-02
+[CVX] ep=003/100 last_loss=2.1349 train_acc=0.6398 val_acc=0.6192 lr=1.00e-02
+[CVX] ep=004/100 last_loss=3.3159 train_acc=0.8398 val_acc=0.8442 lr=1.00e-02
+[CVX] ep=005/100 last_loss=3.8631 train_acc=0.3877 val_acc=0.3842 lr=1.00e-02
+[CVX] ep=010/100 last_loss=1.2660 train_acc=0.6904 val_acc=0.6875 lr=1.00e-02
+[CVX] ep=020/100 last_loss=1.4695 train_acc=0.7927 val_acc=0.8117 lr=1.00e-02
+[CVX] ep=030/100 last_loss=1.8425 train_acc=0.7727 val_acc=0.7650 lr=5.00e-03
+[CVX] ep=040/100 last_loss=0.9952 train_acc=0.8013 val_acc=0.8175 lr=5.00e-03
+[CVX] ep=050/100 last_loss=2.1181 train_acc=0.7283 val_acc=0.7417 lr=5.00e-03
+[CVX] ep=060/100 last_loss=1.5904 train_acc=0.7335 val_acc=0.7467 lr=2.50e-03
+[CVX] ep=070/100 last_loss=0.6516 train_acc=0.8523 val_acc=0.8517 lr=2.50e-03
+[CVX] ep=080/100 last_loss=1.3423 train_acc=0.8885 val_acc=0.8992 lr=2.50e-03
+[CVX] ep=090/100 last_loss=0.8790 train_acc=0.6360 val_acc=0.6492 lr=1.25e-03
+[CVX] ep=100/100 last_loss=0.5688 train_acc=0.9000 val_acc=0.9017 lr=1.25e-03
+[CVX] ep=000/100 train_acc=0.6167 val_acc=0.6250 lr=5.00e-03
+[CVX] ep=001/100 last_loss=2.2404 train_acc=0.7610 val_acc=0.7825 lr=5.00e-03
+[CVX] ep=002/100 last_loss=1.0876 train_acc=0.7710 val_acc=0.7925 lr=5.00e-03
+[CVX] ep=003/100 last_loss=1.8636 train_acc=0.7388 val_acc=0.7508 lr=5.00e-03
+[CVX] ep=004/100 last_loss=0.9735 train_acc=0.7867 val_acc=0.7983 lr=5.00e-03
+[CVX] ep=005/100 last_loss=0.8013 train_acc=0.6994 val_acc=0.7067 lr=5.00e-03
+[CVX] ep=010/100 last_loss=0.7971 train_acc=0.6608 val_acc=0.6758 lr=5.00e-03
+[CVX] ep=020/100 last_loss=0.7914 train_acc=0.4835 val_acc=0.4650 lr=5.00e-03
+[CVX] ep=030/100 last_loss=1.3120 train_acc=0.7367 val_acc=0.7508 lr=2.50e-03
+[CVX] ep=040/100 last_loss=0.8471 train_acc=0.6677 val_acc=0.6583 lr=2.50e-03
+[CVX] ep=050/100 last_loss=0.6834 train_acc=0.7723 val_acc=0.7775 lr=2.50e-03
+[CVX] ep=060/100 last_loss=0.7492 train_acc=0.8981 val_acc=0.9075 lr=1.25e-03
+[CVX] ep=070/100 last_loss=0.5891 train_acc=0.8844 val_acc=0.8850 lr=1.25e-03
+[CVX] ep=080/100 last_loss=0.6603 train_acc=0.9094 val_acc=0.9175 lr=1.25e-03
+[CVX] ep=090/100 last_loss=0.7143 train_acc=0.9133 val_acc=0.9192 lr=6.25e-04
+[CVX] ep=100/100 last_loss=0.4790 train_acc=0.9110 val_acc=0.9150 lr=6.25e-04
+[CVX] ep=000/100 train_acc=0.6167 val_acc=0.6250 lr=1.00e-03
+[CVX] ep=001/100 last_loss=0.6957 train_acc=0.7379 val_acc=0.7617 lr=1.00e-03
+[CVX] ep=002/100 last_loss=0.5771 train_acc=0.7438 val_acc=0.7675 lr=1.00e-03
+[CVX] ep=003/100 last_loss=0.5754 train_acc=0.7744 val_acc=0.7958 lr=1.00e-03
+[CVX] ep=004/100 last_loss=0.5490 train_acc=0.8729 val_acc=0.8833 lr=1.00e-03
+[CVX] ep=005/100 last_loss=0.6991 train_acc=0.7992 val_acc=0.8117 lr=1.00e-03
+[CVX] ep=010/100 last_loss=0.5540 train_acc=0.9144 val_acc=0.9125 lr=1.00e-03
+[CVX] ep=020/100 last_loss=0.6045 train_acc=0.9073 val_acc=0.9167 lr=1.00e-03
+[CVX] ep=030/100 last_loss=0.5721 train_acc=0.9171 val_acc=0.9250 lr=5.00e-04
+[CVX] ep=040/100 last_loss=0.5391 train_acc=0.9060 val_acc=0.9100 lr=5.00e-04
+[CVX] ep=050/100 last_loss=0.6106 train_acc=0.9171 val_acc=0.9258 lr=5.00e-04
+[CVX] ep=060/100 last_loss=0.5133 train_acc=0.8927 val_acc=0.8992 lr=2.50e-04
+[CVX] ep=070/100 last_loss=0.5579 train_acc=0.9133 val_acc=0.9208 lr=2.50e-04
+[CVX] ep=080/100 last_loss=0.5144 train_acc=0.9187 val_acc=0.9267 lr=2.50e-04
+[CVX] ep=090/100 last_loss=0.6126 train_acc=0.9079 val_acc=0.9133 lr=1.25e-04
+[CVX] ep=100/100 last_loss=0.5680 train_acc=0.9187 val_acc=0.9250 lr=1.25e-04
+[seed 0] re-train CVX best for logging: beta=1e-06 lr=0.01
+[CVX] ep=000/100 train_acc=0.6167 val_acc=0.6250 lr=1.00e-02
+[CVX] ep=001/100 last_loss=0.2164 train_acc=0.9375 val_acc=0.9333 lr=1.00e-02
+[CVX] ep=002/100 last_loss=0.0483 train_acc=0.9971 val_acc=0.9925 lr=1.00e-02
+[CVX] ep=003/100 last_loss=0.7911 train_acc=0.9008 val_acc=0.8933 lr=1.00e-02
+[CVX] ep=004/100 last_loss=0.0153 train_acc=0.9956 val_acc=0.9950 lr=1.00e-02
+[CVX] ep=005/100 last_loss=0.0000 train_acc=1.0000 val_acc=1.0000 lr=1.00e-02
+[CVX] ep=010/100 last_loss=0.0000 train_acc=1.0000 val_acc=1.0000 lr=1.00e-02
+[CVX] ep=020/100 last_loss=0.0000 train_acc=1.0000 val_acc=1.0000 lr=1.00e-02
+[CVX] ep=030/100 last_loss=0.0000 train_acc=1.0000 val_acc=1.0000 lr=5.00e-03
+[CVX] ep=040/100 last_loss=0.0000 train_acc=1.0000 val_acc=1.0000 lr=5.00e-03
+[CVX] ep=050/100 last_loss=0.0000 train_acc=1.0000 val_acc=1.0000 lr=5.00e-03
+[CVX] ep=060/100 last_loss=0.0000 train_acc=1.0000 val_acc=1.0000 lr=2.50e-03
+[CVX] ep=070/100 last_loss=0.0000 train_acc=1.0000 val_acc=1.0000 lr=2.50e-03
+[CVX] ep=080/100 last_loss=0.0000 train_acc=1.0000 val_acc=1.0000 lr=2.50e-03
+[CVX] ep=090/100 last_loss=0.0000 train_acc=1.0000 val_acc=1.0000 lr=1.25e-03
+[CVX] ep=100/100 last_loss=0.0000 train_acc=1.0000 val_acc=1.0000 lr=1.25e-03
+[STE] ep=000/100 train_acc=0.4096 val_acc=0.4092 lr=1.00e-03
+[STE] ep=001/100 last_loss=0.7895 train_acc=0.6229 val_acc=0.6342 lr=1.00e-03
+[STE] ep=002/100 last_loss=0.6739 train_acc=0.7446 val_acc=0.7467 lr=1.00e-03
+[STE] ep=003/100 last_loss=0.6491 train_acc=0.7446 val_acc=0.7467 lr=1.00e-03
+[STE] ep=004/100 last_loss=0.6245 train_acc=0.7446 val_acc=0.7467 lr=1.00e-03
+[STE] ep=005/100 last_loss=0.6313 train_acc=0.6506 val_acc=0.6300 lr=1.00e-03
+[STE] ep=010/100 last_loss=0.6430 train_acc=0.7446 val_acc=0.7467 lr=1.00e-03
+[STE] ep=020/100 last_loss=0.4778 train_acc=0.7446 val_acc=0.7467 lr=1.00e-03
+[STE] ep=030/100 last_loss=0.6522 train_acc=0.6167 val_acc=0.6250 lr=5.00e-04
+[STE] ep=040/100 last_loss=0.7178 train_acc=0.6167 val_acc=0.6250 lr=5.00e-04
+[STE] ep=050/100 last_loss=0.6927 train_acc=0.6167 val_acc=0.6250 lr=5.00e-04
+[STE] ep=060/100 last_loss=0.6157 train_acc=0.6167 val_acc=0.6250 lr=2.50e-04
+[STE] ep=070/100 last_loss=0.6815 train_acc=0.6167 val_acc=0.6250 lr=2.50e-04
+[STE] ep=080/100 last_loss=0.6775 train_acc=0.6167 val_acc=0.6250 lr=2.50e-04
+[STE] ep=090/100 last_loss=0.6578 train_acc=0.6167 val_acc=0.6250 lr=1.25e-04
+[STE] ep=100/100 last_loss=0.7234 train_acc=0.6167 val_acc=0.6250 lr=1.25e-04
+[seed 0] CVX test=1.0000 (val=1.0000, beta=1e-06, lr=0.01, P_last=6000) | STE test=0.7466 (val=0.7467, width=4000)
+
+=== FINAL (mean ± std over seeds) ===
+CVX test_acc = 1.0000 ± 0.0000
+STE test_acc = 0.7466 ± 0.0000

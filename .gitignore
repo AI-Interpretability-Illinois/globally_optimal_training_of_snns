@@ -1,1 +1,14 @@
 *.pdf
+*.pptx
+*.csv
+*.json
+*.yaml
+*.yml
+*.xml
+*.html
+*.css
+*.js
+*.ts
+*.pyc
+*.pyo
+*.pyd

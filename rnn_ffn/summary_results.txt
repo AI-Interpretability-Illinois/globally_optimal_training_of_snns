@@ -43,3 +43,25 @@ RNN:two_step_xor | STE train=0.880 test=0.818 | Convex train=1.000 test=1.000 | 
 RNN:moving_gaussian | STE train=0.940 test=0.896 | Convex train=1.000 test=0.927 | Primal=0.000414 Dual=0.000413 Gap=0.000001 zero_gap=True
 RNN:rotated_mnist | STE train=0.800 test=0.669 | Convex train=1.000 test=0.606 | Primal=0.000676 Dual=0.000666 Gap=0.000010 zero_gap=True
 FFN:parity | STE train=1.000 test=0.507 | Convex train=1.000 test=0.511 | Primal=0.006818 Dual=0.006324 Gap=0.000494 zero_gap=False
+
+RUN first_order_arrangements_Llayers.py | mode=ffn | L=2 | time=1771174606
+FFN:parity | L=2 P=[60, 60] | STE train=1.000 test=0.489 | ConvexFO train=0.550 test=0.512 | obj=9.461304 iters=1
+FFN:gaussian | L=2 P=[60, 60] | STE train=1.000 test=0.999 | ConvexFO train=0.550 test=0.494 | obj=9.269397 iters=1
+FFN:ground_truth | L=2 P=[60, 60] | STE train=1.000 test=0.500 | ConvexFO train=0.550 test=0.507 | obj=9.453912 iters=1
+FFN:parity | L=2 P=[60, 60] | STE train=1.000 test=0.509 | ConvexFO train=0.540 test=0.506 | obj=24.633147 iters=1
+FFN:gaussian | L=2 P=[60, 60] | STE train=1.000 test=1.000 | ConvexFO train=0.600 test=0.507 | obj=23.666387 iters=1
+FFN:ground_truth | L=2 P=[60, 60] | STE train=1.000 test=0.589 | ConvexFO train=0.540 test=0.490 | obj=24.593710 iters=1
+FFN:parity | L=2 P=[60, 60] | STE train=1.000 test=0.503 | ConvexFO train=0.580 test=0.507 | obj=48.496112 iters=1
+FFN:gaussian | L=2 P=[60, 60] | STE train=1.000 test=0.913 | ConvexFO train=0.770 test=0.724 | obj=46.827894 iters=1
+FFN:ground_truth | L=2 P=[60, 60] | STE train=0.890 test=0.592 | ConvexFO train=0.590 test=0.498 | obj=47.811041 iters=1
+
+RUN first_order_arrangements_Llayers.py | mode=ffn | L=2 | time=1771175172
+FFN:parity | L=2 P=[1000, 1000] | STE train=1.000 test=0.489 | ConvexFO train=0.550 test=0.512 | obj=9.172881 iters=1
+FFN:gaussian | L=2 P=[1000, 1000] | STE train=1.000 test=0.999 | ConvexFO train=0.550 test=0.494 | obj=8.557360 iters=1
+FFN:ground_truth | L=2 P=[1000, 1000] | STE train=1.000 test=0.500 | ConvexFO train=0.550 test=0.507 | obj=9.286121 iters=1
+FFN:parity | L=2 P=[1000, 1000] | STE train=1.000 test=0.509 | ConvexFO train=0.540 test=0.506 | obj=24.384066 iters=1
+FFN:gaussian | L=2 P=[1000, 1000] | STE train=1.000 test=1.000 | ConvexFO train=0.580 test=0.492 | obj=23.434312 iters=1
+FFN:ground_truth | L=2 P=[1000, 1000] | STE train=1.000 test=0.589 | ConvexFO train=0.540 test=0.490 | obj=24.389065 iters=1
+FFN:parity | L=2 P=[1000, 1000] | STE train=1.000 test=0.503 | ConvexFO train=0.580 test=0.507 | obj=48.348421 iters=1
+FFN:gaussian | L=2 P=[1000, 1000] | STE train=1.000 test=0.913 | ConvexFO train=0.520 test=0.495 | obj=47.204258 iters=1
+FFN:ground_truth | L=2 P=[1000, 1000] | STE train=0.890 test=0.592 | ConvexFO train=0.590 test=0.498 | obj=47.811377 iters=1
