@@ -1035,3 +1035,946 @@ TypeError: train_cvx_head_first_order() got an unexpected keyword argument 'num_
 [snn hypers] layer 2: U_in=(8000, 8000), U_rec=(16000, 8000) (shared across all T)
 [snn patterns] last-layer enforce: round=1/300 uniques=5000/5000
 [snn patterns] P_last_unique=5000 (target=5000, n_train=4000)
+
+
+(.venv) hima_3114@Himanshus-MacBook-Pro-2 snn_generalized_pt2 % cd /Users/hima_3114/Desktop/Paper_1/experiments/snn_generalized_pt2 && source ../.venv/bin/activate && python snn.py --task mnist_seq --T 8 --L 3 --n_train_total 10000 --P_in 4000 --P_rec 4000 --P_last 10000 --epochs 100 --log_train --seed 0
+[info] device=mps task=mnist_seq T=8 L=3 epochs=100 batch=128
+[info] n_train_total=10000 val_frac=0.2 n_test=5000
+[info] P_in=4000 P_rec=4000 P_last=10000
+[info] loss=hinge
+[info] CVX grid betas=[1e-06, 0.001, 0.01, 0.1, 0.5, 1.0] lrs=[0.01, 0.005, 0.001]
+[info] seeds=[0] normalize_hidden=False
+[info] SNN learn_beta=False learn_threshold=False
+[info] task=mnist_seq T=8 L=3
+[info] n_train_total=10000 val_frac=0.2 => n_train=8000 n_val=2000 n_test=5000
+[info] P_in=4000 P_rec=4000 P_last(target)=10000
+[info] CVX grid betas=[1e-06, 0.001, 0.01, 0.1, 0.5, 1.0] lrs=[0.01, 0.005, 0.001] loss=hinge
+[snn hypers] layer 1: U_in=(98, 4000), U_rec=(8001, 4000) (shared across all T)
+[snn hypers] layer 2: U_in=(4000, 4000), U_rec=(8001, 4000) (shared across all T)
+[snn patterns] last-layer enforce: round=1/300 uniques=10000/10000
+[snn patterns] P_last_unique=10000 (target=10000, n_train=8000)
+[seed 0] re-train CVX best for logging: beta=1e-06 lr=0.01
+[CVX] ep=001/100 train_score=0.1153 val_score=0.1025 lr=1.00e-02
+[CVX] ep=002/100 train_score=0.1681 val_score=0.1570 lr=1.00e-02
+[CVX] ep=003/100 train_score=0.1649 val_score=0.1495 lr=1.00e-02
+[CVX] ep=004/100 train_score=0.1205 val_score=0.1100 lr=1.00e-02
+[CVX] ep=005/100 train_score=0.1965 val_score=0.1805 lr=1.00e-02
+[CVX] ep=006/100 train_score=0.1832 val_score=0.1640 lr=1.00e-02
+[CVX] ep=007/100 train_score=0.1749 val_score=0.1510 lr=1.00e-02
+[CVX] ep=008/100 train_score=0.1153 val_score=0.1025 lr=1.00e-02
+[CVX] ep=009/100 train_score=0.1501 val_score=0.1355 lr=1.00e-02
+[CVX] ep=010/100 train_score=0.1899 val_score=0.1650 lr=1.00e-02
+[CVX] ep=011/100 train_score=0.1894 val_score=0.1720 lr=1.00e-02
+[CVX] ep=012/100 train_score=0.2054 val_score=0.1795 lr=1.00e-02
+[CVX] ep=013/100 train_score=0.2069 val_score=0.1790 lr=1.00e-02
+[CVX] ep=014/100 train_score=0.2130 val_score=0.1855 lr=1.00e-02
+[CVX] ep=015/100 train_score=0.1842 val_score=0.1555 lr=1.00e-02
+[CVX] ep=016/100 train_score=0.2110 val_score=0.1770 lr=1.00e-02
+[CVX] ep=017/100 train_score=0.1266 val_score=0.1145 lr=1.00e-02
+[CVX] ep=018/100 train_score=0.2139 val_score=0.1855 lr=1.00e-02
+[CVX] ep=019/100 train_score=0.2131 val_score=0.1895 lr=1.00e-02
+[CVX] ep=020/100 train_score=0.1996 val_score=0.1785 lr=1.00e-02
+[CVX] ep=021/100 train_score=0.2142 val_score=0.1915 lr=1.00e-02
+[CVX] ep=022/100 train_score=0.1817 val_score=0.1555 lr=1.00e-02
+[CVX] ep=023/100 train_score=0.2131 val_score=0.1830 lr=1.00e-02
+[CVX] ep=024/100 train_score=0.2076 val_score=0.1730 lr=1.00e-02
+[CVX] ep=025/100 train_score=0.2107 val_score=0.1745 lr=1.00e-02
+[CVX] ep=026/100 train_score=0.2144 val_score=0.1890 lr=1.00e-02
+[CVX] ep=027/100 train_score=0.1171 val_score=0.1050 lr=1.00e-02
+[CVX] ep=028/100 train_score=0.2028 val_score=0.1710 lr=1.00e-02
+[CVX] ep=029/100 train_score=0.2136 val_score=0.1835 lr=1.00e-02
+[CVX] ep=030/100 train_score=0.2137 val_score=0.1815 lr=5.00e-03
+[CVX] ep=031/100 train_score=0.2131 val_score=0.1800 lr=5.00e-03
+[CVX] ep=032/100 train_score=0.2145 val_score=0.1840 lr=5.00e-03
+[CVX] ep=033/100 train_score=0.2145 val_score=0.1845 lr=5.00e-03
+[CVX] ep=034/100 train_score=0.2145 val_score=0.1820 lr=5.00e-03
+[CVX] ep=035/100 train_score=0.2145 val_score=0.1865 lr=5.00e-03
+[CVX] ep=036/100 train_score=0.2145 val_score=0.1830 lr=5.00e-03
+[CVX] ep=037/100 train_score=0.2146 val_score=0.1835 lr=5.00e-03
+[CVX] ep=038/100 train_score=0.2145 val_score=0.1820 lr=5.00e-03
+[CVX] ep=039/100 train_score=0.2146 val_score=0.1860 lr=5.00e-03
+[CVX] ep=040/100 train_score=0.2146 val_score=0.1825 lr=5.00e-03
+[CVX] ep=041/100 train_score=0.2146 val_score=0.1845 lr=5.00e-03
+[CVX] ep=042/100 train_score=0.2142 val_score=0.1790 lr=5.00e-03
+[CVX] ep=043/100 train_score=0.2146 val_score=0.1830 lr=5.00e-03
+[CVX] ep=044/100 train_score=0.2146 val_score=0.1830 lr=5.00e-03
+[CVX] ep=045/100 train_score=0.2146 val_score=0.1830 lr=5.00e-03
+[CVX] ep=046/100 train_score=0.2146 val_score=0.1830 lr=5.00e-03
+[CVX] ep=047/100 train_score=0.2146 val_score=0.1830 lr=5.00e-03
+[CVX] ep=048/100 train_score=0.2146 val_score=0.1830 lr=5.00e-03
+[CVX] ep=049/100 train_score=0.2146 val_score=0.1830 lr=5.00e-03
+[CVX] ep=050/100 train_score=0.2146 val_score=0.1830 lr=5.00e-03
+[CVX] ep=051/100 train_score=0.2146 val_score=0.1830 lr=5.00e-03
+[CVX] ep=052/100 train_score=0.2146 val_score=0.1830 lr=5.00e-03
+[CVX] ep=053/100 train_score=0.2146 val_score=0.1830 lr=5.00e-03
+[CVX] ep=054/100 train_score=0.2146 val_score=0.1830 lr=5.00e-03
+[CVX] ep=055/100 train_score=0.2146 val_score=0.1830 lr=5.00e-03
+[CVX] ep=056/100 train_score=0.2146 val_score=0.1830 lr=5.00e-03
+[CVX] ep=057/100 train_score=0.2146 val_score=0.1830 lr=5.00e-03
+[CVX] ep=058/100 train_score=0.2146 val_score=0.1830 lr=5.00e-03
+[CVX] ep=059/100 train_score=0.2146 val_score=0.1830 lr=5.00e-03
+[CVX] ep=060/100 train_score=0.2146 val_score=0.1830 lr=2.50e-03
+[CVX] ep=061/100 train_score=0.2146 val_score=0.1830 lr=2.50e-03
+[CVX] ep=062/100 train_score=0.2146 val_score=0.1830 lr=2.50e-03
+[CVX] ep=063/100 train_score=0.2146 val_score=0.1830 lr=2.50e-03
+[CVX] ep=064/100 train_score=0.2146 val_score=0.1830 lr=2.50e-03
+[CVX] ep=065/100 train_score=0.2146 val_score=0.1830 lr=2.50e-03
+[CVX] ep=066/100 train_score=0.2146 val_score=0.1830 lr=2.50e-03
+[CVX] ep=067/100 train_score=0.2146 val_score=0.1830 lr=2.50e-03
+[CVX] ep=068/100 train_score=0.2146 val_score=0.1830 lr=2.50e-03
+[CVX] ep=069/100 train_score=0.2146 val_score=0.1830 lr=2.50e-03
+[CVX] ep=070/100 train_score=0.2146 val_score=0.1830 lr=2.50e-03
+[CVX] ep=071/100 train_score=0.2146 val_score=0.1830 lr=2.50e-03
+[CVX] ep=072/100 train_score=0.2146 val_score=0.1830 lr=2.50e-03
+[CVX] ep=073/100 train_score=0.2146 val_score=0.1830 lr=2.50e-03
+[CVX] ep=074/100 train_score=0.2146 val_score=0.1830 lr=2.50e-03
+[CVX] ep=075/100 train_score=0.2146 val_score=0.1830 lr=2.50e-03
+[CVX] ep=076/100 train_score=0.2146 val_score=0.1830 lr=2.50e-03
+[CVX] ep=077/100 train_score=0.2146 val_score=0.1830 lr=2.50e-03
+[CVX] ep=078/100 train_score=0.2146 val_score=0.1830 lr=2.50e-03
+[CVX] ep=079/100 train_score=0.2146 val_score=0.1830 lr=2.50e-03
+[CVX] ep=080/100 train_score=0.2146 val_score=0.1830 lr=2.50e-03
+[CVX] ep=081/100 train_score=0.2146 val_score=0.1830 lr=2.50e-03
+[CVX] ep=082/100 train_score=0.2146 val_score=0.1830 lr=2.50e-03
+[CVX] ep=083/100 train_score=0.2146 val_score=0.1830 lr=2.50e-03
+[CVX] ep=084/100 train_score=0.2146 val_score=0.1830 lr=2.50e-03
+[CVX] ep=085/100 train_score=0.2146 val_score=0.1830 lr=2.50e-03
+[CVX] ep=086/100 train_score=0.2146 val_score=0.1830 lr=2.50e-03
+[CVX] ep=087/100 train_score=0.2146 val_score=0.1830 lr=2.50e-03
+[CVX] ep=088/100 train_score=0.2146 val_score=0.1830 lr=2.50e-03
+[CVX] ep=089/100 train_score=0.2146 val_score=0.1830 lr=2.50e-03
+[CVX] ep=090/100 train_score=0.2146 val_score=0.1830 lr=1.25e-03
+[CVX] ep=091/100 train_score=0.2146 val_score=0.1830 lr=1.25e-03
+[CVX] ep=092/100 train_score=0.2146 val_score=0.1830 lr=1.25e-03
+[CVX] ep=093/100 train_score=0.2146 val_score=0.1830 lr=1.25e-03
+[CVX] ep=094/100 train_score=0.2146 val_score=0.1830 lr=1.25e-03
+[CVX] ep=095/100 train_score=0.2146 val_score=0.1830 lr=1.25e-03
+[CVX] ep=096/100 train_score=0.2146 val_score=0.1830 lr=1.25e-03
+[CVX] ep=097/100 train_score=0.2146 val_score=0.1830 lr=1.25e-03
+[CVX] ep=098/100 train_score=0.2146 val_score=0.1830 lr=1.25e-03
+[CVX] ep=099/100 train_score=0.2146 val_score=0.1830 lr=1.25e-03
+[CVX] ep=100/100 train_score=0.2146 val_score=0.1830 lr=1.25e-03
+[STE-SNN] ep=001/100 train_score=0.1721 val_score=0.1670 lr=1.00e-03
+[STE-SNN] ep=002/100 train_score=0.1153 val_score=0.1025 lr=1.00e-03
+[STE-SNN] ep=003/100 train_score=0.1786 val_score=0.1675 lr=1.00e-03
+[STE-SNN] ep=004/100 train_score=0.1904 val_score=0.1725 lr=1.00e-03
+[STE-SNN] ep=005/100 train_score=0.1928 val_score=0.1800 lr=1.00e-03
+[STE-SNN] ep=006/100 train_score=0.1891 val_score=0.1700 lr=1.00e-03
+[STE-SNN] ep=007/100 train_score=0.2031 val_score=0.1870 lr=1.00e-03
+[STE-SNN] ep=008/100 train_score=0.1974 val_score=0.1795 lr=1.00e-03
+[STE-SNN] ep=009/100 train_score=0.1961 val_score=0.1805 lr=1.00e-03
+[STE-SNN] ep=010/100 train_score=0.1980 val_score=0.1795 lr=1.00e-03
+[STE-SNN] ep=011/100 train_score=0.2036 val_score=0.1840 lr=1.00e-03
+[STE-SNN] ep=012/100 train_score=0.2070 val_score=0.1885 lr=1.00e-03
+[STE-SNN] ep=013/100 train_score=0.1995 val_score=0.1815 lr=1.00e-03
+[STE-SNN] ep=014/100 train_score=0.1939 val_score=0.1755 lr=1.00e-03
+[STE-SNN] ep=015/100 train_score=0.2036 val_score=0.1785 lr=1.00e-03
+[STE-SNN] ep=016/100 train_score=0.2099 val_score=0.1885 lr=1.00e-03
+[STE-SNN] ep=017/100 train_score=0.2070 val_score=0.1850 lr=1.00e-03
+[STE-SNN] ep=018/100 train_score=0.2049 val_score=0.1835 lr=1.00e-03
+[STE-SNN] ep=019/100 train_score=0.2040 val_score=0.1830 lr=1.00e-03
+[STE-SNN] ep=020/100 train_score=0.2115 val_score=0.1895 lr=1.00e-03
+[STE-SNN] ep=021/100 train_score=0.2089 val_score=0.1905 lr=1.00e-03
+[STE-SNN] ep=022/100 train_score=0.2129 val_score=0.1900 lr=1.00e-03
+[STE-SNN] ep=023/100 train_score=0.2112 val_score=0.1900 lr=1.00e-03
+[STE-SNN] ep=024/100 train_score=0.2074 val_score=0.1850 lr=1.00e-03
+[STE-SNN] ep=025/100 train_score=0.2077 val_score=0.1845 lr=1.00e-03
+[STE-SNN] ep=026/100 train_score=0.2141 val_score=0.1925 lr=1.00e-03
+[STE-SNN] ep=027/100 train_score=0.2114 val_score=0.1875 lr=1.00e-03
+[STE-SNN] ep=028/100 train_score=0.2132 val_score=0.1935 lr=1.00e-03
+[STE-SNN] ep=029/100 train_score=0.2122 val_score=0.1875 lr=1.00e-03
+[STE-SNN] ep=030/100 train_score=0.2052 val_score=0.1825 lr=5.00e-04
+[STE-SNN] ep=031/100 train_score=0.2114 val_score=0.1870 lr=5.00e-04
+[STE-SNN] ep=032/100 train_score=0.2121 val_score=0.1890 lr=5.00e-04
+[STE-SNN] ep=033/100 train_score=0.2146 val_score=0.1920 lr=5.00e-04
+[STE-SNN] ep=034/100 train_score=0.2120 val_score=0.1865 lr=5.00e-04
+[STE-SNN] ep=035/100 train_score=0.2146 val_score=0.1910 lr=5.00e-04
+[STE-SNN] ep=036/100 train_score=0.2146 val_score=0.1915 lr=5.00e-04
+[STE-SNN] ep=037/100 train_score=0.2146 val_score=0.1915 lr=5.00e-04
+[STE-SNN] ep=038/100 train_score=0.2146 val_score=0.1915 lr=5.00e-04
+[STE-SNN] ep=039/100 train_score=0.2146 val_score=0.1915 lr=5.00e-04
+[STE-SNN] ep=040/100 train_score=0.2146 val_score=0.1915 lr=5.00e-04
+[STE-SNN] ep=041/100 train_score=0.2146 val_score=0.1915 lr=5.00e-04
+[STE-SNN] ep=042/100 train_score=0.2146 val_score=0.1915 lr=5.00e-04
+[STE-SNN] ep=043/100 train_score=0.2146 val_score=0.1915 lr=5.00e-04
+[STE-SNN] ep=044/100 train_score=0.2146 val_score=0.1915 lr=5.00e-04
+[STE-SNN] ep=045/100 train_score=0.2146 val_score=0.1915 lr=5.00e-04
+[STE-SNN] ep=046/100 train_score=0.2146 val_score=0.1915 lr=5.00e-04
+[STE-SNN] ep=047/100 train_score=0.2146 val_score=0.1915 lr=5.00e-04
+[STE-SNN] ep=048/100 train_score=0.2146 val_score=0.1915 lr=5.00e-04
+[STE-SNN] ep=049/100 train_score=0.2146 val_score=0.1915 lr=5.00e-04
+[STE-SNN] ep=050/100 train_score=0.2146 val_score=0.1915 lr=5.00e-04
+[STE-SNN] ep=051/100 train_score=0.2146 val_score=0.1915 lr=5.00e-04
+[STE-SNN] ep=052/100 train_score=0.2146 val_score=0.1915 lr=5.00e-04
+[STE-SNN] ep=053/100 train_score=0.2146 val_score=0.1915 lr=5.00e-04
+[STE-SNN] ep=054/100 train_score=0.2146 val_score=0.1915 lr=5.00e-04
+ [STE-SNN] ep=055/100 train_score=0.2146 val_score=0.1915 lr=5.00e-04
+[STE-SNN] ep=056/100 train_score=0.2146 val_score=0.1915 lr=5.00e-04
+[STE-SNN] ep=057/100 train_score=0.2146 val_score=0.1915 lr=5.00e-04
+[STE-SNN] ep=058/100 train_score=0.2146 val_score=0.1915 lr=5.00e-04
+[STE-SNN] ep=059/100 train_score=0.2146 val_score=0.1915 lr=5.00e-04
+[STE-SNN] ep=060/100 train_score=0.2146 val_score=0.1915 lr=2.50e-04
+[STE-SNN] ep=061/100 train_score=0.2146 val_score=0.1915 lr=2.50e-04
+[STE-SNN] ep=062/100 train_score=0.2146 val_score=0.1915 lr=2.50e-04
+[STE-SNN] ep=063/100 train_score=0.2146 val_score=0.1915 lr=2.50e-04
+[STE-SNN] ep=064/100 train_score=0.2146 val_score=0.1915 lr=2.50e-04
+[STE-SNN] ep=065/100 train_score=0.2146 val_score=0.1915 lr=2.50e-04
+[STE-SNN] ep=066/100 train_score=0.2146 val_score=0.1915 lr=2.50e-04
+[STE-SNN] ep=067/100 train_score=0.2146 val_score=0.1915 lr=2.50e-04
+[STE-SNN] ep=068/100 train_score=0.2146 val_score=0.1915 lr=2.50e-04
+[STE-SNN] ep=069/100 train_score=0.2146 val_score=0.1915 lr=2.50e-04
+[STE-SNN] ep=070/100 train_score=0.2146 val_score=0.1915 lr=2.50e-04
+[STE-SNN] ep=071/100 train_score=0.2146 val_score=0.1915 lr=2.50e-04
+[STE-SNN] ep=072/100 train_score=0.2146 val_score=0.1915 lr=2.50e-04
+[STE-SNN] ep=073/100 train_score=0.2146 val_score=0.1915 lr=2.50e-04
+[STE-SNN] ep=074/100 train_score=0.2146 val_score=0.1915 lr=2.50e-04
+[STE-SNN] ep=075/100 train_score=0.2146 val_score=0.1915 lr=2.50e-04
+[STE-SNN] ep=076/100 train_score=0.2146 val_score=0.1915 lr=2.50e-04
+[STE-SNN] ep=077/100 train_score=0.2146 val_score=0.1915 lr=2.50e-04
+[STE-SNN] ep=078/100 train_score=0.2146 val_score=0.1915 lr=2.50e-04
+[STE-SNN] ep=079/100 train_score=0.2146 val_score=0.1915 lr=2.50e-04
+[STE-SNN] ep=080/100 train_score=0.2146 val_score=0.1915 lr=2.50e-04
+[STE-SNN] ep=081/100 train_score=0.2146 val_score=0.1915 lr=2.50e-04
+[STE-SNN] ep=082/100 train_score=0.2146 val_score=0.1915 lr=2.50e-04
+[STE-SNN] ep=083/100 train_score=0.2146 val_score=0.1915 lr=2.50e-04
+[STE-SNN] ep=084/100 train_score=0.2146 val_score=0.1915 lr=2.50e-04
+[STE-SNN] ep=085/100 train_score=0.2146 val_score=0.1915 lr=2.50e-04
+[STE-SNN] ep=086/100 train_score=0.2146 val_score=0.1915 lr=2.50e-04
+[STE-SNN] ep=087/100 train_score=0.2146 val_score=0.1915 lr=2.50e-04
+[STE-SNN] ep=088/100 train_score=0.2146 val_score=0.1915 lr=2.50e-04
+[STE-SNN] ep=089/100 train_score=0.2146 val_score=0.1915 lr=2.50e-04
+[STE-SNN] ep=090/100 train_score=0.2146 val_score=0.1915 lr=1.25e-04
+[STE-SNN] ep=091/100 train_score=0.2146 val_score=0.1915 lr=1.25e-04
+[STE-SNN] ep=092/100 train_score=0.2146 val_score=0.1915 lr=1.25e-04
+[STE-SNN] ep=093/100 train_score=0.2146 val_score=0.1915 lr=1.25e-04
+[STE-SNN] ep=094/100 train_score=0.2146 val_score=0.1915 lr=1.25e-04
+[STE-SNN] ep=095/100 train_score=0.2146 val_score=0.1915 lr=1.25e-04
+[STE-SNN] ep=096/100 train_score=0.2146 val_score=0.1915 lr=1.25e-04
+[STE-SNN] ep=097/100 train_score=0.2146 val_score=0.1915 lr=1.25e-04
+[STE-SNN] ep=098/100 train_score=0.2146 val_score=0.1915 lr=1.25e-04
+[STE-SNN] ep=099/100 train_score=0.2146 val_score=0.1915 lr=1.25e-04
+[STE-SNN] ep=100/100 train_score=0.2146 val_score=0.1915 lr=1.25e-04
+[seed 0] CVX test_acc=0.1978 (val=0.1915, beta_l1=1e-06, lr=0.01) | STE-SNN test_acc=0.1920 (val_best=0.1935)
+
+=== FINAL (mean ± std over seeds) ===
+CVX  test_acc = 0.1978 ± 0.0000
+STE  test_acc = 0.1920 ± 0.0000
+(.venv) hima_3114@Himanshus-MacBook-Pro-2 snn_generalized_pt2 % cd /Users/hima_3114/Desktop/Paper_1/experiments/snn_generalized_pt2 && source ../.venv/bin/activate && python snn.py --task mnist_seq --T 8 --L 3 --n_train_total 10000 --P_in 4000 --P_rec 4000 --P_last 10000 --epochs 100 --log_train --seed 0 --loss ce
+[info] device=mps task=mnist_seq T=8 L=3 epochs=100 batch=128
+[info] n_train_total=10000 val_frac=0.2 n_test=5000
+[info] P_in=4000 P_rec=4000 P_last=10000
+[info] loss=ce
+[info] CVX grid betas=[1e-06, 0.001, 0.01, 0.1, 0.5, 1.0] lrs=[0.01, 0.005, 0.001]
+[info] seeds=[0] normalize_hidden=False
+[info] SNN learn_beta=False learn_threshold=False
+[info] task=mnist_seq T=8 L=3
+[info] n_train_total=10000 val_frac=0.2 => n_train=8000 n_val=2000 n_test=5000
+[info] P_in=4000 P_rec=4000 P_last(target)=10000
+[info] CVX grid betas=[1e-06, 0.001, 0.01, 0.1, 0.5, 1.0] lrs=[0.01, 0.005, 0.001] loss=ce
+[snn hypers] layer 1: U_in=(98, 4000), U_rec=(8001, 4000) (shared across all T)
+[snn hypers] layer 2: U_in=(4000, 4000), U_rec=(8001, 4000) (shared across all T)
+[snn patterns] last-layer enforce: round=1/300 uniques=10000/10000
+[snn patterns] P_last_unique=10000 (target=10000, n_train=8000)
+^CTraceback (most recent call last):
+  File "/Users/hima_3114/Desktop/Paper_1/experiments/snn_generalized_pt2/snn.py", line 1289, in <module>
+    main()
+    ~~~~^^
+  File "/Users/hima_3114/Desktop/Paper_1/experiments/snn_generalized_pt2/snn.py", line 1247, in main
+    out = run_one_seed(
+        seed=s,
+    ...<25 lines>...
+        log_train=args.log_train,
+    )
+  File "/Users/hima_3114/Desktop/Paper_1/experiments/snn_generalized_pt2/snn.py", line 1060, in run_one_seed
+    out = train_cvx_head_first_order(
+        train_loader3d,
+    ...<15 lines>...
+        log_train=False,
+    )
+  File "/Users/hima_3114/Desktop/Paper_1/experiments/snn_generalized_pt2/snn.py", line 723, in train_cvx_head_first_order
+    val_score = cvx_eval_acc_or_mse(
+        model, val_loader2d, hypers, L=L, T=T, P_rec=P_rec, device=device, loss_type=loss_type
+    )
+  File "/Users/hima_3114/Desktop/Paper_1/experiments/.venv/lib/python3.14/site-packages/torch/utils/_contextlib.py", line 120, in decorate_context
+    return func(*args, **kwargs)
+  File "/Users/hima_3114/Desktop/Paper_1/experiments/snn_generalized_pt2/snn.py", line 616, in cvx_eval_acc_or_mse
+    z = forward_snn_patterns_torch(xb, hypers, L=L, T=T, P_rec=P_rec, device=device)
+  File "/Users/hima_3114/Desktop/Paper_1/experiments/snn_generalized_pt2/snn.py", line 509, in forward_snn_patterns_torch
+    U_in = torch.from_numpy(U_in_np).float().to(device)
+KeyboardInterrupt
+
+(.venv) hima_3114@Himanshus-MacBook-Pro-2 snn_generalized_pt2 % cd /Users/hima_3114/Desktop/Paper_1/experiments/snn_generalized_pt2 && source ../.venv/bin/activate && python snn.py --task mnist_seq --T 8 --L 3 --n_train_total 10000 --P_in 4000 --P_rec 4000 --P_last 10000 --epochs 100 --log_train --seed 0 --loss ce
+[info] device=mps task=mnist_seq T=8 L=3 epochs=100 batch=128
+[info] n_train_total=10000 val_frac=0.2 n_test=5000
+[info] P_in=4000 P_rec=4000 P_last=10000
+[info] loss=ce
+[info] CVX grid betas=[1e-06, 0.001, 0.01, 0.1, 0.5, 1.0] lrs=[0.01, 0.005, 0.001]
+[info] seeds=[0] normalize_hidden=False
+[info] SNN learn_beta=False learn_threshold=False
+[info] task=mnist_seq T=8 L=3
+[info] n_train_total=10000 val_frac=0.2 => n_train=8000 n_val=2000 n_test=5000
+[info] P_in=4000 P_rec=4000 P_last(target)=10000
+[info] CVX grid betas=[1e-06, 0.001, 0.01, 0.1, 0.5, 1.0] lrs=[0.01, 0.005, 0.001] loss=ce
+[snn hypers] layer 1: U_in=(98, 4000), U_rec=(8001, 4000) (shared across all T)
+[snn hypers] layer 2: U_in=(4000, 4000), U_rec=(8001, 4000) (shared across all T)
+[snn patterns] last-layer enforce: round=1/300 uniques=10000/10000
+[snn patterns] P_last_unique=10000 (target=10000, n_train=8000)
+[seed 0] re-train CVX best for logging: beta=1e-06 lr=0.001
+[CVX] ep=001/100 train_score=0.6791 val_score=0.6400 lr=1.00e-03
+[CVX] ep=002/100 train_score=0.7825 val_score=0.7205 lr=1.00e-03
+[CVX] ep=003/100 train_score=0.8491 val_score=0.7200 lr=1.00e-03
+[CVX] ep=004/100 train_score=0.9000 val_score=0.7380 lr=1.00e-03
+[CVX] ep=005/100 train_score=0.9383 val_score=0.7575 lr=1.00e-03
+[CVX] ep=006/100 train_score=0.9644 val_score=0.7740 lr=1.00e-03
+[CVX] ep=007/100 train_score=0.9719 val_score=0.7555 lr=1.00e-03
+[CVX] ep=008/100 train_score=0.9831 val_score=0.7710 lr=1.00e-03
+[CVX] ep=009/100 train_score=0.9926 val_score=0.7800 lr=1.00e-03
+[CVX] ep=010/100 train_score=0.9962 val_score=0.7770 lr=1.00e-03
+[CVX] ep=011/100 train_score=0.9976 val_score=0.7730 lr=1.00e-03
+[CVX] ep=012/100 train_score=0.9992 val_score=0.7755 lr=1.00e-03
+[CVX] ep=013/100 train_score=0.9998 val_score=0.7750 lr=1.00e-03
+[CVX] ep=014/100 train_score=0.9999 val_score=0.7830 lr=1.00e-03
+[CVX] ep=015/100 train_score=1.0000 val_score=0.7720 lr=1.00e-03
+[CVX] ep=016/100 train_score=1.0000 val_score=0.7800 lr=1.00e-03
+[CVX] ep=017/100 train_score=1.0000 val_score=0.7815 lr=1.00e-03
+[CVX] ep=018/100 train_score=1.0000 val_score=0.7770 lr=1.00e-03
+[CVX] ep=019/100 train_score=1.0000 val_score=0.7755 lr=1.00e-03
+[CVX] ep=020/100 train_score=1.0000 val_score=0.7835 lr=1.00e-03
+[CVX] ep=021/100 train_score=1.0000 val_score=0.7805 lr=1.00e-03
+[CVX] ep=022/100 train_score=1.0000 val_score=0.7800 lr=1.00e-03
+[CVX] ep=023/100 train_score=1.0000 val_score=0.7800 lr=1.00e-03
+[CVX] ep=024/100 train_score=1.0000 val_score=0.7735 lr=1.00e-03
+[CVX] ep=025/100 train_score=1.0000 val_score=0.7810 lr=1.00e-03
+[CVX] ep=026/100 train_score=1.0000 val_score=0.7815 lr=1.00e-03
+[CVX] ep=027/100 train_score=1.0000 val_score=0.7790 lr=1.00e-03
+[CVX] ep=028/100 train_score=1.0000 val_score=0.7815 lr=1.00e-03
+[CVX] ep=029/100 train_score=1.0000 val_score=0.7790 lr=1.00e-03
+[CVX] ep=030/100 train_score=1.0000 val_score=0.7830 lr=5.00e-04
+[CVX] ep=031/100 train_score=1.0000 val_score=0.7810 lr=5.00e-04
+[CVX] ep=032/100 train_score=1.0000 val_score=0.7835 lr=5.00e-04
+[CVX] ep=033/100 train_score=1.0000 val_score=0.7815 lr=5.00e-04
+[CVX] ep=034/100 train_score=1.0000 val_score=0.7835 lr=5.00e-04
+[CVX] ep=035/100 train_score=1.0000 val_score=0.7830 lr=5.00e-04
+[CVX] ep=036/100 train_score=1.0000 val_score=0.7865 lr=5.00e-04
+[CVX] ep=037/100 train_score=1.0000 val_score=0.7785 lr=5.00e-04
+[CVX] ep=038/100 train_score=1.0000 val_score=0.7810 lr=5.00e-04
+[CVX] ep=039/100 train_score=1.0000 val_score=0.7835 lr=5.00e-04
+[CVX] ep=040/100 train_score=1.0000 val_score=0.7855 lr=5.00e-04
+[CVX] ep=041/100 train_score=1.0000 val_score=0.7845 lr=5.00e-04
+[CVX] ep=042/100 train_score=1.0000 val_score=0.7855 lr=5.00e-04
+[CVX] ep=043/100 train_score=1.0000 val_score=0.7805 lr=5.00e-04
+[CVX] ep=044/100 train_score=1.0000 val_score=0.7820 lr=5.00e-04
+[CVX] ep=045/100 train_score=1.0000 val_score=0.7815 lr=5.00e-04
+[CVX] ep=046/100 train_score=1.0000 val_score=0.7875 lr=5.00e-04
+[CVX] ep=047/100 train_score=1.0000 val_score=0.7875 lr=5.00e-04
+[CVX] ep=048/100 train_score=1.0000 val_score=0.7770 lr=5.00e-04
+[CVX] ep=049/100 train_score=1.0000 val_score=0.7830 lr=5.00e-04
+[CVX] ep=050/100 train_score=1.0000 val_score=0.7840 lr=5.00e-04
+[CVX] ep=051/100 train_score=1.0000 val_score=0.7835 lr=5.00e-04
+[CVX] ep=052/100 train_score=1.0000 val_score=0.7835 lr=5.00e-04
+[CVX] ep=053/100 train_score=1.0000 val_score=0.7830 lr=5.00e-04
+[CVX] ep=054/100 train_score=1.0000 val_score=0.7795 lr=5.00e-04
+[CVX] ep=055/100 train_score=1.0000 val_score=0.7830 lr=5.00e-04
+[CVX] ep=056/100 train_score=1.0000 val_score=0.7860 lr=5.00e-04
+[CVX] ep=057/100 train_score=1.0000 val_score=0.7850 lr=5.00e-04
+[CVX] ep=058/100 train_score=1.0000 val_score=0.7800 lr=5.00e-04
+[CVX] ep=059/100 train_score=1.0000 val_score=0.7860 lr=5.00e-04
+[CVX] ep=060/100 train_score=1.0000 val_score=0.7845 lr=2.50e-04
+[CVX] ep=061/100 train_score=1.0000 val_score=0.7840 lr=2.50e-04
+[CVX] ep=062/100 train_score=1.0000 val_score=0.7830 lr=2.50e-04
+[CVX] ep=063/100 train_score=1.0000 val_score=0.7840 lr=2.50e-04
+[CVX] ep=064/100 train_score=1.0000 val_score=0.7865 lr=2.50e-04
+[CVX] ep=065/100 train_score=1.0000 val_score=0.7825 lr=2.50e-04
+[CVX] ep=066/100 train_score=1.0000 val_score=0.7835 lr=2.50e-04
+[CVX] ep=067/100 train_score=1.0000 val_score=0.7850 lr=2.50e-04
+[CVX] ep=068/100 train_score=1.0000 val_score=0.7855 lr=2.50e-04
+[CVX] ep=069/100 train_score=1.0000 val_score=0.7810 lr=2.50e-04
+[CVX] ep=070/100 train_score=1.0000 val_score=0.7800 lr=2.50e-04
+[CVX] ep=071/100 train_score=1.0000 val_score=0.7765 lr=2.50e-04
+[CVX] ep=072/100 train_score=1.0000 val_score=0.7860 lr=2.50e-04
+[CVX] ep=073/100 train_score=1.0000 val_score=0.7810 lr=2.50e-04
+[CVX] ep=074/100 train_score=1.0000 val_score=0.7830 lr=2.50e-04
+[CVX] ep=075/100 train_score=1.0000 val_score=0.7855 lr=2.50e-04
+[CVX] ep=076/100 train_score=1.0000 val_score=0.7845 lr=2.50e-04
+[CVX] ep=077/100 train_score=1.0000 val_score=0.7840 lr=2.50e-04
+[CVX] ep=078/100 train_score=1.0000 val_score=0.7840 lr=2.50e-04
+[CVX] ep=079/100 train_score=1.0000 val_score=0.7855 lr=2.50e-04
+[CVX] ep=080/100 train_score=1.0000 val_score=0.7840 lr=2.50e-04
+[CVX] ep=081/100 train_score=1.0000 val_score=0.7850 lr=2.50e-04
+[CVX] ep=082/100 train_score=1.0000 val_score=0.7855 lr=2.50e-04
+[CVX] ep=083/100 train_score=1.0000 val_score=0.7835 lr=2.50e-04
+[CVX] ep=084/100 train_score=1.0000 val_score=0.7840 lr=2.50e-04
+[CVX] ep=085/100 train_score=1.0000 val_score=0.7820 lr=2.50e-04
+[CVX] ep=086/100 train_score=1.0000 val_score=0.7860 lr=2.50e-04
+[CVX] ep=087/100 train_score=1.0000 val_score=0.7825 lr=2.50e-04
+[CVX] ep=088/100 train_score=1.0000 val_score=0.7835 lr=2.50e-04
+[CVX] ep=089/100 train_score=1.0000 val_score=0.7820 lr=2.50e-04
+[CVX] ep=090/100 train_score=1.0000 val_score=0.7845 lr=1.25e-04
+[CVX] ep=091/100 train_score=1.0000 val_score=0.7860 lr=1.25e-04
+[CVX] ep=092/100 train_score=1.0000 val_score=0.7840 lr=1.25e-04
+[CVX] ep=093/100 train_score=1.0000 val_score=0.7870 lr=1.25e-04
+[CVX] ep=094/100 train_score=1.0000 val_score=0.7855 lr=1.25e-04
+[CVX] ep=095/100 train_score=1.0000 val_score=0.7835 lr=1.25e-04
+[CVX] ep=096/100 train_score=1.0000 val_score=0.7840 lr=1.25e-04
+[CVX] ep=097/100 train_score=1.0000 val_score=0.7850 lr=1.25e-04
+[CVX] ep=098/100 train_score=1.0000 val_score=0.7850 lr=1.25e-04
+[CVX] ep=099/100 train_score=1.0000 val_score=0.7865 lr=1.25e-04
+[CVX] ep=100/100 train_score=1.0000 val_score=0.7830 lr=1.25e-04
+[STE-SNN] ep=001/100 train_score=0.8295 val_score=0.7680 lr=1.00e-03
+[STE-SNN] ep=002/100 train_score=0.9045 val_score=0.8240 lr=1.00e-03
+[STE-SNN] ep=003/100 train_score=0.9347 val_score=0.8280 lr=1.00e-03
+[STE-SNN] ep=004/100 train_score=0.8816 val_score=0.7805 lr=1.00e-03
+[STE-SNN] ep=005/100 train_score=0.9386 val_score=0.8225 lr=1.00e-03
+[STE-SNN] ep=006/100 train_score=0.9209 val_score=0.7940 lr=1.00e-03
+[STE-SNN] ep=007/100 train_score=0.9247 val_score=0.8080 lr=1.00e-03
+[STE-SNN] ep=008/100 train_score=0.9266 val_score=0.8095 lr=1.00e-03
+[STE-SNN] ep=009/100 train_score=0.9553 val_score=0.8255 lr=1.00e-03
+[STE-SNN] ep=010/100 train_score=0.9470 val_score=0.8125 lr=1.00e-03
+[STE-SNN] ep=011/100 train_score=0.9279 val_score=0.8100 lr=1.00e-03
+[STE-SNN] ep=012/100 train_score=0.9405 val_score=0.8160 lr=1.00e-03
+[STE-SNN] ep=013/100 train_score=0.9489 val_score=0.8145 lr=1.00e-03
+[STE-SNN] ep=014/100 train_score=0.9437 val_score=0.8025 lr=1.00e-03
+[STE-SNN] ep=015/100 train_score=0.9405 val_score=0.8130 lr=1.00e-03
+[STE-SNN] ep=016/100 train_score=0.9361 val_score=0.7985 lr=1.00e-03
+[STE-SNN] ep=017/100 train_score=0.9486 val_score=0.8180 lr=1.00e-03
+[STE-SNN] ep=018/100 train_score=0.9439 val_score=0.8035 lr=1.00e-03
+[STE-SNN] ep=019/100 train_score=0.9186 val_score=0.8040 lr=1.00e-03
+[STE-SNN] ep=020/100 train_score=0.9370 val_score=0.8060 lr=1.00e-03
+[STE-SNN] ep=021/100 train_score=0.9469 val_score=0.7925 lr=1.00e-03
+[STE-SNN] ep=022/100 train_score=0.9611 val_score=0.8220 lr=1.00e-03
+[STE-SNN] ep=023/100 train_score=0.9655 val_score=0.8100 lr=1.00e-03
+[STE-SNN] ep=024/100 train_score=0.9515 val_score=0.8100 lr=1.00e-03
+[STE-SNN] ep=025/100 train_score=0.9416 val_score=0.7970 lr=1.00e-03
+[STE-SNN] ep=026/100 train_score=0.9559 val_score=0.8200 lr=1.00e-03
+[STE-SNN] ep=027/100 train_score=0.9721 val_score=0.8255 lr=1.00e-03
+[STE-SNN] ep=028/100 train_score=0.9644 val_score=0.8175 lr=1.00e-03
+[STE-SNN] ep=029/100 train_score=0.9649 val_score=0.8210 lr=1.00e-03
+[STE-SNN] ep=030/100 train_score=0.9741 val_score=0.8285 lr=5.00e-04
+[STE-SNN] ep=031/100 train_score=0.9965 val_score=0.8500 lr=5.00e-04
+[STE-SNN] ep=032/100 train_score=0.9980 val_score=0.8575 lr=5.00e-04
+[STE-SNN] ep=033/100 train_score=0.9989 val_score=0.8540 lr=5.00e-04
+[STE-SNN] ep=034/100 train_score=0.9998 val_score=0.8610 lr=5.00e-04
+[STE-SNN] ep=035/100 train_score=1.0000 val_score=0.8615 lr=5.00e-04
+[STE-SNN] ep=036/100 train_score=1.0000 val_score=0.8610 lr=5.00e-04
+[STE-SNN] ep=037/100 train_score=1.0000 val_score=0.8640 lr=5.00e-04
+[STE-SNN] ep=038/100 train_score=1.0000 val_score=0.8650 lr=5.00e-04
+[STE-SNN] ep=039/100 train_score=1.0000 val_score=0.8660 lr=5.00e-04
+[STE-SNN] ep=040/100 train_score=1.0000 val_score=0.8645 lr=5.00e-04
+[STE-SNN] ep=041/100 train_score=1.0000 val_score=0.8630 lr=5.00e-04
+[STE-SNN] ep=042/100 train_score=1.0000 val_score=0.8635 lr=5.00e-04
+[STE-SNN] ep=043/100 train_score=1.0000 val_score=0.8630 lr=5.00e-04
+[STE-SNN] ep=044/100 train_score=1.0000 val_score=0.8640 lr=5.00e-04
+[STE-SNN] ep=045/100 train_score=1.0000 val_score=0.8625 lr=5.00e-04
+[STE-SNN] ep=046/100 train_score=1.0000 val_score=0.8630 lr=5.00e-04
+[STE-SNN] ep=047/100 train_score=1.0000 val_score=0.8645 lr=5.00e-04
+[STE-SNN] ep=048/100 train_score=1.0000 val_score=0.8630 lr=5.00e-04
+[STE-SNN] ep=049/100 train_score=1.0000 val_score=0.8635 lr=5.00e-04
+[STE-SNN] ep=050/100 train_score=1.0000 val_score=0.8645 lr=5.00e-04
+[STE-SNN] ep=051/100 train_score=1.0000 val_score=0.8650 lr=5.00e-04
+[STE-SNN] ep=052/100 train_score=1.0000 val_score=0.8660 lr=5.00e-04
+[STE-SNN] ep=053/100 train_score=1.0000 val_score=0.8665 lr=5.00e-04
+[STE-SNN] ep=054/100 train_score=1.0000 val_score=0.8665 lr=5.00e-04
+[STE-SNN] ep=055/100 train_score=1.0000 val_score=0.8675 lr=5.00e-04
+[STE-SNN] ep=056/100 train_score=1.0000 val_score=0.8685 lr=5.00e-04
+[STE-SNN] ep=057/100 train_score=1.0000 val_score=0.8675 lr=5.00e-04
+[STE-SNN] ep=058/100 train_score=1.0000 val_score=0.8660 lr=5.00e-04
+[STE-SNN] ep=059/100 train_score=1.0000 val_score=0.8685 lr=5.00e-04
+[STE-SNN] ep=060/100 train_score=1.0000 val_score=0.8690 lr=2.50e-04
+[STE-SNN] ep=061/100 train_score=1.0000 val_score=0.8695 lr=2.50e-04
+[STE-SNN] ep=062/100 train_score=1.0000 val_score=0.8690 lr=2.50e-04
+[STE-SNN] ep=063/100 train_score=1.0000 val_score=0.8690 lr=2.50e-04
+[STE-SNN] ep=064/100 train_score=1.0000 val_score=0.8700 lr=2.50e-04
+[STE-SNN] ep=065/100 train_score=1.0000 val_score=0.8705 lr=2.50e-04
+[STE-SNN] ep=066/100 train_score=1.0000 val_score=0.8700 lr=2.50e-04
+[STE-SNN] ep=067/100 train_score=1.0000 val_score=0.8715 lr=2.50e-04
+[STE-SNN] ep=068/100 train_score=1.0000 val_score=0.8710 lr=2.50e-04
+[STE-SNN] ep=069/100 train_score=1.0000 val_score=0.8705 lr=2.50e-04
+[STE-SNN] ep=070/100 train_score=1.0000 val_score=0.8700 lr=2.50e-04
+[STE-SNN] ep=071/100 train_score=1.0000 val_score=0.8700 lr=2.50e-04
+[STE-SNN] ep=072/100 train_score=1.0000 val_score=0.8700 lr=2.50e-04
+[STE-SNN] ep=073/100 train_score=1.0000 val_score=0.8710 lr=2.50e-04
+[STE-SNN] ep=074/100 train_score=1.0000 val_score=0.8715 lr=2.50e-04
+[STE-SNN] ep=075/100 train_score=1.0000 val_score=0.8720 lr=2.50e-04
+[STE-SNN] ep=076/100 train_score=1.0000 val_score=0.8720 lr=2.50e-04
+[STE-SNN] ep=077/100 train_score=1.0000 val_score=0.8710 lr=2.50e-04
+[STE-SNN] ep=078/100 train_score=1.0000 val_score=0.8710 lr=2.50e-04
+[STE-SNN] ep=079/100 train_score=1.0000 val_score=0.8705 lr=2.50e-04
+[STE-SNN] ep=080/100 train_score=1.0000 val_score=0.8720 lr=2.50e-04
+[STE-SNN] ep=081/100 train_score=1.0000 val_score=0.8715 lr=2.50e-04
+[STE-SNN] ep=082/100 train_score=1.0000 val_score=0.8720 lr=2.50e-04
+[STE-SNN] ep=083/100 train_score=1.0000 val_score=0.8725 lr=2.50e-04
+[STE-SNN] ep=084/100 train_score=1.0000 val_score=0.8715 lr=2.50e-04
+[STE-SNN] ep=085/100 train_score=1.0000 val_score=0.8720 lr=2.50e-04
+[STE-SNN] ep=086/100 train_score=1.0000 val_score=0.8725 lr=2.50e-04
+[STE-SNN] ep=087/100 train_score=1.0000 val_score=0.8715 lr=2.50e-04
+[STE-SNN] ep=088/100 train_score=1.0000 val_score=0.8715 lr=2.50e-04
+[STE-SNN] ep=089/100 train_score=1.0000 val_score=0.8715 lr=2.50e-04
+[STE-SNN] ep=090/100 train_score=1.0000 val_score=0.8715 lr=1.25e-04
+[STE-SNN] ep=091/100 train_score=1.0000 val_score=0.8715 lr=1.25e-04
+[STE-SNN] ep=092/100 train_score=1.0000 val_score=0.8720 lr=1.25e-04
+[STE-SNN] ep=093/100 train_score=1.0000 val_score=0.8700 lr=1.25e-04
+[STE-SNN] ep=094/100 train_score=1.0000 val_score=0.8700 lr=1.25e-04
+[STE-SNN] ep=095/100 train_score=1.0000 val_score=0.8700 lr=1.25e-04
+[STE-SNN] ep=096/100 train_score=1.0000 val_score=0.8700 lr=1.25e-04
+[STE-SNN] ep=097/100 train_score=1.0000 val_score=0.8705 lr=1.25e-04
+[STE-SNN] ep=098/100 train_score=1.0000 val_score=0.8705 lr=1.25e-04
+[STE-SNN] ep=099/100 train_score=1.0000 val_score=0.8705 lr=1.25e-04
+[STE-SNN] ep=100/100 train_score=1.0000 val_score=0.8705 lr=1.25e-04
+[seed 0] CVX test_acc=0.7400 (val=0.7875, beta_l1=1e-06, lr=0.001) | STE-SNN test_acc=0.8416 (val_best=0.8725)
+
+=== FINAL (mean ± std over seeds) ===
+CVX  test_acc = 0.7400 ± 0.0000
+STE  test_acc = 0.8416 ± 0.0000
+
+(.venv) hima_3114@Himanshus-MacBook-Pro-2 snn_generalized_pt2 % cd /Users/hima_3114/Desktop/Paper_1/experiments/snn_generalized_pt2 && source ../.venv/bin/activate && python snn.py --task mnist_seq --T 2 --L 3 --n_train_total 10000 --P_in 2000 --P_rec 2000 --P_last 8000 --epochs 100 --log_train --loss ce --seed 0
+[info] device=mps task=mnist_seq T=2 L=3 epochs=100 batch=128
+[info] n_train_total=10000 val_frac=0.2 n_test=5000
+[info] P_in=2000 P_rec=2000 P_last=8000
+[info] loss=ce
+[info] CVX grid betas=[1e-06, 0.001, 0.01, 0.1, 0.5, 1.0] lrs=[0.01, 0.005, 0.001]
+[info] seeds=[0] normalize_hidden=False
+[info] SNN learn_beta=False learn_threshold=False
+[info] task=mnist_seq T=2 L=3
+[info] n_train_total=10000 val_frac=0.2 => n_train=8000 n_val=2000 n_test=5000
+[info] P_in=2000 P_rec=2000 P_last(target)=8000
+[info] CVX grid betas=[1e-06, 0.001, 0.01, 0.1, 0.5, 1.0] lrs=[0.01, 0.005, 0.001] loss=ce
+[snn hypers] layer 1: U_in=(392, 2000), U_rec=(4001, 2000) (shared across all T)
+[snn hypers] layer 2: U_in=(2000, 2000), U_rec=(4001, 2000) (shared across all T)
+[snn patterns] last-layer enforce: round=1/300 uniques=8000/8000
+[snn patterns] P_last_unique=8000 (target=8000, n_train=8000)
+[seed 0] re-train CVX best for logging: beta=1e-06 lr=0.01
+[CVX] ep=001/100 train_score=0.7966 val_score=0.7745 lr=1.00e-02
+[CVX] ep=002/100 train_score=0.8806 val_score=0.8265 lr=1.00e-02
+[CVX] ep=003/100 train_score=0.9169 val_score=0.8445 lr=1.00e-02
+[CVX] ep=004/100 train_score=0.9814 val_score=0.8690 lr=1.00e-02
+[CVX] ep=005/100 train_score=0.9934 val_score=0.8730 lr=1.00e-02
+[CVX] ep=006/100 train_score=0.9868 val_score=0.8670 lr=1.00e-02
+[CVX] ep=007/100 train_score=1.0000 val_score=0.8835 lr=1.00e-02
+[CVX] ep=008/100 train_score=1.0000 val_score=0.8870 lr=1.00e-02
+[CVX] ep=009/100 train_score=1.0000 val_score=0.8900 lr=1.00e-02
+[CVX] ep=010/100 train_score=1.0000 val_score=0.8895 lr=1.00e-02
+[CVX] ep=011/100 train_score=1.0000 val_score=0.8925 lr=1.00e-02
+[CVX] ep=012/100 train_score=1.0000 val_score=0.8930 lr=1.00e-02
+[CVX] ep=013/100 train_score=1.0000 val_score=0.8920 lr=1.00e-02
+[CVX] ep=014/100 train_score=1.0000 val_score=0.8895 lr=1.00e-02
+[CVX] ep=015/100 train_score=1.0000 val_score=0.8940 lr=1.00e-02
+[CVX] ep=016/100 train_score=1.0000 val_score=0.8915 lr=1.00e-02
+[CVX] ep=017/100 train_score=1.0000 val_score=0.8915 lr=1.00e-02
+[CVX] ep=018/100 train_score=1.0000 val_score=0.8875 lr=1.00e-02
+[CVX] ep=019/100 train_score=1.0000 val_score=0.8925 lr=1.00e-02
+[CVX] ep=020/100 train_score=1.0000 val_score=0.8910 lr=1.00e-02
+[CVX] ep=021/100 train_score=1.0000 val_score=0.8910 lr=1.00e-02
+[CVX] ep=022/100 train_score=1.0000 val_score=0.8920 lr=1.00e-02
+[CVX] ep=023/100 train_score=1.0000 val_score=0.8920 lr=1.00e-02
+[CVX] ep=024/100 train_score=1.0000 val_score=0.8905 lr=1.00e-02
+[CVX] ep=025/100 train_score=1.0000 val_score=0.8915 lr=1.00e-02
+[CVX] ep=026/100 train_score=1.0000 val_score=0.8905 lr=1.00e-02
+[CVX] ep=027/100 train_score=1.0000 val_score=0.8925 lr=1.00e-02
+[CVX] ep=028/100 train_score=1.0000 val_score=0.8930 lr=1.00e-02
+[CVX] ep=029/100 train_score=1.0000 val_score=0.8910 lr=1.00e-02
+[CVX] ep=030/100 train_score=1.0000 val_score=0.8955 lr=5.00e-03
+[CVX] ep=031/100 train_score=1.0000 val_score=0.8940 lr=5.00e-03
+[CVX] ep=032/100 train_score=1.0000 val_score=0.8930 lr=5.00e-03
+[CVX] ep=033/100 train_score=1.0000 val_score=0.8910 lr=5.00e-03
+[CVX] ep=034/100 train_score=1.0000 val_score=0.8920 lr=5.00e-03
+[CVX] ep=035/100 train_score=1.0000 val_score=0.8925 lr=5.00e-03
+[CVX] ep=036/100 train_score=1.0000 val_score=0.8935 lr=5.00e-03
+[CVX] ep=037/100 train_score=1.0000 val_score=0.8930 lr=5.00e-03
+[CVX] ep=038/100 train_score=1.0000 val_score=0.8945 lr=5.00e-03
+[CVX] ep=039/100 train_score=1.0000 val_score=0.8905 lr=5.00e-03
+[CVX] ep=040/100 train_score=1.0000 val_score=0.8930 lr=5.00e-03
+[CVX] ep=041/100 train_score=1.0000 val_score=0.8935 lr=5.00e-03
+[CVX] ep=042/100 train_score=1.0000 val_score=0.8935 lr=5.00e-03
+[CVX] ep=043/100 train_score=1.0000 val_score=0.8930 lr=5.00e-03
+[CVX] ep=044/100 train_score=1.0000 val_score=0.8905 lr=5.00e-03
+[CVX] ep=045/100 train_score=1.0000 val_score=0.8925 lr=5.00e-03
+[CVX] ep=046/100 train_score=1.0000 val_score=0.8940 lr=5.00e-03
+[CVX] ep=047/100 train_score=1.0000 val_score=0.8930 lr=5.00e-03
+[CVX] ep=048/100 train_score=1.0000 val_score=0.8900 lr=5.00e-03
+[CVX] ep=049/100 train_score=1.0000 val_score=0.8895 lr=5.00e-03
+[CVX] ep=050/100 train_score=1.0000 val_score=0.8915 lr=5.00e-03
+[CVX] ep=051/100 train_score=1.0000 val_score=0.8930 lr=5.00e-03
+[CVX] ep=052/100 train_score=1.0000 val_score=0.8925 lr=5.00e-03
+[CVX] ep=053/100 train_score=1.0000 val_score=0.8930 lr=5.00e-03
+[CVX] ep=054/100 train_score=1.0000 val_score=0.8935 lr=5.00e-03
+[CVX] ep=055/100 train_score=1.0000 val_score=0.8930 lr=5.00e-03
+[CVX] ep=056/100 train_score=1.0000 val_score=0.8940 lr=5.00e-03
+[CVX] ep=057/100 train_score=1.0000 val_score=0.8920 lr=5.00e-03
+[CVX] ep=058/100 train_score=1.0000 val_score=0.8930 lr=5.00e-03
+[CVX] ep=059/100 train_score=1.0000 val_score=0.8950 lr=5.00e-03
+[CVX] ep=060/100 train_score=1.0000 val_score=0.8905 lr=2.50e-03
+[CVX] ep=061/100 train_score=1.0000 val_score=0.8925 lr=2.50e-03
+[CVX] ep=062/100 train_score=1.0000 val_score=0.8925 lr=2.50e-03
+[CVX] ep=063/100 train_score=1.0000 val_score=0.8915 lr=2.50e-03
+[CVX] ep=064/100 train_score=1.0000 val_score=0.8890 lr=2.50e-03
+[CVX] ep=065/100 train_score=1.0000 val_score=0.8945 lr=2.50e-03
+[CVX] ep=066/100 train_score=1.0000 val_score=0.8915 lr=2.50e-03
+[CVX] ep=067/100 train_score=1.0000 val_score=0.8935 lr=2.50e-03
+[CVX] ep=068/100 train_score=1.0000 val_score=0.8920 lr=2.50e-03
+[CVX] ep=069/100 train_score=1.0000 val_score=0.8915 lr=2.50e-03
+[CVX] ep=070/100 train_score=1.0000 val_score=0.8920 lr=2.50e-03
+[CVX] ep=071/100 train_score=1.0000 val_score=0.8920 lr=2.50e-03
+[CVX] ep=072/100 train_score=1.0000 val_score=0.8920 lr=2.50e-03
+[CVX] ep=073/100 train_score=1.0000 val_score=0.8930 lr=2.50e-03
+[CVX] ep=074/100 train_score=1.0000 val_score=0.8920 lr=2.50e-03
+[CVX] ep=075/100 train_score=1.0000 val_score=0.8920 lr=2.50e-03
+[CVX] ep=076/100 train_score=1.0000 val_score=0.8900 lr=2.50e-03
+[CVX] ep=077/100 train_score=1.0000 val_score=0.8920 lr=2.50e-03
+[CVX] ep=078/100 train_score=1.0000 val_score=0.8910 lr=2.50e-03
+[CVX] ep=079/100 train_score=1.0000 val_score=0.8935 lr=2.50e-03
+[CVX] ep=080/100 train_score=1.0000 val_score=0.8905 lr=2.50e-03
+[CVX] ep=081/100 train_score=1.0000 val_score=0.8935 lr=2.50e-03
+[CVX] ep=082/100 train_score=1.0000 val_score=0.8900 lr=2.50e-03
+[CVX] ep=083/100 train_score=1.0000 val_score=0.8905 lr=2.50e-03
+[CVX] ep=084/100 train_score=1.0000 val_score=0.8915 lr=2.50e-03
+[CVX] ep=085/100 train_score=1.0000 val_score=0.8925 lr=2.50e-03
+[CVX] ep=086/100 train_score=1.0000 val_score=0.8905 lr=2.50e-03
+[CVX] ep=087/100 train_score=1.0000 val_score=0.8895 lr=2.50e-03
+[CVX] ep=088/100 train_score=1.0000 val_score=0.8925 lr=2.50e-03
+[CVX] ep=089/100 train_score=1.0000 val_score=0.8905 lr=2.50e-03
+[CVX] ep=090/100 train_score=1.0000 val_score=0.8930 lr=1.25e-03
+[CVX] ep=091/100 train_score=1.0000 val_score=0.8910 lr=1.25e-03
+[CVX] ep=092/100 train_score=1.0000 val_score=0.8900 lr=1.25e-03
+[CVX] ep=093/100 train_score=1.0000 val_score=0.8895 lr=1.25e-03
+[CVX] ep=094/100 train_score=1.0000 val_score=0.8900 lr=1.25e-03
+[CVX] ep=095/100 train_score=1.0000 val_score=0.8920 lr=1.25e-03
+[CVX] ep=096/100 train_score=1.0000 val_score=0.8920 lr=1.25e-03
+[CVX] ep=097/100 train_score=1.0000 val_score=0.8905 lr=1.25e-03
+[CVX] ep=098/100 train_score=1.0000 val_score=0.8915 lr=1.25e-03
+[CVX] ep=099/100 train_score=1.0000 val_score=0.8920 lr=1.25e-03
+[CVX] ep=100/100 train_score=1.0000 val_score=0.8920 lr=1.25e-03
+[STE-SNN] ep=001/100 train_score=0.9576 val_score=0.9365 lr=1.00e-03
+[STE-SNN] ep=002/100 train_score=0.9841 val_score=0.9520 lr=1.00e-03
+[STE-SNN] ep=003/100 train_score=0.9818 val_score=0.9490 lr=1.00e-03
+[STE-SNN] ep=004/100 train_score=0.9892 val_score=0.9545 lr=1.00e-03
+[STE-SNN] ep=005/100 train_score=0.9858 val_score=0.9480 lr=1.00e-03
+[STE-SNN] ep=006/100 train_score=0.9900 val_score=0.9495 lr=1.00e-03
+[STE-SNN] ep=007/100 train_score=0.9816 val_score=0.9330 lr=1.00e-03
+[STE-SNN] ep=008/100 train_score=0.9891 val_score=0.9530 lr=1.00e-03
+[STE-SNN] ep=009/100 train_score=0.9926 val_score=0.9535 lr=1.00e-03
+[STE-SNN] ep=010/100 train_score=0.9932 val_score=0.9550 lr=1.00e-03
+[STE-SNN] ep=011/100 train_score=0.9955 val_score=0.9520 lr=1.00e-03
+[STE-SNN] ep=012/100 train_score=0.9894 val_score=0.9440 lr=1.00e-03
+[STE-SNN] ep=013/100 train_score=0.9939 val_score=0.9580 lr=1.00e-03
+[STE-SNN] ep=014/100 train_score=0.9902 val_score=0.9475 lr=1.00e-03
+[STE-SNN] ep=015/100 train_score=0.9922 val_score=0.9485 lr=1.00e-03
+[STE-SNN] ep=016/100 train_score=0.9934 val_score=0.9505 lr=1.00e-03
+[STE-SNN] ep=017/100 train_score=0.9925 val_score=0.9500 lr=1.00e-03
+[STE-SNN] ep=018/100 train_score=0.9928 val_score=0.9525 lr=1.00e-03
+[STE-SNN] ep=019/100 train_score=0.9928 val_score=0.9555 lr=1.00e-03
+[STE-SNN] ep=020/100 train_score=0.9949 val_score=0.9595 lr=1.00e-03
+[STE-SNN] ep=021/100 train_score=0.9859 val_score=0.9455 lr=1.00e-03
+[STE-SNN] ep=022/100 train_score=0.9826 val_score=0.9415 lr=1.00e-03
+[STE-SNN] ep=023/100 train_score=0.9794 val_score=0.9445 lr=1.00e-03
+[STE-SNN] ep=024/100 train_score=0.9851 val_score=0.9425 lr=1.00e-03
+[STE-SNN] ep=025/100 train_score=0.9964 val_score=0.9540 lr=1.00e-03
+[STE-SNN] ep=026/100 train_score=0.9955 val_score=0.9490 lr=1.00e-03
+[STE-SNN] ep=027/100 train_score=0.9989 val_score=0.9590 lr=1.00e-03
+[STE-SNN] ep=028/100 train_score=0.9972 val_score=0.9515 lr=1.00e-03
+[STE-SNN] ep=029/100 train_score=0.9979 val_score=0.9510 lr=1.00e-03
+[STE-SNN] ep=030/100 train_score=0.9991 val_score=0.9565 lr=5.00e-04
+[STE-SNN] ep=031/100 train_score=1.0000 val_score=0.9565 lr=5.00e-04
+[STE-SNN] ep=032/100 train_score=1.0000 val_score=0.9570 lr=5.00e-04
+[STE-SNN] ep=033/100 train_score=1.0000 val_score=0.9585 lr=5.00e-04
+[STE-SNN] ep=034/100 train_score=1.0000 val_score=0.9585 lr=5.00e-04
+[STE-SNN] ep=035/100 train_score=1.0000 val_score=0.9575 lr=5.00e-04
+[STE-SNN] ep=036/100 train_score=1.0000 val_score=0.9570 lr=5.00e-04
+[STE-SNN] ep=037/100 train_score=1.0000 val_score=0.9570 lr=5.00e-04
+[STE-SNN] ep=038/100 train_score=1.0000 val_score=0.9570 lr=5.00e-04
+[STE-SNN] ep=039/100 train_score=1.0000 val_score=0.9570 lr=5.00e-04
+[STE-SNN] ep=040/100 train_score=1.0000 val_score=0.9570 lr=5.00e-04
+[STE-SNN] ep=041/100 train_score=1.0000 val_score=0.9575 lr=5.00e-04
+[STE-SNN] ep=042/100 train_score=1.0000 val_score=0.9580 lr=5.00e-04
+[STE-SNN] ep=043/100 train_score=1.0000 val_score=0.9580 lr=5.00e-04
+[STE-SNN] ep=044/100 train_score=1.0000 val_score=0.9585 lr=5.00e-04
+[STE-SNN] ep=045/100 train_score=1.0000 val_score=0.9590 lr=5.00e-04
+[STE-SNN] ep=046/100 train_score=1.0000 val_score=0.9590 lr=5.00e-04
+[STE-SNN] ep=047/100 train_score=1.0000 val_score=0.9590 lr=5.00e-04
+[STE-SNN] ep=048/100 train_score=1.0000 val_score=0.9590 lr=5.00e-04
+[STE-SNN] ep=049/100 train_score=1.0000 val_score=0.9595 lr=5.00e-04
+[STE-SNN] ep=050/100 train_score=1.0000 val_score=0.9595 lr=5.00e-04
+[STE-SNN] ep=051/100 train_score=1.0000 val_score=0.9590 lr=5.00e-04
+[STE-SNN] ep=052/100 train_score=1.0000 val_score=0.9590 lr=5.00e-04
+[STE-SNN] ep=053/100 train_score=1.0000 val_score=0.9585 lr=5.00e-04
+[STE-SNN] ep=054/100 train_score=1.0000 val_score=0.9585 lr=5.00e-04
+[STE-SNN] ep=055/100 train_score=1.0000 val_score=0.9590 lr=5.00e-04
+[STE-SNN] ep=056/100 train_score=1.0000 val_score=0.9610 lr=5.00e-04
+[STE-SNN] ep=057/100 train_score=1.0000 val_score=0.9605 lr=5.00e-04
+[STE-SNN] ep=058/100 train_score=1.0000 val_score=0.9605 lr=5.00e-04
+[STE-SNN] ep=059/100 train_score=1.0000 val_score=0.9605 lr=5.00e-04
+[STE-SNN] ep=060/100 train_score=1.0000 val_score=0.9605 lr=2.50e-04
+[STE-SNN] ep=061/100 train_score=1.0000 val_score=0.9605 lr=2.50e-04
+[STE-SNN] ep=062/100 train_score=1.0000 val_score=0.9605 lr=2.50e-04
+[STE-SNN] ep=063/100 train_score=1.0000 val_score=0.9605 lr=2.50e-04
+[STE-SNN] ep=064/100 train_score=1.0000 val_score=0.9605 lr=2.50e-04
+[STE-SNN] ep=065/100 train_score=1.0000 val_score=0.9610 lr=2.50e-04
+[STE-SNN] ep=066/100 train_score=1.0000 val_score=0.9605 lr=2.50e-04
+[STE-SNN] ep=067/100 train_score=1.0000 val_score=0.9605 lr=2.50e-04
+[STE-SNN] ep=068/100 train_score=1.0000 val_score=0.9605 lr=2.50e-04
+[STE-SNN] ep=069/100 train_score=1.0000 val_score=0.9605 lr=2.50e-04
+[STE-SNN] ep=070/100 train_score=1.0000 val_score=0.9605 lr=2.50e-04
+[STE-SNN] ep=071/100 train_score=1.0000 val_score=0.9600 lr=2.50e-04
+[STE-SNN] ep=072/100 train_score=1.0000 val_score=0.9600 lr=2.50e-04
+[STE-SNN] ep=073/100 train_score=1.0000 val_score=0.9600 lr=2.50e-04
+[STE-SNN] ep=074/100 train_score=1.0000 val_score=0.9605 lr=2.50e-04
+[STE-SNN] ep=075/100 train_score=1.0000 val_score=0.9600 lr=2.50e-04
+[STE-SNN] ep=076/100 train_score=1.0000 val_score=0.9600 lr=2.50e-04
+[STE-SNN] ep=077/100 train_score=1.0000 val_score=0.9600 lr=2.50e-04
+[STE-SNN] ep=078/100 train_score=1.0000 val_score=0.9595 lr=2.50e-04
+[STE-SNN] ep=079/100 train_score=1.0000 val_score=0.9595 lr=2.50e-04
+[STE-SNN] ep=080/100 train_score=1.0000 val_score=0.9595 lr=2.50e-04
+[STE-SNN] ep=081/100 train_score=1.0000 val_score=0.9595 lr=2.50e-04
+[STE-SNN] ep=082/100 train_score=1.0000 val_score=0.9595 lr=2.50e-04
+[STE-SNN] ep=083/100 train_score=1.0000 val_score=0.9595 lr=2.50e-04
+[STE-SNN] ep=084/100 train_score=1.0000 val_score=0.9595 lr=2.50e-04
+[STE-SNN] ep=085/100 train_score=1.0000 val_score=0.9595 lr=2.50e-04
+[STE-SNN] ep=086/100 train_score=1.0000 val_score=0.9595 lr=2.50e-04
+[STE-SNN] ep=087/100 train_score=1.0000 val_score=0.9595 lr=2.50e-04
+[STE-SNN] ep=088/100 train_score=1.0000 val_score=0.9595 lr=2.50e-04
+[STE-SNN] ep=089/100 train_score=1.0000 val_score=0.9595 lr=2.50e-04
+[STE-SNN] ep=090/100 train_score=1.0000 val_score=0.9600 lr=1.25e-04
+[STE-SNN] ep=091/100 train_score=1.0000 val_score=0.9595 lr=1.25e-04
+[STE-SNN] ep=092/100 train_score=1.0000 val_score=0.9595 lr=1.25e-04
+[STE-SNN] ep=093/100 train_score=1.0000 val_score=0.9595 lr=1.25e-04
+[STE-SNN] ep=094/100 train_score=1.0000 val_score=0.9595 lr=1.25e-04
+[STE-SNN] ep=095/100 train_score=1.0000 val_score=0.9595 lr=1.25e-04
+[STE-SNN] ep=096/100 train_score=1.0000 val_score=0.9600 lr=1.25e-04
+[STE-SNN] ep=097/100 train_score=1.0000 val_score=0.9600 lr=1.25e-04
+[STE-SNN] ep=098/100 train_score=1.0000 val_score=0.9595 lr=1.25e-04
+[STE-SNN] ep=099/100 train_score=1.0000 val_score=0.9595 lr=1.25e-04
+[STE-SNN] ep=100/100 train_score=1.0000 val_score=0.9590 lr=1.25e-04
+[seed 0] CVX test_acc=0.8518 (val=0.8955, beta_l1=1e-06, lr=0.01) | STE-SNN test_acc=0.9418 (val_best=0.9610)
+
+=== FINAL (mean ± std over seeds) ===
+CVX  test_acc = 0.8518 ± 0.0000
+STE  test_acc = 0.9418 ± 0.0000
+
+
+[info] device=mps task=mnist_seq T=2 L=10 epochs=100 batch=128
+[info] n_train_total=10000 val_frac=0.2 n_test=5000
+[info] P_in=4000 P_rec=4000 P_last=10000
+[info] loss=ce
+[info] CVX grid betas=[1e-06, 0.001, 0.01, 0.1, 0.5, 1.0] lrs=[0.01, 0.005, 0.001]
+[info] seeds=[0] normalize_hidden=False
+[info] SNN learn_beta=False learn_threshold=False
+[info] task=mnist_seq T=2 L=10
+[info] n_train_total=10000 val_frac=0.2 => n_train=8000 n_val=2000 n_test=5000
+[info] P_in=4000 P_rec=4000 P_last(target)=10000
+[info] CVX grid betas=[1e-06, 0.001, 0.01, 0.1, 0.5, 1.0] lrs=[0.01, 0.005, 0.001] loss=ce
+[snn hypers] layer 1: U_in=(392, 4000), U_rec=(8001, 4000) (shared across all T)
+[snn hypers] layer 2: U_in=(4000, 4000), U_rec=(8001, 4000) (shared across all T)
+[snn hypers] layer 3: U_in=(4000, 4000), U_rec=(8001, 4000) (shared across all T)
+[snn hypers] layer 4: U_in=(4000, 4000), U_rec=(8001, 4000) (shared across all T)
+[snn hypers] layer 5: U_in=(4000, 4000), U_rec=(8001, 4000) (shared across all T)
+[snn hypers] layer 6: U_in=(4000, 4000), U_rec=(8001, 4000) (shared across all T)
+[snn hypers] layer 7: U_in=(4000, 4000), U_rec=(8001, 4000) (shared across all T)
+[snn hypers] layer 8: U_in=(4000, 4000), U_rec=(8001, 4000) (shared across all T)
+[snn hypers] layer 9: U_in=(4000, 4000), U_rec=(8001, 4000) (shared across all T)
+[snn patterns] last-layer enforce: round=1/300 uniques=10000/10000
+[snn patterns] P_last_unique=10000 (target=10000, n_train=8000)
+[seed 0] re-train CVX best for logging: beta=1e-06 lr=0.001
+[CVX] ep=001/100 train_score=0.1795 val_score=0.1165 lr=1.00e-03
+[CVX] ep=002/100 train_score=0.4900 val_score=0.2070 lr=1.00e-03
+[CVX] ep=003/100 train_score=0.3935 val_score=0.1710 lr=1.00e-03
+[CVX] ep=004/100 train_score=0.4851 val_score=0.1635 lr=1.00e-03
+[CVX] ep=005/100 train_score=0.6331 val_score=0.1870 lr=1.00e-03
+[CVX] ep=006/100 train_score=0.7428 val_score=0.2280 lr=1.00e-03
+[CVX] ep=007/100 train_score=0.7491 val_score=0.2115 lr=1.00e-03
+[CVX] ep=008/100 train_score=0.7792 val_score=0.1855 lr=1.00e-03
+[CVX] ep=009/100 train_score=0.8161 val_score=0.1955 lr=1.00e-03
+[CVX] ep=010/100 train_score=0.8341 val_score=0.1935 lr=1.00e-03
+[CVX] ep=011/100 train_score=0.8974 val_score=0.2140 lr=1.00e-03
+[CVX] ep=012/100 train_score=0.8488 val_score=0.2025 lr=1.00e-03
+[CVX] ep=013/100 train_score=0.9456 val_score=0.2130 lr=1.00e-03
+[CVX] ep=014/100 train_score=0.9425 val_score=0.2070 lr=1.00e-03
+[CVX] ep=015/100 train_score=0.9759 val_score=0.2090 lr=1.00e-03
+[CVX] ep=016/100 train_score=0.9655 val_score=0.2065 lr=1.00e-03
+[CVX] ep=017/100 train_score=0.9800 val_score=0.2230 lr=1.00e-03
+[CVX] ep=018/100 train_score=0.9806 val_score=0.2070 lr=1.00e-03
+[CVX] ep=019/100 train_score=0.9951 val_score=0.2060 lr=1.00e-03
+[CVX] ep=020/100 train_score=0.9768 val_score=0.2005 lr=1.00e-03
+[CVX] ep=021/100 train_score=0.9899 val_score=0.2075 lr=1.00e-03
+[CVX] ep=022/100 train_score=0.9988 val_score=0.2025 lr=1.00e-03
+[CVX] ep=023/100 train_score=0.9995 val_score=0.2050 lr=1.00e-03
+[CVX] ep=024/100 train_score=0.9998 val_score=0.2050 lr=1.00e-03
+[CVX] ep=025/100 train_score=0.9968 val_score=0.1980 lr=1.00e-03
+[CVX] ep=026/100 train_score=0.9996 val_score=0.2005 lr=1.00e-03
+[CVX] ep=027/100 train_score=0.9985 val_score=0.1935 lr=1.00e-03
+[CVX] ep=028/100 train_score=1.0000 val_score=0.2015 lr=1.00e-03
+[CVX] ep=029/100 train_score=0.9999 val_score=0.2000 lr=1.00e-03
+[CVX] ep=030/100 train_score=1.0000 val_score=0.2045 lr=5.00e-04
+[CVX] ep=031/100 train_score=1.0000 val_score=0.1960 lr=5.00e-04
+[CVX] ep=032/100 train_score=1.0000 val_score=0.2070 lr=5.00e-04
+[CVX] ep=033/100 train_score=1.0000 val_score=0.2030 lr=5.00e-04
+[CVX] ep=034/100 train_score=1.0000 val_score=0.2055 lr=5.00e-04
+[CVX] ep=035/100 train_score=1.0000 val_score=0.2045 lr=5.00e-04
+[CVX] ep=036/100 train_score=1.0000 val_score=0.1950 lr=5.00e-04
+[CVX] ep=037/100 train_score=1.0000 val_score=0.2040 lr=5.00e-04
+[CVX] ep=038/100 train_score=1.0000 val_score=0.2065 lr=5.00e-04
+[CVX] ep=039/100 train_score=1.0000 val_score=0.2045 lr=5.00e-04
+[CVX] ep=040/100 train_score=1.0000 val_score=0.2040 lr=5.00e-04
+[CVX] ep=041/100 train_score=1.0000 val_score=0.1965 lr=5.00e-04
+[CVX] ep=042/100 train_score=1.0000 val_score=0.1975 lr=5.00e-04
+[CVX] ep=043/100 train_score=1.0000 val_score=0.2030 lr=5.00e-04
+[CVX] ep=044/100 train_score=1.0000 val_score=0.2065 lr=5.00e-04
+[CVX] ep=045/100 train_score=1.0000 val_score=0.2035 lr=5.00e-04
+[CVX] ep=046/100 train_score=1.0000 val_score=0.1965 lr=5.00e-04
+[CVX] ep=047/100 train_score=1.0000 val_score=0.2045 lr=5.00e-04
+[CVX] ep=048/100 train_score=1.0000 val_score=0.2030 lr=5.00e-04
+[CVX] ep=049/100 train_score=1.0000 val_score=0.2005 lr=5.00e-04
+[CVX] ep=050/100 train_score=1.0000 val_score=0.2090 lr=5.00e-04
+[CVX] ep=051/100 train_score=1.0000 val_score=0.1990 lr=5.00e-04
+[CVX] ep=052/100 train_score=1.0000 val_score=0.2035 lr=5.00e-04
+[CVX] ep=053/100 train_score=1.0000 val_score=0.2025 lr=5.00e-04
+[CVX] ep=054/100 train_score=1.0000 val_score=0.2020 lr=5.00e-04
+[CVX] ep=055/100 train_score=1.0000 val_score=0.1970 lr=5.00e-04
+[CVX] ep=056/100 train_score=1.0000 val_score=0.2010 lr=5.00e-04
+[CVX] ep=057/100 train_score=1.0000 val_score=0.2065 lr=5.00e-04
+[CVX] ep=058/100 train_score=1.0000 val_score=0.2025 lr=5.00e-04
+[CVX] ep=059/100 train_score=1.0000 val_score=0.1970 lr=5.00e-04
+[CVX] ep=060/100 train_score=1.0000 val_score=0.1960 lr=2.50e-04
+[CVX] ep=061/100 train_score=1.0000 val_score=0.2030 lr=2.50e-04
+[CVX] ep=062/100 train_score=1.0000 val_score=0.1955 lr=2.50e-04
+[CVX] ep=063/100 train_score=1.0000 val_score=0.2000 lr=2.50e-04
+[CVX] ep=064/100 train_score=1.0000 val_score=0.1990 lr=2.50e-04
+[CVX] ep=065/100 train_score=1.0000 val_score=0.1975 lr=2.50e-04
+[CVX] ep=066/100 train_score=1.0000 val_score=0.2020 lr=2.50e-04
+[CVX] ep=067/100 train_score=1.0000 val_score=0.2015 lr=2.50e-04
+[CVX] ep=068/100 train_score=1.0000 val_score=0.2000 lr=2.50e-04
+[CVX] ep=069/100 train_score=1.0000 val_score=0.1990 lr=2.50e-04
+[CVX] ep=070/100 train_score=1.0000 val_score=0.2030 lr=2.50e-04
+[CVX] ep=071/100 train_score=1.0000 val_score=0.1995 lr=2.50e-04
+[CVX] ep=072/100 train_score=1.0000 val_score=0.2015 lr=2.50e-04
+[CVX] ep=073/100 train_score=1.0000 val_score=0.2025 lr=2.50e-04
+[CVX] ep=074/100 train_score=1.0000 val_score=0.2020 lr=2.50e-04
+[CVX] ep=075/100 train_score=1.0000 val_score=0.1965 lr=2.50e-04
+[CVX] ep=076/100 train_score=1.0000 val_score=0.1975 lr=2.50e-04
+[CVX] ep=077/100 train_score=1.0000 val_score=0.2010 lr=2.50e-04
+[CVX] ep=078/100 train_score=1.0000 val_score=0.1995 lr=2.50e-04
+[CVX] ep=079/100 train_score=1.0000 val_score=0.1995 lr=2.50e-04
+[CVX] ep=080/100 train_score=1.0000 val_score=0.2025 lr=2.50e-04
+[CVX] ep=081/100 train_score=1.0000 val_score=0.2015 lr=2.50e-04
+[CVX] ep=082/100 train_score=1.0000 val_score=0.2025 lr=2.50e-04
+[CVX] ep=083/100 train_score=1.0000 val_score=0.2005 lr=2.50e-04
+[CVX] ep=084/100 train_score=1.0000 val_score=0.1985 lr=2.50e-04
+[CVX] ep=085/100 train_score=1.0000 val_score=0.1950 lr=2.50e-04
+[CVX] ep=086/100 train_score=1.0000 val_score=0.1990 lr=2.50e-04
+[CVX] ep=087/100 train_score=1.0000 val_score=0.2010 lr=2.50e-04
+[CVX] ep=088/100 train_score=1.0000 val_score=0.1990 lr=2.50e-04
+[CVX] ep=089/100 train_score=1.0000 val_score=0.1990 lr=2.50e-04
+[CVX] ep=090/100 train_score=1.0000 val_score=0.1960 lr=1.25e-04
+[CVX] ep=091/100 train_score=1.0000 val_score=0.1980 lr=1.25e-04
+[CVX] ep=092/100 train_score=1.0000 val_score=0.1940 lr=1.25e-04
+[CVX] ep=093/100 train_score=1.0000 val_score=0.1995 lr=1.25e-04
+[CVX] ep=094/100 train_score=1.0000 val_score=0.2000 lr=1.25e-04
+[CVX] ep=095/100 train_score=1.0000 val_score=0.2030 lr=1.25e-04
+[CVX] ep=096/100 train_score=1.0000 val_score=0.1985 lr=1.25e-04
+[CVX] ep=097/100 train_score=1.0000 val_score=0.2010 lr=1.25e-04
+[CVX] ep=098/100 train_score=1.0000 val_score=0.1980 lr=1.25e-04
+[CVX] ep=099/100 train_score=1.0000 val_score=0.1960 lr=1.25e-04
+[CVX] ep=100/100 train_score=1.0000 val_score=0.1985 lr=1.25e-04
+[STE-SNN] ep=001/100 train_score=0.1153 val_score=0.1025 lr=1.00e-03
+[STE-SNN] ep=002/100 train_score=0.1153 val_score=0.1025 lr=1.00e-03
+[STE-SNN] ep=003/100 train_score=0.1153 val_score=0.1025 lr=1.00e-03
+[STE-SNN] ep=004/100 train_score=0.1153 val_score=0.1025 lr=1.00e-03
+[STE-SNN] ep=005/100 train_score=0.1153 val_score=0.1025 lr=1.00e-03
+[STE-SNN] ep=006/100 train_score=0.1153 val_score=0.1025 lr=1.00e-03
+[STE-SNN] ep=007/100 train_score=0.1153 val_score=0.1025 lr=1.00e-03
+[STE-SNN] ep=008/100 train_score=0.1153 val_score=0.1025 lr=1.00e-03
+[STE-SNN] ep=009/100 train_score=0.1153 val_score=0.1025 lr=1.00e-03
+[STE-SNN] ep=010/100 train_score=0.1153 val_score=0.1025 lr=1.00e-03
+[STE-SNN] ep=011/100 train_score=0.1153 val_score=0.1025 lr=1.00e-03
+[STE-SNN] ep=012/100 train_score=0.1153 val_score=0.1025 lr=1.00e-03
+[STE-SNN] ep=013/100 train_score=0.1153 val_score=0.1025 lr=1.00e-03
+[STE-SNN] ep=014/100 train_score=0.1153 val_score=0.1025 lr=1.00e-03
+[STE-SNN] ep=015/100 train_score=0.1153 val_score=0.1025 lr=1.00e-03
+[STE-SNN] ep=016/100 train_score=0.1153 val_score=0.1025 lr=1.00e-03
+[STE-SNN] ep=017/100 train_score=0.0938 val_score=0.0970 lr=1.00e-03
+[STE-SNN] ep=018/100 train_score=0.1069 val_score=0.1075 lr=1.00e-03
+[STE-SNN] ep=019/100 train_score=0.1069 val_score=0.1075 lr=1.00e-03
+[STE-SNN] ep=020/100 train_score=0.1153 val_score=0.1025 lr=1.00e-03
+[STE-SNN] ep=021/100 train_score=0.0964 val_score=0.1045 lr=1.00e-03
+[STE-SNN] ep=022/100 train_score=0.1153 val_score=0.1025 lr=1.00e-03
+[STE-SNN] ep=023/100 train_score=0.1153 val_score=0.1025 lr=1.00e-03
+[STE-SNN] ep=024/100 train_score=0.1032 val_score=0.0940 lr=1.00e-03
+[STE-SNN] ep=025/100 train_score=0.1153 val_score=0.1025 lr=1.00e-03
+[STE-SNN] ep=026/100 train_score=0.1153 val_score=0.1025 lr=1.00e-03
+[STE-SNN] ep=027/100 train_score=0.1069 val_score=0.1075 lr=1.00e-03
+[STE-SNN] ep=028/100 train_score=0.0876 val_score=0.0810 lr=1.00e-03
+[STE-SNN] ep=029/100 train_score=0.1153 val_score=0.1025 lr=1.00e-03
+[STE-SNN] ep=030/100 train_score=0.1032 val_score=0.0940 lr=5.00e-04
+[STE-SNN] ep=031/100 train_score=0.1069 val_score=0.1075 lr=5.00e-04
+[STE-SNN] ep=032/100 train_score=0.1153 val_score=0.1025 lr=5.00e-04
+[STE-SNN] ep=033/100 train_score=0.1153 val_score=0.1025 lr=5.00e-04
+[STE-SNN] ep=034/100 train_score=0.1153 val_score=0.1025 lr=5.00e-04
+[STE-SNN] ep=035/100 train_score=0.1027 val_score=0.1050 lr=5.00e-04
+[STE-SNN] ep=036/100 train_score=0.1153 val_score=0.1025 lr=5.00e-04
+[STE-SNN] ep=037/100 train_score=0.1153 val_score=0.1025 lr=5.00e-04
+[STE-SNN] ep=038/100 train_score=0.1069 val_score=0.1075 lr=5.00e-04
+[STE-SNN] ep=039/100 train_score=0.1032 val_score=0.0940 lr=5.00e-04
+[STE-SNN] ep=040/100 train_score=0.1153 val_score=0.1025 lr=5.00e-04
+[STE-SNN] ep=041/100 train_score=0.0938 val_score=0.0970 lr=5.00e-04
+[STE-SNN] ep=042/100 train_score=0.1153 val_score=0.1025 lr=5.00e-04
+[STE-SNN] ep=043/100 train_score=0.0938 val_score=0.0970 lr=5.00e-04
+[STE-SNN] ep=044/100 train_score=0.1153 val_score=0.1025 lr=5.00e-04
+[STE-SNN] ep=045/100 train_score=0.1153 val_score=0.1025 lr=5.00e-04
+[STE-SNN] ep=046/100 train_score=0.1153 val_score=0.1025 lr=5.00e-04
+[STE-SNN] ep=047/100 train_score=0.1153 val_score=0.1025 lr=5.00e-04
+[STE-SNN] ep=048/100 train_score=0.1153 val_score=0.1025 lr=5.00e-04
+[STE-SNN] ep=049/100 train_score=0.1153 val_score=0.1025 lr=5.00e-04
+[STE-SNN] ep=050/100 train_score=0.0975 val_score=0.1055 lr=5.00e-04
+[STE-SNN] ep=051/100 train_score=0.1153 val_score=0.1025 lr=5.00e-04
+[STE-SNN] ep=052/100 train_score=0.1069 val_score=0.1075 lr=5.00e-04
+[STE-SNN] ep=053/100 train_score=0.1153 val_score=0.1025 lr=5.00e-04
+[STE-SNN] ep=054/100 train_score=0.0975 val_score=0.1055 lr=5.00e-04
+[STE-SNN] ep=055/100 train_score=0.1069 val_score=0.1075 lr=5.00e-04
+[STE-SNN] ep=056/100 train_score=0.1153 val_score=0.1025 lr=5.00e-04
+[STE-SNN] ep=057/100 train_score=0.1153 val_score=0.1025 lr=5.00e-04
+[STE-SNN] ep=058/100 train_score=0.0975 val_score=0.1055 lr=5.00e-04
+[STE-SNN] ep=059/100 train_score=0.1069 val_score=0.1075 lr=5.00e-04
+[STE-SNN] ep=060/100 train_score=0.1153 val_score=0.1025 lr=2.50e-04
+[STE-SNN] ep=061/100 train_score=0.1153 val_score=0.1025 lr=2.50e-04
+[STE-SNN] ep=062/100 train_score=0.1069 val_score=0.1075 lr=2.50e-04
+[STE-SNN] ep=063/100 train_score=0.1153 val_score=0.1025 lr=2.50e-04
+[STE-SNN] ep=064/100 train_score=0.1153 val_score=0.1025 lr=2.50e-04
+[STE-SNN] ep=065/100 train_score=0.1153 val_score=0.1025 lr=2.50e-04
+[STE-SNN] ep=066/100 train_score=0.1027 val_score=0.1050 lr=2.50e-04
+[STE-SNN] ep=067/100 train_score=0.1153 val_score=0.1025 lr=2.50e-04
+[STE-SNN] ep=068/100 train_score=0.1153 val_score=0.1025 lr=2.50e-04
+[STE-SNN] ep=069/100 train_score=0.1153 val_score=0.1025 lr=2.50e-04
+[STE-SNN] ep=070/100 train_score=0.0975 val_score=0.1055 lr=2.50e-04
+[STE-SNN] ep=071/100 train_score=0.1069 val_score=0.1075 lr=2.50e-04
+[STE-SNN] ep=072/100 train_score=0.1153 val_score=0.1025 lr=2.50e-04
+[STE-SNN] ep=073/100 train_score=0.1069 val_score=0.1075 lr=2.50e-04
+[STE-SNN] ep=074/100 train_score=0.1153 val_score=0.1025 lr=2.50e-04
+[STE-SNN] ep=075/100 train_score=0.1153 val_score=0.1025 lr=2.50e-04
+[STE-SNN] ep=076/100 train_score=0.1069 val_score=0.1075 lr=2.50e-04
+[STE-SNN] ep=077/100 train_score=0.1153 val_score=0.1025 lr=2.50e-04
+[STE-SNN] ep=078/100 train_score=0.1069 val_score=0.1075 lr=2.50e-04
+[STE-SNN] ep=079/100 train_score=0.1027 val_score=0.1050 lr=2.50e-04
+[STE-SNN] ep=080/100 train_score=0.0876 val_score=0.0810 lr=2.50e-04
+[STE-SNN] ep=081/100 train_score=0.1800 val_score=0.1700 lr=2.50e-04
+[STE-SNN] ep=082/100 train_score=0.1693 val_score=0.1730 lr=2.50e-04
+[STE-SNN] ep=083/100 train_score=0.2175 val_score=0.2080 lr=2.50e-04
+[STE-SNN] ep=084/100 train_score=0.1999 val_score=0.1915 lr=2.50e-04
+[STE-SNN] ep=085/100 train_score=0.2193 val_score=0.2130 lr=2.50e-04
+[STE-SNN] ep=086/100 train_score=0.2126 val_score=0.2000 lr=2.50e-04
+[STE-SNN] ep=087/100 train_score=0.2147 val_score=0.2035 lr=2.50e-04
+[STE-SNN] ep=088/100 train_score=0.2122 val_score=0.2010 lr=2.50e-04
+[STE-SNN] ep=089/100 train_score=0.2240 val_score=0.2095 lr=2.50e-04
+[STE-SNN] ep=090/100 train_score=0.2204 val_score=0.2095 lr=1.25e-04
+[STE-SNN] ep=091/100 train_score=0.2258 val_score=0.2150 lr=1.25e-04
+[STE-SNN] ep=092/100 train_score=0.2258 val_score=0.2180 lr=1.25e-04
+[STE-SNN] ep=093/100 train_score=0.2185 val_score=0.2110 lr=1.25e-04
+[STE-SNN] ep=094/100 train_score=0.2201 val_score=0.2060 lr=1.25e-04
+[STE-SNN] ep=095/100 train_score=0.2220 val_score=0.2120 lr=1.25e-04
+[STE-SNN] ep=096/100 train_score=0.2190 val_score=0.2060 lr=1.25e-04
+[STE-SNN] ep=097/100 train_score=0.2182 val_score=0.2105 lr=1.25e-04
+[STE-SNN] ep=098/100 train_score=0.2210 val_score=0.2090 lr=1.25e-04
+[STE-SNN] ep=099/100 train_score=0.2147 val_score=0.2035 lr=1.25e-04
+[STE-SNN] ep=100/100 train_score=0.2139 val_score=0.2030 lr=1.25e-04
+[seed 0] CVX test_acc=0.2070 (val=0.2280, beta_l1=1e-06, lr=0.001) | STE-SNN test_acc=0.2132 (val_best=0.2180)
+
+=== FINAL (mean ± std over seeds) ===
+CVX  test_acc = 0.2070 ± 0.0000
+STE  test_acc = 0.2132 ± 0.0000

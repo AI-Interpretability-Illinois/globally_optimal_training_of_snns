@@ -365,7 +365,8 @@ def generate_snn_sign_patterns(
         # Build U_rec = [diag(b); diag(g)] with shape (2*P_rec, P_rec)
         U_rec_top = np.diag(b)   # (P_rec, P_rec)
         U_rec_bot = np.diag(g)   # (P_rec, P_rec)
-        U_rec = np.vstack([U_rec_top, U_rec_bot]).astype(np.float32)  # (2*P_rec, P_rec)
+
+        U_rec = np.vstack([U_rec_top, U_rec_bot , g]).astype(np.float32)  # (2*P_rec, P_rec)
 
         if normalize_hidden:
             U_in = _col_normalize_np(U_in)
@@ -393,7 +394,7 @@ def generate_snn_sign_patterns(
             v_in_t = x_t @ U_in  # (n, P_rec)
 
             # recurrent contribution from previous membrane + spikes: [v_prev, -h_prev]
-            s_prev = np.concatenate([v_prev, -h_prev], axis=1)  # (n, 2*P_rec)
+            s_prev = np.concatenate([v_prev, -h_prev, -np.ones((n,1), dtype=np.float32)], axis=1)  # (n, 2*P_rec + 1)
             v_rec_t = s_prev @ U_rec                            # (n, P_rec)
 
             # new membrane and spikes
@@ -516,7 +517,7 @@ def forward_snn_patterns_torch(
             x_t = h_prev_layers[l - 1][t]  # (B, d_in_l)
 
             v_in_t = x_t @ U_in                      # (B, P_rec)
-            s_prev = torch.cat([v_prev, -h_prev], dim=1)  # (B, 2*P_rec)
+            s_prev = torch.cat([v_prev, -h_prev , -torch.ones((B, 1), device=device)], dim=1)  # (B, 2*P_rec + 1)
             v_rec_t = s_prev @ U_rec                 # (B, P_rec)
 
             v_t = v_in_t + v_rec_t
@@ -1096,30 +1097,30 @@ def run_one_seed(
                     "train_curve": out["train_score_history"],
                 })
 
-        if log_train:
-            print(f"[seed {seed}] re-train CVX best for logging: beta={best_cvx['beta_l1']} lr={best_cvx['lr']}")
-            logged = train_cvx_head_first_order(
-                train_loader3d=train_loader3d,
-                val_loader2d=val_loader2d,
-                hypers=hypers,
-                P_last=P_last,
-                num_outputs=num_outputs,
-                loss_type=loss_type,
-                beta_l1=float(best_cvx["beta_l1"]),
-                lr=float(best_cvx["lr"]),
-                epochs=epochs,
-                device=device,
-                optimizer_name=cvx_optimizer,
-                step_size=cvx_step_size,
-                gamma=cvx_gamma,
-                L=L,
-                T=T,
-                P_rec=P_rec,
-                log_train=log_train,
-            )
-            best_cvx["model"] = logged["model"]
-            best_cvx["val_score"] = logged["best_val_score"]
-            best_cvx["train_curve"] = logged["train_score_history"]
+    if log_train:
+        print(f"[seed {seed}] re-train CVX best for logging: beta={best_cvx['beta_l1']} lr={best_cvx['lr']}")
+        logged = train_cvx_head_first_order(
+            train_loader3d=train_loader3d,
+            val_loader2d=val_loader2d,
+            hypers=hypers,
+            P_last=P_last,
+            num_outputs=num_outputs,
+            loss_type=loss_type,
+            beta_l1=float(best_cvx["beta_l1"]),
+            lr=float(best_cvx["lr"]),
+            epochs=epochs,
+            device=device,
+            optimizer_name=cvx_optimizer,
+            step_size=cvx_step_size,
+            gamma=cvx_gamma,
+            L=L,
+            T=T,
+            P_rec=P_rec,
+            log_train=log_train,
+        )
+        best_cvx["model"] = logged["model"]
+        best_cvx["val_score"] = logged["best_val_score"]
+        best_cvx["train_curve"] = logged["train_score_history"]
     # ----- SNN baseline (STE) -----
     d_in = X_train.shape[2]
     model_snn = SNNBaseline(
@@ -1219,7 +1220,7 @@ def main():
     parser.add_argument("--seeds", type=int, nargs="+", default=[0, 1, 2, 3, 4])
     parser.add_argument("--device", type=str, default="auto", choices=["auto", "mps", "cpu"])
 
-    parser.add_argument("--normalize_hidden", type=bool, default=True)
+    parser.add_argument("--normalize_hidden", type=bool, default=False)
     parser.add_argument("--verbose_patterns", type=bool, default=True)
     parser.add_argument("--log_train", action="store_true")
 

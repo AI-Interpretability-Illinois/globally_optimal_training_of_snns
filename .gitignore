@@ -13,3 +13,4 @@
 *.pyo
 *.pyd
 */data/*
+*cifar10*
