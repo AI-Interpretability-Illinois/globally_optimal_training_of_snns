@@ -12,3 +12,4 @@
 *.pyc
 *.pyo
 *.pyd
+*/data/*
