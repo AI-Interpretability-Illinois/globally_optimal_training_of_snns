@@ -14,3 +14,6 @@
 *.pyd
 */data/*
 *cifar10*
+*cifar-10*
+*.tar.gz
+threshold_tests/cifar-10-python.tar.gz
