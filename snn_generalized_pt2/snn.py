@@ -359,7 +359,7 @@ def generate_snn_sign_patterns(
 
         # Recurrent hyperplanes: from [v_{t-1}, -h_{t-1}] (dim = 2*P_rec) to P_rec
         # First sample b in {0,1}^P_rec and g ~ N(0,1)^P_rec
-        b = np.full((P_rec,), 0.8, dtype=np.float32)  # Decay rate
+        b = np.full((P_rec,), 0.99, dtype=np.float32)  # Decay rate
         g = np.full((P_rec,), 1.0, dtype=np.float32) # Threshold
 
         # Build U_rec = [diag(b); diag(g)] with shape (2*P_rec, P_rec)
@@ -762,8 +762,8 @@ class SNNBaseline(nn.Module):
         L: int,
         P_rec: int,
         num_outputs: int,
-        beta_leak: float = 0.8,
-        threshold: float = 0.6,
+        beta_leak: float = 0.99,
+        threshold: float = 1,
         learn_beta: bool = False,
         learn_threshold: bool = False,
     ):
@@ -988,7 +988,7 @@ def run_one_seed(
         y_test = y[n_train_total: n_train_total + n_test]
 
     elif task in ("mnist_seq", "mnist_perm_seq"):
-        cache = MNISTCache(root="data")
+        cache = load_mnist_cache(root="data")
         X_total, y_total, X_test, y_test, num_classes = mnist_to_sequence(
             cache,
             n_train_total=n_train_total,
@@ -1127,8 +1127,8 @@ def run_one_seed(
         L=L,
         P_rec=P_rec,
         num_outputs=num_outputs,
-        beta_leak=0.8,
-        threshold=0.6,
+        beta_leak=0.99,
+        threshold=1,
         learn_beta=learn_beta,
         learn_threshold=learn_threshold,
     ).to(device)
