@@ -24,7 +24,9 @@ NOTE:
 """
 
 import argparse
+import os
 from dataclasses import dataclass
+from datetime import datetime
 from typing import List, Tuple, Dict, Optional
 
 import numpy as np
@@ -33,10 +35,39 @@ import torch.nn as nn
 import torch.nn.functional as F
 from torch.utils.data import DataLoader, TensorDataset
 from torchvision import datasets, transforms
+import matplotlib.pyplot as plt
+from torch.nn.utils import parameters_to_vector, vector_to_parameters
 
 # If you use snntorch in your other SNN code, import it here.
 # Adjust the import to your local setup.
 import snntorch as snn
+
+# Dataset helper module for additional baselines
+from snn_data_modules import (
+    load_ptb_cache,
+    load_binary_adding_cache,
+    ptb_to_sequence,
+    binary_adding_to_sequence,
+    load_shd_cache,
+    load_ssc_cache,
+    shd_to_sequence,
+    ssc_to_sequence,
+    load_nmnist_cache,
+    load_cifar10_dvs_cache,
+    load_dvs_gesture_cache,
+    nmnist_to_sequence,
+    cifar10_dvs_to_sequence,
+    dvs_gesture_to_sequence,
+    load_cifar10_cache,
+    load_cifar100_cache,
+    cifar10_to_sequence,
+    cifar100_to_sequence,
+    load_gsc_cache,
+    load_timit_cache,
+    gsc_to_sequence,
+    timit_to_sequence,
+)
+
 
 
 # ============================================================
@@ -52,43 +83,68 @@ def get_device(device_arg: str) -> torch.device:
         print("[warn] MPS requested but not available; using CPU.")
         return torch.device("cpu")
     # auto
+    if torch.cuda.is_available():
+        return torch.device("cuda")
     if torch.backends.mps.is_available():
         return torch.device("mps")
     return torch.device("cpu")
 
 
-def set_seed(seed: int) -> None:
+def set_seed(seed: int):
     np.random.seed(seed)
     torch.manual_seed(seed)
 
 
 # ============================================================
-# Dataset helpers (sequence tasks)
+# Simple logging helpers
 # ============================================================
 
-def make_parity_seq(n: int, T: int, seed: int, d_in: int = 10) -> Tuple[np.ndarray, np.ndarray, int]:
-    """Parity of Bernoulli(0.5) bits across T steps, 2 classes."""
+def format_dict(d: Dict[str, float]) -> str:
+    return ", ".join(f"{k}={v:.4f}" for k, v in d.items())
+
+
+# ============================================================
+# Datasets: parity, XOR, moving Gaussian blobs, seq MNIST, sunspot
+# ============================================================
+
+def make_parity_seq(n: int, T: int, seed: int) -> Tuple[np.ndarray, np.ndarray, int]:
+    """
+    Binary parity over T steps with Bernoulli(0.5) input bits.
+    X: (n, T, 1), y: (n,) in {0,1}
+    """
     rng = np.random.default_rng(seed)
-    X = rng.integers(0, 2, size=(n, T, d_in)).astype(np.float32)
-    # compute parity over all bits and timesteps
-    parity = X.sum(axis=(1, 2)) % 2
-    y = parity.astype(np.int64)  # 0 or 1
+    X = rng.integers(0, 2, size=(n, T, 1)).astype(np.float32)
+    y = (X.sum(axis=1) % 2).reshape(-1).astype(np.int64)
     return X, y, 2
 
-def make_two_step_xor_seq(n: int, T: int, seed: int) -> Tuple[np.ndarray, np.ndarray, int]:
-    """Binary XOR of predicates at t=0 and t=T-1; d_in=2; y in {0,1}."""
-    if T < 2:
-        raise ValueError("two_step_xor_seq requires T>=2")
+
+def make_two_step_xor_seq(
+    n: int,
+    T: int,
+    seed: int,
+) -> Tuple[np.ndarray, np.ndarray, int]:
+    """
+    Two-step XOR task:
+      - Input dimension d_in = 2
+      - At each time t, we get x_t ∈ {0,1}^2.
+      - Label is XOR(x_{T-1}, x_{T-2}) (componentwise) aggregated to a single bit.
+    """
     rng = np.random.default_rng(seed)
     X = rng.integers(0, 2, size=(n, T, 2)).astype(np.float32)
-    a = np.array([1.0, -1.0], dtype=np.float32)
-    p0 = (X[:, 0, :] @ a >= 0).astype(np.int64)
-    p1 = (X[:, -1, :] @ a >= 0).astype(np.int64)
-    y = (p0 ^ p1).astype(np.int64)
+
+    # XOR on the last two timesteps, then reduce across dim
+    last = X[:, -1, :]
+    prev = X[:, -2, :]
+    xor = (last + prev) % 2  # (n, 2)
+    y = (xor.sum(axis=1) % 2).astype(np.int64)
     return X, y, 2
 
+
 def make_moving_gaussian_blobs_seq(
-    n: int, T: int, seed: int, d_in: int = 50
+    n: int,
+    T: int,
+    seed: int,
+    d_in: int = 2,
 ) -> Tuple[np.ndarray, np.ndarray, int]:
     """
     Two-class sequence classification that ACTUALLY needs time:
@@ -124,10 +180,6 @@ def make_moving_gaussian_blobs_seq(
     return X, labels, 2
 
 
-
-
-
-
 @dataclass
 class MNISTCache:
     X_train: np.ndarray  # (60000, 784)
@@ -137,18 +189,21 @@ class MNISTCache:
 
 
 def load_mnist_cache(root: str = "data") -> MNISTCache:
-    tfm = transforms.Compose([
-        transforms.ToTensor(),
-        transforms.Normalize((0.1307,), (0.3081,)),
-    ])
+    tfm = transforms.Compose(
+        [
+            transforms.ToTensor(),
+            transforms.Normalize((0.1307,), (0.3081,)),
+        ]
+    )
     tr = datasets.MNIST(root=root, train=True, download=True, transform=tfm)
     te = datasets.MNIST(root=root, train=False, download=True, transform=tfm)
 
-    # One-time extraction (yes it's a bit slow; but it's only once per run)
     Xtr = np.stack([tr[i][0].view(-1).numpy() for i in range(len(tr))], axis=0).astype(np.float32)
     ytr = np.array([int(tr[i][1]) for i in range(len(tr))], dtype=np.int64)
+
     Xte = np.stack([te[i][0].view(-1).numpy() for i in range(len(te))], axis=0).astype(np.float32)
     yte = np.array([int(te[i][1]) for i in range(len(te))], dtype=np.int64)
+
     return MNISTCache(X_train=Xtr, y_train=ytr, X_test=Xte, y_test=yte)
 
 
@@ -166,38 +221,33 @@ def mnist_to_sequence(
     Output shapes:
       X_total_seq: (n_train_total, T, d_in)
       X_test_seq:  (n_test,        T, d_in)
-    where d_in = 784 // T (requires 784 % T == 0).
+    where d_in = 784 / T (must be integer).
     """
     X_total = cache.X_train[:n_train_total].copy()
     y_total = cache.y_train[:n_train_total].copy()
-    X_test  = cache.X_test[:n_test].copy()
-    y_test  = cache.y_test[:n_test].copy()
+    X_test = cache.X_test[:n_test].copy()
+    y_test = cache.y_test[:n_test].copy()
 
     if task == "mnist_perm_seq":
         rng = np.random.default_rng(seed)
         perm = rng.permutation(784)
         X_total = X_total[:, perm]
-        X_test  = X_test[:, perm]
+        X_test = X_test[:, perm]
     elif task != "mnist_seq":
-        raise ValueError(f"Unknown MNIST task: {task}")
+        raise ValueError(f"mnist_to_sequence: unknown task={task}")
 
     if T <= 0 or T > 784:
         raise ValueError("For MNIST sequence tasks, set 1 <= T <= 784")
     if 784 % T != 0:
-        raise ValueError(f"T must divide 784 so d_in=784/T is integer. Got T={T} (784%T={784%T}).")
+        raise ValueError(f"T must divide 784 so d_in=784/T is integer. Got T={T}, 784%T={784 % T}.")
 
-    d_in = 784 // T  # <-- KEY FIX
-
-    # chunk into timesteps
+    d_in = 784 // T
     X_total_seq = X_total.reshape(X_total.shape[0], T, d_in)
-    X_test_seq  = X_test.reshape(X_test.shape[0],  T, d_in)
+    X_test_seq = X_test.reshape(X_test.shape[0], T, d_in)
 
     return X_total_seq.astype(np.float32), y_total, X_test_seq.astype(np.float32), y_test, 10
 
 
-# ============================================================
-# Sunspot time-series → regression sequences
-# ============================================================
 def make_sunspot_seq(
     n: int,
     T: int,
@@ -243,21 +293,20 @@ def make_sunspot_seq(
     y = []
     idx = 0
     for _ in range(n_eff):
-        start = idx
-        end = start + T
-        target_idx = end
-        if target_idx >= N:
+        if idx + T >= N - 1:
             break
-        X.append(series[start:end])
-        y.append(series[target_idx])
+        x_win = series[idx : idx + T]
+        y_val = series[idx + T]
+        X.append(x_win)
+        y.append(y_val)
         idx += window_stride
 
-    X = np.asarray(X, dtype=np.float32)  # (n_eff, T)
+    X = np.stack(X, axis=0)  # (n_eff, T)
     y = np.asarray(y, dtype=np.float32)  # (n_eff,)
 
     if normalize:
         mu = X.mean()
-        sigma = X.std() + 1e-6
+        sigma = X.std() + 1e-8
         X = (X - mu) / sigma
         y = (y - mu) / sigma
 
@@ -266,6 +315,168 @@ def make_sunspot_seq(
     num_classes = 1  # regression: scalar target
 
     return X, y, num_classes
+
+
+def build_dataset(
+    task: str,
+    T: int,
+    n_train_total: int,
+    n_test: int,
+    seed: int,
+) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, int]:
+    """Unified dataset builder.
+
+    Returns
+    -------
+    X_total : np.ndarray, shape (n_train_total, T, d_in)
+    y_total : np.ndarray, shape (n_train_total,)
+    X_test  : np.ndarray, shape (n_test, T, d_in)
+    y_test  : np.ndarray, shape (n_test,)
+    num_classes : int
+        Number of classes for classification losses (hinge / ce). For regression
+        tasks this can be left unused by the caller.
+    """
+    # ----- synthetic toy tasks -----
+    if task in ("parity_seq", "two_step_xor_seq", "moving_blobs_seq"):
+        X_seq, y, num_classes = (
+            make_parity_seq(n_train_total + n_test, T, seed=seed)
+            if task == "parity_seq"
+            else make_two_step_xor_seq(n_train_total + n_test, T, seed=seed)
+            if task == "two_step_xor_seq"
+            else make_moving_gaussian_blobs_seq(n_train_total + n_test, T, seed=seed)
+        )
+        X_total = X_seq[:n_train_total]
+        y_total = y[:n_train_total]
+        X_test = X_seq[n_train_total : n_train_total + n_test]
+        y_test = y[n_train_total : n_train_total + n_test]
+        return X_total, y_total, X_test, y_test, num_classes
+
+    # ----- MNIST sequence variants -----
+    if task in ("mnist_seq", "mnist_perm_seq"):
+        cache = load_mnist_cache(root="data")
+        return mnist_to_sequence(
+            cache,
+            n_train_total=n_train_total,
+            n_test=n_test,
+            seed=seed,
+            task=task,
+            T=T,
+        )
+
+    # ----- new baseline datasets -----
+
+    # PTB language modeling: predict next token from T-token context.
+    if task == "ptb_seq":
+        cache = load_ptb_cache(root="data")
+        return ptb_to_sequence(
+            cache,
+            n_train_total=n_train_total,
+            n_test=n_test,
+            seed=seed,
+            T=T,
+        )
+
+    # Binary adding: regression (sum of two binary numbers) or classification
+    # depending on chosen loss type. We expose it as a sequence of length T
+    # with 2 input channels (two numbers).
+    if task == "binary_adding_seq":
+        cache = load_binary_adding_cache()
+        return binary_adding_to_sequence(
+            cache,
+            n_train_total=n_train_total,
+            n_test=n_test,
+            T=T,
+        )
+
+    # Spiking Heidelberg Digits.
+    if task == "shd_seq":
+        cache = load_shd_cache(path="data/shd")
+        return shd_to_sequence(
+            cache,
+            n_train_total=n_train_total,
+            n_test=n_test,
+            T=T,
+        )
+
+    # Spiking Speech Commands.
+    if task == "ssc_seq":
+        cache = load_ssc_cache(path="data/ssc")
+        return ssc_to_sequence(
+            cache,
+            n_train_total=n_train_total,
+            n_test=n_test,
+            T=T,
+        )
+
+    # N-MNIST neuromorphic vision.
+    if task == "nmnist_seq":
+        cache = load_nmnist_cache(path="data/nmnist")
+        return nmnist_to_sequence(
+            cache,
+            n_train_total=n_train_total,
+            n_test=n_test,
+            T=T,
+        )
+
+    # Static CIFAR-10 / CIFAR-100 vision.
+    if task == "cifar10_seq":
+        cache = load_cifar10_cache(root="data")
+        return cifar10_to_sequence(
+            cache,
+            n_train_total=n_train_total,
+            n_test=n_test,
+            T=T,
+        )
+
+    if task == "cifar100_seq":
+        cache = load_cifar100_cache(root="data")
+        return cifar100_to_sequence(
+            cache,
+            n_train_total=n_train_total,
+            n_test=n_test,
+            T=T,
+        )
+
+    # Neuromorphic CIFAR10-DVS and DVSGesture.
+    if task == "cifar10_dvs_seq":
+        cache = load_cifar10_dvs_cache(path="data/cifar10_dvs")
+        return cifar10_dvs_to_sequence(
+            cache,
+            n_train_total=n_train_total,
+            n_test=n_test,
+            T=T,
+        )
+
+    if task == "dvs_gesture_seq":
+        cache = load_dvs_gesture_cache(path="data/dvs_gesture")
+        return dvs_gesture_to_sequence(
+            cache,
+            n_train_total=n_train_total,
+            n_test=n_test,
+            T=T,
+        )
+
+    # Google Speech Commands (GSC).
+    if task == "gsc_seq":
+        cache = load_gsc_cache(root="data/gsc")
+        return gsc_to_sequence(
+            cache,
+            n_train_total=n_train_total,
+            n_test=n_test,
+            T=T,
+        )
+
+    # TIMIT speech.
+    if task == "timit_seq":
+        cache = load_timit_cache(root="data/timit")
+        return timit_to_sequence(
+            cache,
+            n_train_total=n_train_total,
+            n_test=n_test,
+            T=T,
+        )
+
+    raise ValueError(f"Unknown task: {task}")
 
 
 def split_train_val(X: np.ndarray, y: np.ndarray, val_frac: float, seed: int):
@@ -343,8 +554,9 @@ def generate_snn_sign_patterns(
 
     # layer 0 "spikes" are just the inputs x_t (real-valued); we don't threshold them
     # h_layers[l][t] holds the spikes for layer l at time t, except layer 0 which holds raw inputs
+    # Use float64 for all recurrence to avoid float32 overflow in large matmuls (n, P_rec=4000)
     h_layers: List[List[np.ndarray]] = []
-    h0 = [X_seq[:, t, :] for t in range(T)]  # each (n, d_in)
+    h0 = [X_seq[:, t, :].astype(np.float64) for t in range(T)]  # each (n, d_in)
     h_layers.append(h0)
 
     U_in_list: List[np.ndarray] = []
@@ -521,6 +733,7 @@ def forward_snn_patterns_torch(
             v_rec_t = s_prev @ U_rec                 # (B, P_rec)
 
             v_t = v_in_t + v_rec_t
+            v_t = torch.clamp(v_t, -1e10, 1e10)
             h_t = (v_t >= 0.0).float()
 
             h_curr_list.append(h_t)
@@ -634,6 +847,247 @@ def cvx_eval_acc_or_mse(
     else:
         return -mse_sum / max(total, 1)
 
+@torch.no_grad()
+def cvx_train_objective_full(
+    model: CvxLastLayer,
+    train_loader3d: DataLoader,
+    *,
+    loss_type: str,
+    beta_l1: float,
+    device: torch.device,
+) -> float:
+    """
+    Full convex training objective on the entire train set, matching train_cvx_head_first_order.
+
+    Uses cached sign patterns z in train_loader3d.dataset.tensors = (X, y, z).
+    """
+    model = model.to(device)
+    model.eval()
+
+    ds = train_loader3d.dataset
+    if not isinstance(ds, TensorDataset) or len(ds.tensors) < 3:
+        raise ValueError("Expected TensorDataset(X, y, z_train).")
+
+    _, y_t, z_t = ds.tensors
+    y = y_t.to(device)
+    z = z_t.to(device)
+
+    logits = model(z)
+    loss = cvx_loss(
+        logits,
+        y,
+        model,
+        loss_type=loss_type,
+        beta_l1=beta_l1,
+    )
+    return float(loss.item())
+
+@torch.no_grad()
+def convLossLandscape1D(
+    model: CvxLastLayer,
+    train_loader3d: DataLoader,
+    test_loader2d: DataLoader,
+    hypers: RNNHyperplanes,
+    *,
+    L: int,
+    T: int,
+    P_rec: int,
+    loss_type: str,
+    beta_l1: float,
+    device: torch.device,
+    dataset: str,
+    scale_min: float = 1e-10,
+    scale_max: float = 50.0,
+    num_points: int = 81,
+):
+    """
+    1D positive-scaling experiment for the convex last layer.
+
+    W* = trained last-layer weights. For s ∈ [scale_min, scale_max]:
+
+        W(s) = s · W*
+
+    we compute:
+      - train convex objective via cvx_loss on cached z
+      - test loss via cvx_eval_acc_or_mse.
+
+    This lets you see how scaling the last layer affects both the objective and generalization.
+    """
+    model = model.to(device)
+    model.eval()
+
+    W_param = model.W
+    w_star = W_param.detach().view(-1).to(device)
+
+    scales = torch.linspace(scale_min, scale_max, steps=num_points, device=device)
+
+    train_losses = []
+    test_losses = []
+
+    for s in scales:
+        W_param.data = (s * w_star).view_as(W_param)
+
+        # Train objective
+        train_loss = cvx_train_objective_full(
+            model,
+            train_loader3d,
+            loss_type=loss_type,
+            beta_l1=beta_l1,
+            device=device,
+        )
+
+        # Test loss
+        score = cvx_eval_acc_or_mse(
+            model,
+            test_loader2d,
+            hypers,
+            L=L,
+            T=T,
+            P_rec=P_rec,
+            device=device,
+            loss_type=loss_type,
+        )
+        if loss_type in ("ce", "hinge"):
+            test_loss = 1.0 - score
+        else:
+            test_loss = -score
+
+        train_losses.append(train_loss)
+        test_losses.append(test_loss)
+
+    # Restore W*
+    W_param.data = w_star.view_as(W_param)
+
+    scales_np = scales.cpu().numpy()
+    train_np = np.array(train_losses, dtype=np.float32)
+    test_np = np.array(test_losses, dtype=np.float32)
+
+    plt.figure(figsize=(6, 5))
+    plt.plot(scales_np, train_np, label="Train CVX Objective (cvx_loss)")
+    plt.plot(scales_np, test_np, label="Test Loss (1-acc / MSE)")
+    plt.xlabel("Scaling factor s (W → s · W*)")
+    plt.ylabel("Loss")
+    plt.title("Convex Last-Layer Positive Scaling Landscape (1D)")
+    plt.legend()
+    plt.tight_layout()
+    time_str = datetime.now().strftime("%Y%m%d_%H%M%S")
+    os.makedirs("plots", exist_ok=True)
+    fname = f"plots/losslandscape1D_L{L}_T{T}_{dataset}_{time_str}.png"
+    plt.savefig(fname, bbox_inches="tight", dpi=150)
+    plt.show()
+
+@torch.no_grad()
+def plot_cvx_loss_landscape_2d(
+    model: CvxLastLayer,
+    train_loader3d: DataLoader,
+    test_loader2d: DataLoader,
+    hypers: RNNHyperplanes,
+    *,
+    L: int,
+    T: int,
+    P_rec: int,
+    loss_type: str,
+    beta_l1: float,
+    device: torch.device,
+    dataset: str,
+    alpha_range: float = 1.0,
+    num_points: int = 41,
+):
+    """
+    2D slice of the CVX-SNN loss landscape around W*.
+
+    Train loss  = convex objective via cvx_loss on cached z (cvx_train_objective_full).
+    Test loss   = generalization error via cvx_eval_acc_or_mse:
+
+        ce / hinge: 1 - accuracy
+        squared   : MSE  (since cvx_eval_acc_or_mse returns -MSE)
+    """
+    model = model.to(device)
+    model.eval()
+
+    # Flatten W* to w*
+    W_param = model.W
+    w_star = W_param.detach().view(-1).to(device)
+
+    # Two orthonormal directions in weight space
+    d1 = torch.randn_like(w_star)
+    d1 = d1 / (d1.norm() + 1e-8)
+
+    d2 = torch.randn_like(w_star)
+    d2 = d2 - (d2 @ d1) * d1
+    d2 = d2 / (d2.norm() + 1e-8)
+
+    alphas = torch.linspace(-alpha_range, alpha_range, steps=num_points, device=device)
+    betas = torch.linspace(-alpha_range, alpha_range, steps=num_points, device=device)
+
+    train_grid = np.zeros((num_points, num_points), dtype=np.float32)
+    test_grid = np.zeros((num_points, num_points), dtype=np.float32)
+
+    for i, a in enumerate(alphas):
+        for j, b in enumerate(betas):
+            # W(a,b) = W* + a d1 + b d2
+            w_vec = w_star + a * d1 + b * d2
+            W_param.data = w_vec.view_as(W_param)
+
+            # Train convex objective (matches training code)
+            train_loss = cvx_train_objective_full(
+                model,
+                train_loader3d,
+                loss_type=loss_type,
+                beta_l1=beta_l1,
+                device=device,
+            )
+
+            # Test "loss" via cvx_eval_acc_or_mse on test_loader2d
+            score = cvx_eval_acc_or_mse(
+                model,
+                test_loader2d,
+                hypers,
+                L=L,
+                T=T,
+                P_rec=P_rec,
+                device=device,
+                loss_type=loss_type,
+            )
+            if loss_type in ("ce", "hinge"):
+                test_loss = 1.0 - score
+            else:
+                test_loss = -score   # MSE
+
+            train_grid[i, j] = train_loss
+            test_grid[i, j] = test_loss
+
+    # Restore W*
+    W_param.data = w_star.view_as(W_param)
+
+    A = alphas.cpu().numpy()
+    B = betas.cpu().numpy()
+
+    time_str = datetime.now().strftime("%Y%m%d_%H%M%S")
+    os.makedirs("plots", exist_ok=True)
+    base = f"plots/losslandscape2D_L{L}_T{T}_{dataset}_{time_str}"
+
+    # Train contour
+    plt.figure(figsize=(6, 5))
+    plt.contourf(A, B, train_grid.T, levels=30)
+    plt.colorbar(label="Train CVX Objective (cvx_loss)")
+    plt.xlabel("α (direction d₁)")
+    plt.ylabel("β (direction d₂)")
+    plt.title("CVX-SNN Train Loss Landscape (2D Slice)")
+    plt.tight_layout()
+    plt.savefig(f"{base}_train.png", bbox_inches="tight", dpi=150)
+    plt.show()
+
+    # Test contour
+    plt.figure(figsize=(6, 5))
+    plt.contourf(A, B, test_grid.T, levels=30)
+    plt.colorbar(label="Test Loss (1-acc / MSE)")
+    plt.xlabel("α (direction d₁)")
+    plt.ylabel("β (direction d₂)")
+    plt.title("CVX-SNN Test Loss Landscape (2D Slice)")
+    plt.tight_layout()
+    plt.savefig(f"{base}_test.png", bbox_inches="tight", dpi=150)
+    plt.show()  
 
 def train_cvx_head_first_order(
     train_loader3d: DataLoader,
@@ -976,30 +1430,13 @@ def run_one_seed(
     set_seed(seed)
 
     # ----- build data -----
-    if task in ("parity_seq", "two_step_xor_seq", "moving_blobs_seq"):
-        if task == "parity_seq":
-            X_seq, y, num_classes = make_parity_seq(n_train_total + n_test, T, seed=seed)
-        elif task == "two_step_xor_seq":
-            X_seq, y, num_classes = make_two_step_xor_seq(n_train_total + n_test, T, seed=seed)
-        else:
-            X_seq, y, num_classes = make_moving_gaussian_blobs_seq(n_train_total + n_test, T, seed=seed)
-        X_total = X_seq[:n_train_total]
-        y_total = y[:n_train_total]
-        X_test = X_seq[n_train_total: n_train_total + n_test]
-        y_test = y[n_train_total: n_train_total + n_test]
-
-    elif task in ("mnist_seq", "mnist_perm_seq"):
-        cache = load_mnist_cache(root="data")
-        X_total, y_total, X_test, y_test, num_classes = mnist_to_sequence(
-            cache,
-            n_train_total=n_train_total,
-            n_test=n_test,
-            seed=seed,
-            task=task,
-            T=T,
-        )
-    else:
-        raise ValueError(f"Unknown task: {task}")
+    X_total, y_total, X_test, y_test, num_classes = build_dataset(
+        task=task,
+        T=T,
+        n_train_total=n_train_total,
+        n_test=n_test,
+        seed=seed,
+    )
 
     X_train, y_train, X_val, y_val = split_train_val(X_total, y_total, val_frac=val_frac, seed=seed)
 
@@ -1121,6 +1558,38 @@ def run_one_seed(
         best_cvx["model"] = logged["model"]
         best_cvx["val_score"] = logged["best_val_score"]
         best_cvx["train_curve"] = logged["train_score_history"]
+        plot_cvx_loss_landscape_2d(
+            model=best_cvx["model"],
+            train_loader3d=train_loader3d,
+            test_loader2d=test_loader2d,
+            hypers=hypers,
+            L=L,
+            T=T,
+            P_rec=P_rec,
+            loss_type=loss_type,
+            beta_l1=float(best_cvx["beta_l1"]),
+            device=device,
+            dataset=task,
+            alpha_range=1.0,
+            num_points=41,
+        )
+
+        convLossLandscape1D(
+            model=best_cvx["model"],
+            train_loader3d=train_loader3d,
+            test_loader2d=test_loader2d,
+            hypers=hypers,
+            L=L,
+            T=T,
+            P_rec=P_rec,
+            loss_type=loss_type,
+            beta_l1=float(best_cvx["beta_l1"]),
+            device=device,
+            dataset=task,
+            scale_min=0.0,
+            scale_max=2.0,
+            num_points=81,
+        )
     # ----- SNN baseline (STE) -----
     d_in = X_train.shape[2]
     model_snn = SNNBaseline(
@@ -1188,8 +1657,26 @@ def main():
         "--task",
         type=str,
         required=True,
-        choices=["parity_seq", "two_step_xor_seq", "moving_blobs_seq", "mnist_seq", "mnist_perm_seq"],
+        choices=[
+            "parity_seq",
+            "two_step_xor_seq",
+            "moving_blobs_seq",
+            "mnist_seq",
+            "mnist_perm_seq",
+            "ptb_seq",
+            "binary_adding_seq",
+            "shd_seq",
+            "ssc_seq",
+            "nmnist_seq",
+            "cifar10_seq",
+            "cifar100_seq",
+            "cifar10_dvs_seq",
+            "dvs_gesture_seq",
+            "gsc_seq",
+            "timit_seq",
+        ],
     )
+
     parser.add_argument("--T", type=int, default=6)
     parser.add_argument("--L", type=int, default=3)
 
@@ -1230,6 +1717,7 @@ def main():
 
     args = parser.parse_args()
 
+    # Pinpoint RuntimeWarning (divide by zero, overflow, invalid value): print file:line
     device = get_device(args.device)
 
     print(f"[info] device={device} task={args.task} T={args.T} L={args.L} epochs={args.epochs} batch={args.batch}")
