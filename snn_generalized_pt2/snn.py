@@ -134,7 +134,7 @@ def make_two_step_xor_seq(
 
     # XOR on the last two timesteps, then reduce across dim
     last = X[:, -1, :]
-    prev = X[:, -2, :]
+    prev = X[:, 0, :]
     xor = (last + prev) % 2  # (n, 2)
     y = (xor.sum(axis=1) % 2).astype(np.int64)
     return X, y, 2
@@ -380,7 +380,7 @@ def build_dataset(
     # depending on chosen loss type. We expose it as a sequence of length T
     # with 2 input channels (two numbers).
     if task == "binary_adding_seq":
-        cache = load_binary_adding_cache()
+        cache = load_binary_adding_cache(T = T)
         return binary_adding_to_sequence(
             cache,
             n_train_total=n_train_total,
@@ -974,7 +974,7 @@ def convLossLandscape1D(
     os.makedirs("plots", exist_ok=True)
     fname = f"plots/losslandscape1D_L{L}_T{T}_{dataset}_{time_str}.png"
     plt.savefig(fname, bbox_inches="tight", dpi=150)
-    plt.show()
+    plt.close()
 
 @torch.no_grad()
 def plot_cvx_loss_landscape_2d(
@@ -990,8 +990,8 @@ def plot_cvx_loss_landscape_2d(
     beta_l1: float,
     device: torch.device,
     dataset: str,
-    alpha_range: float = 1.0,
-    num_points: int = 41,
+    alpha_range: float = 5.0,
+    num_points: int = 80,
 ):
     """
     2D slice of the CVX-SNN loss landscape around W*.
@@ -1063,11 +1063,37 @@ def plot_cvx_loss_landscape_2d(
     A = alphas.cpu().numpy()
     B = betas.cpu().numpy()
 
+    # ---- find argmin for train and test on this slice ----
+    train_min_idx = np.unravel_index(train_grid.argmin(), train_grid.shape)
+    i_tr, j_tr = int(train_min_idx[0]), int(train_min_idx[1])
+    alpha_tr = A[i_tr]
+    beta_tr = B[j_tr]
+    min_train_loss = float(train_grid[i_tr, j_tr])
+    test_at_train_min = float(test_grid[i_tr, j_tr])
+
+    test_min_idx = np.unravel_index(test_grid.argmin(), test_grid.shape)
+    i_te, j_te = int(test_min_idx[0]), int(test_min_idx[1])
+    alpha_te = A[i_te]
+    beta_te = B[j_te]
+    min_test_loss = float(test_grid[i_te, j_te])
+    train_at_test_min = float(train_grid[i_te, j_te])
+
+    print(
+        f"[CVX Landscape] min TRAIN loss on slice = {min_train_loss:.6f} "
+        f"at (alpha_tr, beta_tr) = ({alpha_tr:.4f}, {beta_tr:.4f}); "
+        f"test loss there = {test_at_train_min:.6f}"
+    )
+    print(
+        f"[CVX Landscape] min TEST  loss on slice = {min_test_loss:.6f} "
+        f"at (alpha_te, beta_te) = ({alpha_te:.4f}, {beta_te:.4f}); "
+        f"train loss there = {train_at_test_min:.6f}"
+    )
+
     time_str = datetime.now().strftime("%Y%m%d_%H%M%S")
     os.makedirs("plots", exist_ok=True)
     base = f"plots/losslandscape2D_L{L}_T{T}_{dataset}_{time_str}"
 
-    # Train contour
+    # ---------- Train contour (as before) ----------
     plt.figure(figsize=(6, 5))
     plt.contourf(A, B, train_grid.T, levels=30)
     plt.colorbar(label="Train CVX Objective (cvx_loss)")
@@ -1076,9 +1102,9 @@ def plot_cvx_loss_landscape_2d(
     plt.title("CVX-SNN Train Loss Landscape (2D Slice)")
     plt.tight_layout()
     plt.savefig(f"{base}_train.png", bbox_inches="tight", dpi=150)
-    plt.show()
+    plt.close()
 
-    # Test contour
+    # ---------- Test contour (as before) ----------
     plt.figure(figsize=(6, 5))
     plt.contourf(A, B, test_grid.T, levels=30)
     plt.colorbar(label="Test Loss (1-acc / MSE)")
@@ -1087,7 +1113,54 @@ def plot_cvx_loss_landscape_2d(
     plt.title("CVX-SNN Test Loss Landscape (2D Slice)")
     plt.tight_layout()
     plt.savefig(f"{base}_test.png", bbox_inches="tight", dpi=150)
-    plt.show()  
+    plt.close()
+
+    # ---------- OVERLAY: train (filled) + test (dashed) ----------
+    fig, ax = plt.subplots(figsize=(6, 5))
+
+    # Filled contours for train loss
+    cf = ax.contourf(A, B, train_grid.T, levels=30)
+    cbar = fig.colorbar(cf, ax=ax)
+    cbar.set_label("Train CVX Objective (cvx_loss)")
+
+    # Dashed contour lines for test loss
+    cs = ax.contour(
+        A,
+        B,
+        test_grid.T,
+        levels=10,
+        colors="white",
+        linewidths=1.0,
+        linestyles="dashed",
+    )
+    ax.clabel(cs, inline=True, fontsize=8, fmt="%.3f")
+
+    # Mark minima
+    ax.scatter(
+        [alpha_tr],
+        [beta_tr],
+        marker="x",
+        s=80,
+        c="blue",
+        label="Train-loss minimum",
+    )
+    ax.scatter(
+        [alpha_te],
+        [beta_te],
+        marker="*",
+        s=120,
+        c="yellow",
+        edgecolors="black",
+        label="Test-loss minimum",
+    )
+
+    ax.set_xlabel("α (direction d₁)")
+    ax.set_ylabel("β (direction d₂)")
+    ax.set_title("CVX-SNN Train & Test Loss Landscapes (2D Slice)")
+    ax.legend()
+    plt.tight_layout()
+    plt.savefig(f"{base}_overlay.png", bbox_inches="tight", dpi=150)
+    plt.close()
 
 def train_cvx_head_first_order(
     train_loader3d: DataLoader,
@@ -1569,9 +1642,7 @@ def run_one_seed(
             loss_type=loss_type,
             beta_l1=float(best_cvx["beta_l1"]),
             device=device,
-            dataset=task,
-            alpha_range=1.0,
-            num_points=41,
+            dataset=task
         )
 
         convLossLandscape1D(
@@ -1585,10 +1656,7 @@ def run_one_seed(
             loss_type=loss_type,
             beta_l1=float(best_cvx["beta_l1"]),
             device=device,
-            dataset=task,
-            scale_min=0.0,
-            scale_max=2.0,
-            num_points=81,
+            dataset=task
         )
     # ----- SNN baseline (STE) -----
     d_in = X_train.shape[2]
