@@ -1644,7 +1644,7 @@ def run_one_seed(
             device=device,
             dataset=task
         )
-
+        '''
         convLossLandscape1D(
             model=best_cvx["model"],
             train_loader3d=train_loader3d,
@@ -1655,9 +1655,10 @@ def run_one_seed(
             P_rec=P_rec,
             loss_type=loss_type,
             beta_l1=float(best_cvx["beta_l1"]),
-            device=device,
+            device=device, 
             dataset=task
         )
+        '''
     # ----- SNN baseline (STE) -----
     d_in = X_train.shape[2]
     model_snn = SNNBaseline(

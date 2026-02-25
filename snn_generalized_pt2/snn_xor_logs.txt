@@ -13,3 +13,51 @@
 [snn hypers] layer 1: U_in=(2, 6000), U_rec=(12001, 6000) (shared across all T)
 [snn patterns] last-layer enforce: round=1/300 uniques=15000/15000
 [snn patterns] P_last_unique=15000 (target=15000, n_train=4000)
+[1/120] L=2 T=18 P_in=6000 P_rec=6000 P_last=15000
+Traceback (most recent call last):
+  File "/u/hudupi/globally_optimal_training_of_snns/snn_generalized_pt2/run_two_step_xor_grid.py", line 90, in <module>
+    main()
+    ~~~~^^
+  File "/u/hudupi/globally_optimal_training_of_snns/snn_generalized_pt2/run_two_step_xor_grid.py", line 82, in main
+    ret = subprocess.run(cmd, cwd=script_dir)
+  File "/sw/rh9.4/spack/v1.0.0/sw/linux-x86_64_v2/python-3.13.5-7bp2p4z/lib/python3.13/subprocess.py", line 556, in run
+    stdout, stderr = process.communicate(input, timeout=timeout)
+                     ~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/sw/rh9.4/spack/v1.0.0/sw/linux-x86_64_v2/python-3.13.5-7bp2p4z/lib/python3.13/subprocess.py", line 1214, in communicate
+    self.wait()
+    ~~~~~~~~~^^
+  File "/sw/rh9.4/spack/v1.0.0/sw/linux-x86_64_v2/python-3.13.5-7bp2p4z/lib/python3.13/subprocess.py", line 1280, in wait
+    return self._wait(timeout=timeout)
+           ~~~~~~~~~~^^^^^^^^^^^^^^^^^
+  File "/sw/rh9.4/spack/v1.0.0/sw/linux-x86_64_v2/python-3.13.5-7bp2p4z/lib/python3.13/subprocess.py", line 2066, in _wait
+    (pid, sts) = self._try_wait(0)
+                 ~~~~~~~~~~~~~~^^^
+  File "/sw/rh9.4/spack/v1.0.0/sw/linux-x86_64_v2/python-3.13.5-7bp2p4z/lib/python3.13/subprocess.py", line 2024, in _try_wait
+    (pid, sts) = os.waitpid(self.pid, wait_flags)
+                 ~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^
+KeyboardInterrupt
+[1/120] L=2 T=18 P_in=6000 P_rec=6000 P_last=15000
+Exit code -9 for L=2 T=18
+[1/120] L=2 T=18 P_in=6000 P_rec=6000 P_last=15000
+Traceback (most recent call last):
+  File "/u/hudupi/globally_optimal_training_of_snns/snn_generalized_pt2/run_two_step_xor_grid.py", line 90, in <module>
+    main()
+    ~~~~^^
+  File "/u/hudupi/globally_optimal_training_of_snns/snn_generalized_pt2/run_two_step_xor_grid.py", line 82, in main
+    ret = subprocess.run(cmd, cwd=script_dir)
+  File "/sw/rh9.4/spack/v1.0.0/sw/linux-x86_64_v2/python-3.13.5-7bp2p4z/lib/python3.13/subprocess.py", line 556, in run
+    stdout, stderr = process.communicate(input, timeout=timeout)
+                     ~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/sw/rh9.4/spack/v1.0.0/sw/linux-x86_64_v2/python-3.13.5-7bp2p4z/lib/python3.13/subprocess.py", line 1214, in communicate
+    self.wait()
+    ~~~~~~~~~^^
+  File "/sw/rh9.4/spack/v1.0.0/sw/linux-x86_64_v2/python-3.13.5-7bp2p4z/lib/python3.13/subprocess.py", line 1280, in wait
+    return self._wait(timeout=timeout)
+           ~~~~~~~~~~^^^^^^^^^^^^^^^^^
+  File "/sw/rh9.4/spack/v1.0.0/sw/linux-x86_64_v2/python-3.13.5-7bp2p4z/lib/python3.13/subprocess.py", line 2066, in _wait
+    (pid, sts) = self._try_wait(0)
+                 ~~~~~~~~~~~~~~^^^
+  File "/sw/rh9.4/spack/v1.0.0/sw/linux-x86_64_v2/python-3.13.5-7bp2p4z/lib/python3.13/subprocess.py", line 2024, in _try_wait
+    (pid, sts) = os.waitpid(self.pid, wait_flags)
+                 ~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^
+KeyboardInterrupt
