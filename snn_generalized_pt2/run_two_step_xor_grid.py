@@ -58,6 +58,8 @@ def main():
     idx = 0
     for L in L_LIST:
         for T in T_LIST:
+            if L == 2 and T in [2, 6, 10]:
+                continue
             P_in, P_rec, P_last = scaled_widths(T)
             idx += 1
             cmd = [

@@ -1,0 +1,15 @@
+[1/120] L=2 T=18 P_in=6000 P_rec=6000 P_last=15000
+[info] device=mps task=two_step_xor_seq T=18 L=2 epochs=200 batch=128
+[info] n_train_total=5000 val_frac=0.2 n_test=5000
+[info] P_in=6000 P_rec=6000 P_last=15000
+[info] loss=hinge
+[info] CVX grid betas=[1e-06, 0.001, 0.01, 0.1, 0.5, 1.0] lrs=[0.001]
+[info] seeds=[0] normalize_hidden=False
+[info] SNN learn_beta=False learn_threshold=False
+[info] task=two_step_xor_seq T=18 L=2
+[info] n_train_total=5000 val_frac=0.2 => n_train=4000 n_val=1000 n_test=5000
+[info] P_in=6000 P_rec=6000 P_last(target)=15000
+[info] CVX grid betas=[1e-06, 0.001, 0.01, 0.1, 0.5, 1.0] lrs=[0.001] loss=hinge
+[snn hypers] layer 1: U_in=(2, 6000), U_rec=(12001, 6000) (shared across all T)
+[snn patterns] last-layer enforce: round=1/300 uniques=15000/15000
+[snn patterns] P_last_unique=15000 (target=15000, n_train=4000)

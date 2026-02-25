@@ -897,8 +897,8 @@ def convLossLandscape1D(
     device: torch.device,
     dataset: str,
     scale_min: float = 1e-10,
-    scale_max: float = 50.0,
-    num_points: int = 81,
+    scale_max: float = 2.0,
+    num_points: int = 41,
 ):
     """
     1D positive-scaling experiment for the convex last layer.
@@ -991,7 +991,7 @@ def plot_cvx_loss_landscape_2d(
     device: torch.device,
     dataset: str,
     alpha_range: float = 5.0,
-    num_points: int = 80,
+    num_points: int = 41,
 ):
     """
     2D slice of the CVX-SNN loss landscape around W*.
