@@ -523,28 +523,15 @@ def generate_snn_sign_patterns(
     """
     Generate sign patterns for a threshold-SNN with L hidden layers and T timesteps.
 
-    This version offloads all heavy linear algebra to torch on the given device.
-    Only storage of hyperplanes / patterns and the uniqueness bookkeeping stay on CPU.
+    This GPU-optimized version:
 
-    Mirrors the original semantics:
-
-      - Layer 0: h^{0,t} = x_t (real-valued inputs)
-      - For each hidden layer l = 1..L-1:
-            v_in^t   = x_t @ U_in_l                         # (n, P_rec)
-            s_prev^t = [v^{l,t-1}, -h^{l,t-1}, -1]         # (n, 2 P_rec + 1)
-            v_rec^t  = s_prev^t @ U_rec_l                  # (n, P_rec)
-            v^{l,t}  = v_in^t + v_rec^t
-            h^{l,t}  = 1[ v^{l,t} >= 0 ]
-
-      - Last layer:
-            Use h^{L-1, T-1} as features (n, P_rec).
-            Sample U_last ∈ R^{P_rec × chunk_P} until we collect P_last_target
-            distinct sign patterns z_last ∈ {0,1}^{n × P_last_target}.
+      * Uses torch on `device` for all recurrence and last-layer matmuls.
+      * Keeps only hyperplane storage + unique-pattern bookkeeping on CPU (NumPy).
 
     Returns:
       z_last_bool: (n, P_last_target) bool
       hypers:      RNNHyperplanes(U_in_list, U_rec_list, U_last)
-                   where U_rec_list[l-1] has shape (2*P_rec+1, P_rec).
+                   where U_rec_list[l-1] has shape (2*h_dim_l+1, h_dim_l).
     """
     rng = np.random.default_rng(seed)
     n, T_data, d_in = X_seq.shape
@@ -552,44 +539,47 @@ def generate_snn_sign_patterns(
         raise ValueError(f"X_seq has T={T_data} but you requested T={T}.")
 
     if device is None:
-        # Fallback: CPU if caller doesn't pass a device (but in main we WILL pass)
         device = torch.device("cpu")
 
     if verbose:
         print(f"[snn patterns] using device={device}")
 
-    # Move inputs to device; use float64 for stability with huge P_rec
+    # layer 0 "spikes" are just the inputs x_t (real-valued); we don't threshold them
+    # h_layers[l][t] holds activations for layer l at time t, except layer 0 which holds raw inputs
+    # Use float64 for recurrence to reduce overflow risk for large P_rec / P_last_target.
     X_torch = torch.from_numpy(X_seq.astype(np.float64, copy=False)).to(device)
 
-    # layer-0 "spikes" are just the inputs x_t (real-valued); we don't threshold them
-    # h_prev_layer[t] holds activations for layer (0 or current) at time t
-    h_prev_layer: List[torch.Tensor] = [
-        X_torch[:, t, :] for t in range(T)
-    ]  # each (n, d_in)
+    h_layers: List[List[torch.Tensor]] = []
+    h0 = [X_torch[:, t, :] for t in range(T)]  # each (n, d_in)
+    h_layers.append(h0)
 
     U_in_list: List[np.ndarray] = []
     U_rec_list: List[np.ndarray] = []
 
+    # Decide hidden widths: first L-2 layers = P_rec, last hidden layer = P_last_target
+    if L <= 1:
+        hidden_dims = [P_last_target]
+    else:
+        hidden_dims = [P_rec] * max(L - 2, 0) + [P_last_target]
+
     d_in_l = d_in
 
     # -------------------------------
-    # Hidden layers 1 .. L-1 on GPU
+    # Hidden layers 1 .. L-1 (GPU)
     # -------------------------------
     for l in range(1, L):
-        # ----- sample hyperplanes on CPU -----
-        # Input hyperplanes: from previous layer's h^{l-1,t} (dim = d_in_l) to P_rec neurons
-        U_in_np = rng.normal(size=(d_in_l, P_rec)).astype(np.float32)  # (d_in_l, P_rec)
+        h_dim = hidden_dims[l - 1]  # width of this hidden layer
 
-        # Recurrent hyperplanes: from [v_{t-1}, -h_{t-1}, -1] (dim = 2*P_rec+1) to P_rec
-        # b, g values as in your original code
-        b = np.full((P_rec,), 0.99, dtype=np.float32)  # decay rate
-        g = np.full((P_rec,), 1.0, dtype=np.float32)   # threshold
+        # Input hyperplanes: from previous layer's h^{l-1,t} (dim = d_in_l) to h_dim neurons
+        U_in_np = rng.normal(size=(d_in_l, h_dim)).astype(np.float32)  # (d_in_l, h_dim)
 
-        U_rec_top = np.diag(b)   # (P_rec, P_rec)
-        U_rec_bot = np.diag(g)   # (P_rec, P_rec)
+        # Recurrent hyperplanes: from [v_{t-1}, -h_{t-1}, -1] (dim = 2*h_dim+1) to h_dim
+        b = np.full((h_dim,), 0.99, dtype=np.float32)  # Decay rate
+        g = np.full((h_dim,), 1.0, dtype=np.float32)   # Threshold
 
-        # Stack [diag(b); diag(g); g] → shape (2*P_rec + 1, P_rec)
-        U_rec_np = np.vstack([U_rec_top, U_rec_bot, g]).astype(np.float32)
+        U_rec_top = np.diag(b)   # (h_dim, h_dim)
+        U_rec_bot = np.diag(g)   # (h_dim, h_dim)
+        U_rec_np = np.vstack([U_rec_top, U_rec_bot, g]).astype(np.float32)  # (2*h_dim+1, h_dim)
 
         if normalize_hidden:
             U_in_np = _col_normalize_np(U_in_np)
@@ -601,78 +591,69 @@ def generate_snn_sign_patterns(
                 f"U_in={U_in_np.shape}, U_rec={U_rec_np.shape} (shared across all T)"
             )
 
-        # Store numpy copies (CPU memory only) for later use in hypers / forward
+        # Store CPU copies in hypers
         U_in_list.append(U_in_np)
         U_rec_list.append(U_rec_np)
 
-        # Torch views on GPU for recurrence dynamics
-        U_in = torch.from_numpy(U_in_np.astype(np.float64, copy=False)).to(device)   # (d_in_l, P_rec)
-        U_rec = torch.from_numpy(U_rec_np.astype(np.float64, copy=False)).to(device) # (2*P_rec+1, P_rec)
+        # Torch views on GPU for recurrence
+        U_in = torch.from_numpy(U_in_np.astype(np.float64, copy=False)).to(device)
+        U_rec = torch.from_numpy(U_rec_np.astype(np.float64, copy=False)).to(device)
 
-        B = n
-        v_prev = torch.zeros(B, P_rec, dtype=torch.float64, device=device)
-        h_prev = torch.zeros(B, P_rec, dtype=torch.float64, device=device)
-        h_curr_layer: List[torch.Tensor] = []
+        v_prev = torch.zeros(n, h_dim, dtype=torch.float64, device=device)
+        h_prev = torch.zeros(n, h_dim, dtype=torch.float64, device=device)
+        h_curr_list: List[torch.Tensor] = []
 
         for t in range(T):
             # input to this layer at time t
-            x_t = h_prev_layer[t]  # (B, d_in_l)
+            x_t = h_layers[l - 1][t]  # (n, d_in_l)
 
             # input contribution
-            v_in_t = x_t @ U_in  # (B, P_rec)
+            v_in_t = x_t @ U_in  # (n, h_dim)
 
             # recurrent contribution from previous membrane + spikes: [v_prev, -h_prev, -1]
             s_prev = torch.cat(
                 [
                     v_prev,
                     -h_prev,
-                    -torch.ones((B, 1), dtype=torch.float64, device=device),
+                    -torch.ones((n, 1), dtype=torch.float64, device=device),
                 ],
                 dim=1,
-            )  # (B, 2*P_rec + 1)
-            v_rec_t = s_prev @ U_rec  # (B, P_rec)
+            )  # (n, 2*h_dim + 1)
+            v_rec_t = s_prev @ U_rec  # (n, h_dim)
 
             # new membrane and spikes
             v_t = v_in_t + v_rec_t
-            # no clamp here to stay faithful to the original generate_snn_sign_patterns
-            h_t = (v_t >= 0.0).to(torch.float64)  # spikes in {0,1}
+            h_t = (v_t >= 0.0).to(torch.float64)
 
-            h_curr_layer.append(h_t)
+            h_curr_list.append(h_t)
             v_prev = v_t
             h_prev = h_t
 
-        # Outputs of this layer become inputs to the next
-        h_prev_layer = h_curr_layer
-        d_in_l = P_rec
+        h_layers.append(h_curr_list)
+        d_in_l = h_dim  # next layer's input dimension
 
-    # -----------------------------------------
-    # Last hidden state h^{L-1, T-1} on GPU
-    # -----------------------------------------
-    # If L == 1, h_prev_layer is still [x_t]; so this matches the original behavior:
-    #   h^{L-1,T-1} is just the raw input at time T-1.
-    h_last_T = h_prev_layer[-1]  # (n, P_rec or d_in)
+    # Last hidden state h^{L-1, T-1} is used for the convex last layer
+    h_last_T = h_layers[-1][-1]  # (n, h_dim_last) where h_dim_last = hidden_dims[-1]
     in_dim_last = h_last_T.shape[1]
 
-    # -----------------------------------------
-    # Last-layer hyperplanes + unique patterns
-    # -----------------------------------------
+    # -------------------------------------------------
+    # Last-layer hyperplanes + unique patterns (GPU)
+    # -------------------------------------------------
     uniq: Dict[bytes, np.ndarray] = {}
     rounds = 0
+    chunk_P = max(P_last_target * chunk_mult, P_last_target)
 
     while len(uniq) < P_last_target and rounds < max_rounds:
         rounds += 1
-        chunk_P = chunk_mult * P_last_target
-
         U_last_np = rng.normal(size=(in_dim_last, chunk_P)).astype(np.float32)
         if normalize_hidden:
             U_last_np = _col_normalize_np(U_last_np)
 
-        # Move last-layer hyperplanes to device
-        U_last = torch.from_numpy(U_last_np.astype(np.float64, copy=False)).to(device)  # (in_dim_last, chunk_P)
+        U_last = torch.from_numpy(U_last_np.astype(np.float64, copy=False)).to(device)
 
         # sign patterns on device
-        D_bool_t = (h_last_T @ U_last >= 0.0)  # (n, chunk_P) bool
-        D_u8 = D_bool_t.to(torch.uint8).cpu().numpy()  # move only patterns back to CPU
+        D_bool_t = (h_last_T @ U_last >= 0.0)    # (n, chunk_P) bool
+        D_u8 = D_bool_t.to(torch.uint8).cpu().numpy()  # move only patterns to CPU
 
         for j in range(chunk_P):
             key = D_u8[:, j].tobytes()
@@ -690,10 +671,9 @@ def generate_snn_sign_patterns(
     if len(uniq) < P_last_target:
         raise RuntimeError(
             f"Could not collect P_last_target={P_last_target} unique last-layer patterns; "
-            f"got {len(uniq)}. Increase P_last or chunk_mult/max_rounds."
+            f"got {len(uniq)}. Increase P_last_target or chunk_mult/max_rounds."
         )
 
-    # Stack patterns + final U_last on CPU
     keys = list(uniq.keys())[:P_last_target]
     D_last = np.stack(
         [np.frombuffer(k, dtype=np.uint8) for k in keys],
@@ -714,88 +694,67 @@ def generate_snn_sign_patterns(
 
     hypers = RNNHyperplanes(
         U_in_list=U_in_list,
-        U_rec_list=U_rec_list,
-        U_last=U_last_final,
+        U_rec_list=U_rec_list,   # each (2*h_dim_l+1, h_dim_l)
+        U_last=U_last_final,     # (h_dim_last, P_last_target)
     )
     return z_last_bool, hypers
 
-
 def forward_snn_patterns_torch(
-    X_seq: torch.Tensor,      # (B, T, d_in)
+    X_seq: torch.Tensor,
     hypers: RNNHyperplanes,
     *,
     L: int,
     T: int,
-    P_rec: int,
     device: torch.device,
 ) -> torch.Tensor:
-    """
-    Torch version of the SNN recurrence, used for val/test CVX evaluation.
-
-    Mirrors generate_snn_sign_patterns:
-
-      layer 0: h^{0,t} = x_t (real-valued inputs)
-
-      for l = 1..L-1:
-        for t = 0..T-1:
-          v_in^t   = h^{l-1,t} @ U_in_l
-          s_prev^t = [v^{l,t-1}, -h^{l,t-1}]
-          v_rec^t  = s_prev^t @ U_rec_l
-          v^{l,t}  = v_in^t + v_rec^t
-          h^{l,t}  = 1[ v^{l,t} >= 0 ]
-
-      last layer:
-        use h^{L-1, T-1} and U_last to generate final sign patterns.
-    """
     B, T_data, d_in = X_seq.shape
-    assert T_data == T, f"X_seq has T={T_data}, expected T={T}"
+    assert T_data == T
 
-    # layer-0 "spikes" are the raw inputs
+    # layer 0: raw inputs
     h_prev_layers: List[List[torch.Tensor]] = []
-    h0 = [X_seq[:, t, :].to(device) for t in range(T)]  # each (B, d_in)
+    h0 = [X_seq[:, t, :].to(device) for t in range(T)]
     h_prev_layers.append(h0)
 
     d_in_l = d_in
 
-    # Hidden layers 1 .. L-1
     for l in range(1, L):
-        U_in_np = hypers.U_in_list[l - 1]   # (d_in_l, P_rec)
-        U_rec_np = hypers.U_rec_list[l - 1] # (2*P_rec, P_rec)
+        U_in_np = hypers.U_in_list[l - 1]   # (d_in_l, h_dim_l)
+        U_rec_np = hypers.U_rec_list[l - 1] # (2*h_dim_l+1, h_dim_l)
 
         U_in = torch.from_numpy(U_in_np).float().to(device)
         U_rec = torch.from_numpy(U_rec_np).float().to(device)
 
-        v_prev = torch.zeros(B, P_rec, device=device)
-        h_prev = torch.zeros(B, P_rec, device=device)
+        h_dim = U_in.shape[1]
+
+        v_prev = torch.zeros(B, h_dim, device=device)
+        h_prev = torch.zeros(B, h_dim, device=device)
         h_curr_list: List[torch.Tensor] = []
 
         for t in range(T):
             x_t = h_prev_layers[l - 1][t]  # (B, d_in_l)
+            v_in_t = x_t @ U_in            # (B, h_dim)
 
-            v_in_t = x_t @ U_in                      # (B, P_rec)
-            s_prev = torch.cat([v_prev, -h_prev , -torch.ones((B, 1), device=device)], dim=1)  # (B, 2*P_rec + 1)
-            v_rec_t = s_prev @ U_rec                 # (B, P_rec)
+            ones = torch.ones(B, 1, device=device)
+            s_prev = torch.cat([v_prev, -h_prev, -ones], dim=1)  # (B, 2*h_dim+1)
+            v_rec_t = s_prev @ U_rec                             # (B, h_dim)
 
             v_t = v_in_t + v_rec_t
             v_t = torch.clamp(v_t, -1e10, 1e10)
             h_t = (v_t >= 0.0).float()
 
             h_curr_list.append(h_t)
-            v_prev = v_t
-            h_prev = h_t
+            v_prev, h_prev = v_t, h_t
 
         h_prev_layers.append(h_curr_list)
-        d_in_l = P_rec
+        d_in_l = h_dim
 
-    # Last hidden state h^{L-1,T-1}
-    h_last_T = h_prev_layers[-1][-1]  # (B, P_rec)
+    # last hidden state has width = h_dim_last (which is P_last after your change)
+    h_last_T = h_prev_layers[-1][-1]  # (B, h_dim_last)
 
-    # Final convex features via U_last
-    U_last = torch.from_numpy(hypers.U_last).float().to(device)  # (P_rec, P_last)
-    D_last = (h_last_T @ U_last >= 0.0).float()                  # (B, P_last)
+    U_last = torch.from_numpy(hypers.U_last).float().to(device)  # (h_dim_last, P_last_target)
+    D_last = (h_last_T @ U_last >= 0.0).float()                  # (B, P_last_target)
 
     return D_last
-
 
 
 # ============================================================
@@ -870,7 +829,7 @@ def cvx_eval_acc_or_mse(
     for xb, yb in loader2d:
         xb = xb.to(device)
         yb = yb.to(device)
-        z = forward_snn_patterns_torch(xb, hypers, L=L, T=T, P_rec=P_rec, device=device)
+        z = forward_snn_patterns_torch(xb, hypers, L=L, T=T, device=device)
         logits = model(z)
 
         if loss_type == "ce":
@@ -1322,17 +1281,19 @@ class SNNBaseline(nn.Module):
     L-layer LIF stack, used as STE baseline.
 
     - Input: sequence X ∈ R^{B×T×d_in}.
-    - For layer l:
-        fc_in_l: Linear(d_in_l -> P_rec)
-        lif_l:   snn.Leaky(beta=..., threshold=...)
-      We propagate through T timesteps and collect last membrane per last layer.
-    - Output head: Linear(P_rec -> num_outputs).
+    - Hidden layers:
+        * For layers 1..L-2: width = P_rec
+        * Last hidden layer (L-1): width = P_last
+      Each hidden layer is: fc_in_l: Linear(d_in_l -> hidden_dim_l), then
+      snn.Leaky(...).
+    - Output head: Linear(P_last -> num_outputs).
     """
     def __init__(
         self,
         d_in: int,
         L: int,
         P_rec: int,
+        P_last: int,
         num_outputs: int,
         beta_leak: float = 0.99,
         threshold: float = 1,
@@ -1342,40 +1303,49 @@ class SNNBaseline(nn.Module):
         super().__init__()
         self.L = L
         self.P_rec = P_rec
+        self.P_last = P_last
 
         fcs = []
         lifs = []
         in_dim = d_in
-        for l in range(L - 1):
-            fc = nn.Linear(in_dim, P_rec, bias=False)
+
+        # hidden dims: first L-2 layers have width P_rec, last hidden layer has width P_last
+        if L <= 1:
+            hidden_dims = [P_last]
+        else:
+            hidden_dims = [P_rec] * max(L - 2, 0) + [P_last]
+
+        for h_dim in hidden_dims:
+            fc = nn.Linear(in_dim, h_dim, bias=False)
             fcs.append(fc)
-            # NOTE: adjust keyword names to match your snntorch version.
+            # NOTE: adjust keyword args if your snntorch version differs
             lif = snn.Leaky(
                 beta=beta_leak,
                 threshold=threshold,
-                learn_beta=False,
-                learn_threshold=False,
+                learn_beta=learn_beta,
+                learn_threshold=learn_threshold,
             )
             lifs.append(lif)
-            in_dim = P_rec
+            in_dim = h_dim
 
         self.fcs = nn.ModuleList(fcs)
         self.lifs = nn.ModuleList(lifs)
-        self.fc_out = nn.Linear(P_rec, num_outputs, bias=True)
+        # Final readout now sees a P_last-dimensional representation
+        self.fc_out = nn.Linear(P_last, num_outputs, bias=False)
 
     def forward(self, x_seq: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
         """
         x_seq: (B, T, d_in)
         Returns:
           - logits: (B, num_outputs) using last membrane of last layer
-          - last_mem: (B, P_rec) final membrane (for analysis)
+          - last_mem: (B, P_last) final membrane (for analysis)
         """
         B, T, d_in = x_seq.shape
         device = x_seq.device
 
         # initialize membranes per layer
         mems = [lif.init_leaky().to(device) for lif in self.lifs]
-
+        h_last  = torch.zeros((B, self.P_last), dtype=torch.float32).to(device)
         # we propagate sequentially
         for t in range(T):
             x_t = x_seq[:, t, :]
@@ -1384,9 +1354,11 @@ class SNNBaseline(nn.Module):
                 cur = fc(h)
                 spk, mem = lif(cur, mems[l])
                 mems[l] = mem
-                h = spk  # pass spikes to next layer; we could also use mem
-        last_mem = mems[-1]
-        logits = self.fc_out(last_mem)
+                h = spk
+                h_last = spk  # pass spikes to next layer; we could also use mem
+
+        last_mem = mems[-1]          # shape (B, P_last)
+        logits = self.fc_out(h_last)
         return logits, last_mem
 
 
@@ -1573,7 +1545,6 @@ def run_one_seed(
         seed=seed,
         normalize_hidden=normalize_hidden,
         verbose=verbose_patterns,
-        device=device,  # << use the global device from get_device()
     )
     z_train = z_train_bool.astype(np.uint8)
     P_last_real = z_train.shape[1]
