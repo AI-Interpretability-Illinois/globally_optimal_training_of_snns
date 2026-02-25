@@ -25,6 +25,7 @@ NOTE:
 
 import argparse
 import os
+import json
 from dataclasses import dataclass
 from datetime import datetime
 from typing import List, Tuple, Dict, Optional
@@ -523,28 +524,15 @@ def generate_snn_sign_patterns(
     """
     Generate sign patterns for a threshold-SNN with L hidden layers and T timesteps.
 
-    This version offloads all heavy linear algebra to torch on the given device.
-    Only storage of hyperplanes / patterns and the uniqueness bookkeeping stay on CPU.
+    This GPU-optimized version:
 
-    Mirrors the original semantics:
-
-      - Layer 0: h^{0,t} = x_t (real-valued inputs)
-      - For each hidden layer l = 1..L-1:
-            v_in^t   = x_t @ U_in_l                         # (n, P_rec)
-            s_prev^t = [v^{l,t-1}, -h^{l,t-1}, -1]         # (n, 2 P_rec + 1)
-            v_rec^t  = s_prev^t @ U_rec_l                  # (n, P_rec)
-            v^{l,t}  = v_in^t + v_rec^t
-            h^{l,t}  = 1[ v^{l,t} >= 0 ]
-
-      - Last layer:
-            Use h^{L-1, T-1} as features (n, P_rec).
-            Sample U_last ∈ R^{P_rec × chunk_P} until we collect P_last_target
-            distinct sign patterns z_last ∈ {0,1}^{n × P_last_target}.
+      * Uses torch on `device` for all recurrence and last-layer matmuls.
+      * Keeps only hyperplane storage + unique-pattern bookkeeping on CPU (NumPy).
 
     Returns:
       z_last_bool: (n, P_last_target) bool
       hypers:      RNNHyperplanes(U_in_list, U_rec_list, U_last)
-                   where U_rec_list[l-1] has shape (2*P_rec+1, P_rec).
+                   where U_rec_list[l-1] has shape (2*h_dim_l+1, h_dim_l).
     """
     rng = np.random.default_rng(seed)
     n, T_data, d_in = X_seq.shape
@@ -552,44 +540,51 @@ def generate_snn_sign_patterns(
         raise ValueError(f"X_seq has T={T_data} but you requested T={T}.")
 
     if device is None:
-        # Fallback: CPU if caller doesn't pass a device (but in main we WILL pass)
-        device = torch.device("cpu")
+        device = get_device("auto")
+
+    # MPS does not support float64; use float32 on MPS, float64 elsewhere for overflow safety.
+    use_f32 = device.type == "mps"
+    dtype = torch.float32 if use_f32 else torch.float64
+    np_dtype = np.float32 if use_f32 else np.float64
 
     if verbose:
         print(f"[snn patterns] using device={device}")
 
-    # Move inputs to device; use float64 for stability with huge P_rec
-    X_torch = torch.from_numpy(X_seq.astype(np.float64, copy=False)).to(device)
+    # layer 0 "spikes" are just the inputs x_t (real-valued); we don't threshold them
+    # h_layers[l][t] holds activations for layer l at time t, except layer 0 which holds raw inputs
+    X_torch = torch.from_numpy(X_seq.astype(np_dtype, copy=False)).to(device)
 
-    # layer-0 "spikes" are just the inputs x_t (real-valued); we don't threshold them
-    # h_prev_layer[t] holds activations for layer (0 or current) at time t
-    h_prev_layer: List[torch.Tensor] = [
-        X_torch[:, t, :] for t in range(T)
-    ]  # each (n, d_in)
+    h_layers: List[List[torch.Tensor]] = []
+    h0 = [X_torch[:, t, :] for t in range(T)]  # each (n, d_in)
+    h_layers.append(h0)
 
     U_in_list: List[np.ndarray] = []
     U_rec_list: List[np.ndarray] = []
 
+    # Decide hidden widths: first L-2 layers = P_rec, last hidden layer = P_last_target
+    if L <= 1:
+        hidden_dims = [P_last_target]
+    else:
+        hidden_dims = [P_rec] * max(L - 2, 0) + [P_last_target]
+
     d_in_l = d_in
 
     # -------------------------------
-    # Hidden layers 1 .. L-1 on GPU
+    # Hidden layers 1 .. L-1 (GPU)
     # -------------------------------
     for l in range(1, L):
-        # ----- sample hyperplanes on CPU -----
-        # Input hyperplanes: from previous layer's h^{l-1,t} (dim = d_in_l) to P_rec neurons
-        U_in_np = rng.normal(size=(d_in_l, P_rec)).astype(np.float32)  # (d_in_l, P_rec)
+        h_dim = hidden_dims[l - 1]  # width of this hidden layer
 
-        # Recurrent hyperplanes: from [v_{t-1}, -h_{t-1}, -1] (dim = 2*P_rec+1) to P_rec
-        # b, g values as in your original code
-        b = np.full((P_rec,), 0.99, dtype=np.float32)  # decay rate
-        g = np.full((P_rec,), 1.0, dtype=np.float32)   # threshold
+        # Input hyperplanes: from previous layer's h^{l-1,t} (dim = d_in_l) to h_dim neurons
+        U_in_np = rng.normal(size=(d_in_l, h_dim)).astype(np.float32)  # (d_in_l, h_dim)
 
-        U_rec_top = np.diag(b)   # (P_rec, P_rec)
-        U_rec_bot = np.diag(g)   # (P_rec, P_rec)
+        # Recurrent hyperplanes: from [v_{t-1}, -h_{t-1}, -1] (dim = 2*h_dim+1) to h_dim
+        b = np.full((h_dim,), 0.99, dtype=np.float32)  # Decay rate
+        g = np.full((h_dim,), 1.0, dtype=np.float32)   # Threshold
 
-        # Stack [diag(b); diag(g); g] → shape (2*P_rec + 1, P_rec)
-        U_rec_np = np.vstack([U_rec_top, U_rec_bot, g]).astype(np.float32)
+        U_rec_top = np.diag(b)   # (h_dim, h_dim)
+        U_rec_bot = np.diag(g)   # (h_dim, h_dim)
+        U_rec_np = np.vstack([U_rec_top, U_rec_bot, g]).astype(np.float32)  # (2*h_dim+1, h_dim)
 
         if normalize_hidden:
             U_in_np = _col_normalize_np(U_in_np)
@@ -601,78 +596,69 @@ def generate_snn_sign_patterns(
                 f"U_in={U_in_np.shape}, U_rec={U_rec_np.shape} (shared across all T)"
             )
 
-        # Store numpy copies (CPU memory only) for later use in hypers / forward
+        # Store CPU copies in hypers
         U_in_list.append(U_in_np)
         U_rec_list.append(U_rec_np)
 
-        # Torch views on GPU for recurrence dynamics
-        U_in = torch.from_numpy(U_in_np.astype(np.float64, copy=False)).to(device)   # (d_in_l, P_rec)
-        U_rec = torch.from_numpy(U_rec_np.astype(np.float64, copy=False)).to(device) # (2*P_rec+1, P_rec)
+        # Torch views on GPU for recurrence
+        U_in = torch.from_numpy(U_in_np.astype(np_dtype, copy=False)).to(device)
+        U_rec = torch.from_numpy(U_rec_np.astype(np_dtype, copy=False)).to(device)
 
-        B = n
-        v_prev = torch.zeros(B, P_rec, dtype=torch.float64, device=device)
-        h_prev = torch.zeros(B, P_rec, dtype=torch.float64, device=device)
-        h_curr_layer: List[torch.Tensor] = []
+        v_prev = torch.zeros(n, h_dim, dtype=dtype, device=device)
+        h_prev = torch.zeros(n, h_dim, dtype=dtype, device=device)
+        h_curr_list: List[torch.Tensor] = []
 
         for t in range(T):
             # input to this layer at time t
-            x_t = h_prev_layer[t]  # (B, d_in_l)
+            x_t = h_layers[l - 1][t]  # (n, d_in_l)
 
             # input contribution
-            v_in_t = x_t @ U_in  # (B, P_rec)
+            v_in_t = x_t @ U_in  # (n, h_dim)
 
             # recurrent contribution from previous membrane + spikes: [v_prev, -h_prev, -1]
             s_prev = torch.cat(
                 [
                     v_prev,
                     -h_prev,
-                    -torch.ones((B, 1), dtype=torch.float64, device=device),
+                    -torch.ones((n, 1), dtype=dtype, device=device),
                 ],
                 dim=1,
-            )  # (B, 2*P_rec + 1)
-            v_rec_t = s_prev @ U_rec  # (B, P_rec)
+            )  # (n, 2*h_dim + 1)
+            v_rec_t = s_prev @ U_rec  # (n, h_dim)
 
             # new membrane and spikes
             v_t = v_in_t + v_rec_t
-            # no clamp here to stay faithful to the original generate_snn_sign_patterns
-            h_t = (v_t >= 0.0).to(torch.float64)  # spikes in {0,1}
+            h_t = (v_t >= 0.0).to(dtype)
 
-            h_curr_layer.append(h_t)
+            h_curr_list.append(h_t)
             v_prev = v_t
             h_prev = h_t
 
-        # Outputs of this layer become inputs to the next
-        h_prev_layer = h_curr_layer
-        d_in_l = P_rec
+        h_layers.append(h_curr_list)
+        d_in_l = h_dim  # next layer's input dimension
 
-    # -----------------------------------------
-    # Last hidden state h^{L-1, T-1} on GPU
-    # -----------------------------------------
-    # If L == 1, h_prev_layer is still [x_t]; so this matches the original behavior:
-    #   h^{L-1,T-1} is just the raw input at time T-1.
-    h_last_T = h_prev_layer[-1]  # (n, P_rec or d_in)
+    # Last hidden state h^{L-1, T-1} is used for the convex last layer
+    h_last_T = h_layers[-1][-1]  # (n, h_dim_last) where h_dim_last = hidden_dims[-1]
     in_dim_last = h_last_T.shape[1]
 
-    # -----------------------------------------
-    # Last-layer hyperplanes + unique patterns
-    # -----------------------------------------
+    # -------------------------------------------------
+    # Last-layer hyperplanes + unique patterns (GPU)
+    # -------------------------------------------------
     uniq: Dict[bytes, np.ndarray] = {}
     rounds = 0
+    chunk_P = max(P_last_target * chunk_mult, P_last_target)
 
     while len(uniq) < P_last_target and rounds < max_rounds:
         rounds += 1
-        chunk_P = chunk_mult * P_last_target
-
         U_last_np = rng.normal(size=(in_dim_last, chunk_P)).astype(np.float32)
         if normalize_hidden:
             U_last_np = _col_normalize_np(U_last_np)
 
-        # Move last-layer hyperplanes to device
-        U_last = torch.from_numpy(U_last_np.astype(np.float64, copy=False)).to(device)  # (in_dim_last, chunk_P)
+        U_last = torch.from_numpy(U_last_np.astype(np_dtype, copy=False)).to(device)
 
         # sign patterns on device
-        D_bool_t = (h_last_T @ U_last >= 0.0)  # (n, chunk_P) bool
-        D_u8 = D_bool_t.to(torch.uint8).cpu().numpy()  # move only patterns back to CPU
+        D_bool_t = (h_last_T @ U_last >= 0.0)    # (n, chunk_P) bool
+        D_u8 = D_bool_t.to(torch.uint8).cpu().numpy()  # move only patterns to CPU
 
         for j in range(chunk_P):
             key = D_u8[:, j].tobytes()
@@ -690,10 +676,9 @@ def generate_snn_sign_patterns(
     if len(uniq) < P_last_target:
         raise RuntimeError(
             f"Could not collect P_last_target={P_last_target} unique last-layer patterns; "
-            f"got {len(uniq)}. Increase P_last or chunk_mult/max_rounds."
+            f"got {len(uniq)}. Increase P_last_target or chunk_mult/max_rounds."
         )
 
-    # Stack patterns + final U_last on CPU
     keys = list(uniq.keys())[:P_last_target]
     D_last = np.stack(
         [np.frombuffer(k, dtype=np.uint8) for k in keys],
@@ -714,88 +699,67 @@ def generate_snn_sign_patterns(
 
     hypers = RNNHyperplanes(
         U_in_list=U_in_list,
-        U_rec_list=U_rec_list,
-        U_last=U_last_final,
+        U_rec_list=U_rec_list,   # each (2*h_dim_l+1, h_dim_l)
+        U_last=U_last_final,     # (h_dim_last, P_last_target)
     )
     return z_last_bool, hypers
 
-
 def forward_snn_patterns_torch(
-    X_seq: torch.Tensor,      # (B, T, d_in)
+    X_seq: torch.Tensor,
     hypers: RNNHyperplanes,
     *,
     L: int,
     T: int,
-    P_rec: int,
     device: torch.device,
 ) -> torch.Tensor:
-    """
-    Torch version of the SNN recurrence, used for val/test CVX evaluation.
-
-    Mirrors generate_snn_sign_patterns:
-
-      layer 0: h^{0,t} = x_t (real-valued inputs)
-
-      for l = 1..L-1:
-        for t = 0..T-1:
-          v_in^t   = h^{l-1,t} @ U_in_l
-          s_prev^t = [v^{l,t-1}, -h^{l,t-1}]
-          v_rec^t  = s_prev^t @ U_rec_l
-          v^{l,t}  = v_in^t + v_rec^t
-          h^{l,t}  = 1[ v^{l,t} >= 0 ]
-
-      last layer:
-        use h^{L-1, T-1} and U_last to generate final sign patterns.
-    """
     B, T_data, d_in = X_seq.shape
-    assert T_data == T, f"X_seq has T={T_data}, expected T={T}"
+    assert T_data == T
 
-    # layer-0 "spikes" are the raw inputs
+    # layer 0: raw inputs
     h_prev_layers: List[List[torch.Tensor]] = []
-    h0 = [X_seq[:, t, :].to(device) for t in range(T)]  # each (B, d_in)
+    h0 = [X_seq[:, t, :].to(device) for t in range(T)]
     h_prev_layers.append(h0)
 
     d_in_l = d_in
 
-    # Hidden layers 1 .. L-1
     for l in range(1, L):
-        U_in_np = hypers.U_in_list[l - 1]   # (d_in_l, P_rec)
-        U_rec_np = hypers.U_rec_list[l - 1] # (2*P_rec, P_rec)
+        U_in_np = hypers.U_in_list[l - 1]   # (d_in_l, h_dim_l)
+        U_rec_np = hypers.U_rec_list[l - 1] # (2*h_dim_l+1, h_dim_l)
 
         U_in = torch.from_numpy(U_in_np).float().to(device)
         U_rec = torch.from_numpy(U_rec_np).float().to(device)
 
-        v_prev = torch.zeros(B, P_rec, device=device)
-        h_prev = torch.zeros(B, P_rec, device=device)
+        h_dim = U_in.shape[1]
+
+        v_prev = torch.zeros(B, h_dim, device=device)
+        h_prev = torch.zeros(B, h_dim, device=device)
         h_curr_list: List[torch.Tensor] = []
 
         for t in range(T):
             x_t = h_prev_layers[l - 1][t]  # (B, d_in_l)
+            v_in_t = x_t @ U_in            # (B, h_dim)
 
-            v_in_t = x_t @ U_in                      # (B, P_rec)
-            s_prev = torch.cat([v_prev, -h_prev , -torch.ones((B, 1), device=device)], dim=1)  # (B, 2*P_rec + 1)
-            v_rec_t = s_prev @ U_rec                 # (B, P_rec)
+            ones = torch.ones(B, 1, device=device)
+            s_prev = torch.cat([v_prev, -h_prev, -ones], dim=1)  # (B, 2*h_dim+1)
+            v_rec_t = s_prev @ U_rec                             # (B, h_dim)
 
             v_t = v_in_t + v_rec_t
             v_t = torch.clamp(v_t, -1e10, 1e10)
             h_t = (v_t >= 0.0).float()
 
             h_curr_list.append(h_t)
-            v_prev = v_t
-            h_prev = h_t
+            v_prev, h_prev = v_t, h_t
 
         h_prev_layers.append(h_curr_list)
-        d_in_l = P_rec
+        d_in_l = h_dim
 
-    # Last hidden state h^{L-1,T-1}
-    h_last_T = h_prev_layers[-1][-1]  # (B, P_rec)
+    # last hidden state has width = h_dim_last (which is P_last after your change)
+    h_last_T = h_prev_layers[-1][-1]  # (B, h_dim_last)
 
-    # Final convex features via U_last
-    U_last = torch.from_numpy(hypers.U_last).float().to(device)  # (P_rec, P_last)
-    D_last = (h_last_T @ U_last >= 0.0).float()                  # (B, P_last)
+    U_last = torch.from_numpy(hypers.U_last).float().to(device)  # (h_dim_last, P_last_target)
+    D_last = (h_last_T @ U_last >= 0.0).float()                  # (B, P_last_target)
 
     return D_last
-
 
 
 # ============================================================
@@ -870,7 +834,7 @@ def cvx_eval_acc_or_mse(
     for xb, yb in loader2d:
         xb = xb.to(device)
         yb = yb.to(device)
-        z = forward_snn_patterns_torch(xb, hypers, L=L, T=T, P_rec=P_rec, device=device)
+        z = forward_snn_patterns_torch(xb, hypers, L=L, T=T, device=device)
         logits = model(z)
 
         if loss_type == "ce":
@@ -940,6 +904,9 @@ def convLossLandscape1D(
     beta_l1: float,
     device: torch.device,
     dataset: str,
+    task: str,
+    seed: int,
+    timestep: str,
     scale_min: float = 1e-10,
     scale_max: float = 2.0,
     num_points: int = 41,
@@ -1014,9 +981,9 @@ def convLossLandscape1D(
     plt.title("Convex Last-Layer Positive Scaling Landscape (1D)")
     plt.legend()
     plt.tight_layout()
-    time_str = datetime.now().strftime("%Y%m%d_%H%M%S")
-    os.makedirs("plots", exist_ok=True)
-    fname = f"plots/losslandscape1D_L{L}_T{T}_{dataset}_{time_str}.png"
+    plot_dir = os.path.join("plots", task, f"L_{L}_T_{T}", f"seed_{seed}")
+    os.makedirs(plot_dir, exist_ok=True)
+    fname = os.path.join(plot_dir, f"{timestep}_1Dloss.png")
     plt.savefig(fname, bbox_inches="tight", dpi=150)
     plt.close()
 
@@ -1034,6 +1001,9 @@ def plot_cvx_loss_landscape_2d(
     beta_l1: float,
     device: torch.device,
     dataset: str,
+    task: str,
+    seed: int,
+    timestep: str,
     alpha_range: float = 5.0,
     num_points: int = 41,
 ):
@@ -1133,9 +1103,9 @@ def plot_cvx_loss_landscape_2d(
         f"train loss there = {train_at_test_min:.6f}"
     )
 
-    time_str = datetime.now().strftime("%Y%m%d_%H%M%S")
-    os.makedirs("plots", exist_ok=True)
-    base = f"plots/losslandscape2D_L{L}_T{T}_{dataset}_{time_str}"
+    # Save to plots/<task>/L_<L>_T_<T>/seed_<seed>/{timestep}_{train|test|overlay}.png
+    plot_dir = os.path.join("plots", task, f"L_{L}_T_{T}", f"seed_{seed}")
+    os.makedirs(plot_dir, exist_ok=True)
 
     # ---------- Train contour (as before) ----------
     plt.figure(figsize=(6, 5))
@@ -1145,7 +1115,7 @@ def plot_cvx_loss_landscape_2d(
     plt.ylabel("β (direction d₂)")
     plt.title("CVX-SNN Train Loss Landscape (2D Slice)")
     plt.tight_layout()
-    plt.savefig(f"{base}_train.png", bbox_inches="tight", dpi=150)
+    plt.savefig(os.path.join(plot_dir, f"{timestep}_train.png"), bbox_inches="tight", dpi=150)
     plt.close()
 
     # ---------- Test contour (as before) ----------
@@ -1156,7 +1126,7 @@ def plot_cvx_loss_landscape_2d(
     plt.ylabel("β (direction d₂)")
     plt.title("CVX-SNN Test Loss Landscape (2D Slice)")
     plt.tight_layout()
-    plt.savefig(f"{base}_test.png", bbox_inches="tight", dpi=150)
+    plt.savefig(os.path.join(plot_dir, f"{timestep}_test.png"), bbox_inches="tight", dpi=150)
     plt.close()
 
     # ---------- OVERLAY: train (filled) + test (dashed) ----------
@@ -1203,7 +1173,7 @@ def plot_cvx_loss_landscape_2d(
     ax.set_title("CVX-SNN Train & Test Loss Landscapes (2D Slice)")
     ax.legend()
     plt.tight_layout()
-    plt.savefig(f"{base}_overlay.png", bbox_inches="tight", dpi=150)
+    plt.savefig(os.path.join(plot_dir, f"{timestep}_overlay.png"), bbox_inches="tight", dpi=150)
     plt.close()
 
 def train_cvx_head_first_order(
@@ -1238,9 +1208,13 @@ def train_cvx_head_first_order(
     best_val_score = -1e30
     best_state = None
     train_acc_history: List[float] = []
+    train_loss_history: List[float] = []
 
     for ep in range(1, epochs + 1):
         model.train()
+        epoch_loss_sum = 0.0
+        epoch_count = 0
+
         for xb, yb, zb in train_loader3d:
             xb = xb.to(device)
             yb = yb.to(device)
@@ -1251,7 +1225,12 @@ def train_cvx_head_first_order(
             loss.backward()
             opt.step()
 
+            bs = int(yb.numel())
+            epoch_loss_sum += float(loss.detach().item()) * bs
+            epoch_count += bs
+
         sched.step()
+        epoch_train_loss = epoch_loss_sum / max(epoch_count, 1)
 
         train_score = cvx_eval_acc_or_mse(
             model, train_loader2d=None,  # we'll re-use patterns via train_loader3d
@@ -1290,6 +1269,7 @@ def train_cvx_head_first_order(
 
         if log_train:
             train_acc_history.append(train_score)
+            train_loss_history.append(epoch_train_loss)
 
         val_score = cvx_eval_acc_or_mse(
             model, val_loader2d, hypers, L=L, T=T, P_rec=P_rec, device=device, loss_type=loss_type
@@ -1310,6 +1290,7 @@ def train_cvx_head_first_order(
         "model": model,
         "best_val_score": best_val_score,
         "train_score_history": train_acc_history,
+        "train_loss_history": train_loss_history,
     }
 
 
@@ -1322,17 +1303,19 @@ class SNNBaseline(nn.Module):
     L-layer LIF stack, used as STE baseline.
 
     - Input: sequence X ∈ R^{B×T×d_in}.
-    - For layer l:
-        fc_in_l: Linear(d_in_l -> P_rec)
-        lif_l:   snn.Leaky(beta=..., threshold=...)
-      We propagate through T timesteps and collect last membrane per last layer.
-    - Output head: Linear(P_rec -> num_outputs).
+    - Hidden layers:
+        * For layers 1..L-2: width = P_rec
+        * Last hidden layer (L-1): width = P_last
+      Each hidden layer is: fc_in_l: Linear(d_in_l -> hidden_dim_l), then
+      snn.Leaky(...).
+    - Output head: Linear(P_last -> num_outputs).
     """
     def __init__(
         self,
         d_in: int,
         L: int,
         P_rec: int,
+        P_last: int,
         num_outputs: int,
         beta_leak: float = 0.99,
         threshold: float = 1,
@@ -1342,40 +1325,49 @@ class SNNBaseline(nn.Module):
         super().__init__()
         self.L = L
         self.P_rec = P_rec
+        self.P_last = P_last
 
         fcs = []
         lifs = []
         in_dim = d_in
-        for l in range(L - 1):
-            fc = nn.Linear(in_dim, P_rec, bias=False)
+
+        # hidden dims: first L-2 layers have width P_rec, last hidden layer has width P_last
+        if L <= 1:
+            hidden_dims = [P_last]
+        else:
+            hidden_dims = [P_rec] * max(L - 2, 0) + [P_last]
+
+        for h_dim in hidden_dims:
+            fc = nn.Linear(in_dim, h_dim, bias=False)
             fcs.append(fc)
-            # NOTE: adjust keyword names to match your snntorch version.
+            # NOTE: adjust keyword args if your snntorch version differs
             lif = snn.Leaky(
                 beta=beta_leak,
                 threshold=threshold,
-                learn_beta=False,
-                learn_threshold=False,
+                learn_beta=learn_beta,
+                learn_threshold=learn_threshold,
             )
             lifs.append(lif)
-            in_dim = P_rec
+            in_dim = h_dim
 
         self.fcs = nn.ModuleList(fcs)
         self.lifs = nn.ModuleList(lifs)
-        self.fc_out = nn.Linear(P_rec, num_outputs, bias=True)
+        # Final readout now sees a P_last-dimensional representation
+        self.fc_out = nn.Linear(P_last, num_outputs, bias=False)
 
     def forward(self, x_seq: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
         """
         x_seq: (B, T, d_in)
         Returns:
           - logits: (B, num_outputs) using last membrane of last layer
-          - last_mem: (B, P_rec) final membrane (for analysis)
+          - last_mem: (B, P_last) final membrane (for analysis)
         """
         B, T, d_in = x_seq.shape
         device = x_seq.device
 
         # initialize membranes per layer
         mems = [lif.init_leaky().to(device) for lif in self.lifs]
-
+        h_last  = torch.zeros((B, self.P_last), dtype=torch.float32).to(device)
         # we propagate sequentially
         for t in range(T):
             x_t = x_seq[:, t, :]
@@ -1384,11 +1376,64 @@ class SNNBaseline(nn.Module):
                 cur = fc(h)
                 spk, mem = lif(cur, mems[l])
                 mems[l] = mem
-                h = spk  # pass spikes to next layer; we could also use mem
-        last_mem = mems[-1]
-        logits = self.fc_out(last_mem)
+                h = spk
+                h_last = spk  # pass spikes to next layer; we could also use mem
+
+        last_mem = mems[-1]          # shape (B, P_last)
+        logits = self.fc_out(h_last)
         return logits, last_mem
 
+
+
+def snn_path_reg(model: SNNBaseline) -> torch.Tensor:
+    """
+    ℓ2 path-regularizer (norm-2 path norm) for the SNNBaseline network.
+
+    We approximate the standard path-ℓ2 norm for a feed-forward ReLU-type network:
+
+        reg^2 = ∑_{paths} ∏_ℓ w_{ℓ,path}^2
+        reg   = sqrt(reg^2).
+
+    This can be computed via a dynamic program over layers:
+
+        v^(0) = 1   (vector of ones on input units)
+        v^(ℓ) = (W_ℓ ⊙ W_ℓ) @ v^(ℓ-1),
+
+    where W_ℓ is the weight matrix for layer ℓ and ⊙ is elementwise square.
+    For the last linear layer W_out,
+
+        reg^2 = ∑_{j,k} W_out[j,k]^2 * v^(L)[k],
+
+    so that reg = sqrt(reg^2).
+
+    This uses only matrix–vector products and is GPU-friendly.
+    Returns a scalar tensor on the same device as the model.
+    """
+    device = next(model.parameters()).device
+    dtype = next(model.parameters()).dtype
+
+    # No hidden layers: path norm reduces to ℓ2 norm of output weights.
+    if len(model.fcs) == 0:
+        w_out = model.fc_out.weight
+        reg_sq = (w_out ** 2).sum()
+        return torch.sqrt(reg_sq + 1e-12)
+
+    # Start with v on input units.
+    in_dim = model.fcs[0].in_features
+    v = torch.ones(in_dim, device=device, dtype=dtype)
+
+    # Propagate squared weights layer by layer.
+    for fc in model.fcs:
+        W_sq = fc.weight ** 2   # (out_dim, in_dim)
+        v = W_sq @ v            # (out_dim,)
+
+    # Final layer: W_out has shape (n_out, last_dim).
+    W_out = model.fc_out.weight
+    W_out_sq = W_out ** 2      # (n_out, last_dim)
+
+    # reg^2 = sum_{j,k} W_out[j,k]^2 * v[k]
+    reg_sq = (W_out_sq * v.unsqueeze(0)).sum()
+    return torch.sqrt(reg_sq + 1e-12)
 
 def snn_baseline_loss(
     logits: torch.Tensor,
@@ -1468,25 +1513,42 @@ def train_snn_baseline(
     best_val_score = -1e30
     best_state = None
     train_scores: List[float] = []
+    train_loss_history: List[float] = []
 
     for ep in range(1, epochs + 1):
         model.train()
+        epoch_loss_sum = 0.0
+        epoch_count = 0
+
         for xb, yb in train_loader:
             xb = xb.to(device)
             yb = yb.to(device)
             logits, _ = model(xb)
-            loss = snn_baseline_loss(logits, yb, loss_type=loss_type)
+
+            base_loss = snn_baseline_loss(logits, yb, loss_type=loss_type)
+            if beta_path_reg > 0.0:
+                path_reg = snn_path_reg(model)
+                loss = base_loss + beta_path_reg * path_reg
+            else:
+                loss = base_loss
+
             opt.zero_grad()
             loss.backward()
             opt.step()
 
+            bs = int(yb.numel())
+            epoch_loss_sum += float(base_loss.detach().item()) * bs
+            epoch_count += bs
+
         sched.step()
+        epoch_train_loss = epoch_loss_sum / max(epoch_count, 1)
 
         tr_score = snn_eval_score(model, train_loader, device=device, loss_type=loss_type)
         val_score = snn_eval_score(model, val_loader, device=device, loss_type=loss_type)
 
         if log_train:
             train_scores.append(tr_score)
+            train_loss_history.append(epoch_train_loss)
             print(f"[STE-SNN] ep={ep:03d}/{epochs} train_score={tr_score:.4f} val_score={val_score:.4f} "
                   f"lr={sched.get_last_lr()[0]:.2e}")
 
@@ -1501,6 +1563,7 @@ def train_snn_baseline(
         "model": model,
         "best_val_score": best_val_score,
         "train_score_history": train_scores,
+        "train_loss_history": train_loss_history,
     }
 
 
@@ -1538,12 +1601,15 @@ def run_one_seed(
     ste_lr: float,
     ste_step_size: int,
     ste_gamma: float,
+    ste_beta_path_reg: float,
+    ste_match_cvx: bool,
     learn_beta: bool,
     learn_threshold: bool,
     normalize_hidden: bool,
     verbose_patterns: bool,
     log_train: bool,
-) -> Dict[str, float]:
+    timestep: str,
+) -> Dict[str, object]:
     set_seed(seed)
 
     # ----- build data -----
@@ -1573,7 +1639,7 @@ def run_one_seed(
         seed=seed,
         normalize_hidden=normalize_hidden,
         verbose=verbose_patterns,
-        device=device,  # << use the global device from get_device()
+        device=device,
     )
     z_train = z_train_bool.astype(np.uint8)
     P_last_real = z_train.shape[1]
@@ -1676,6 +1742,7 @@ def run_one_seed(
         best_cvx["model"] = logged["model"]
         best_cvx["val_score"] = logged["best_val_score"]
         best_cvx["train_curve"] = logged["train_score_history"]
+        best_cvx["train_loss_curve"] = logged.get("train_loss_history", [])
         plot_cvx_loss_landscape_2d(
             model=best_cvx["model"],
             train_loader3d=train_loader3d,
@@ -1687,29 +1754,43 @@ def run_one_seed(
             loss_type=loss_type,
             beta_l1=float(best_cvx["beta_l1"]),
             device=device,
-            dataset=task
+            dataset=task,
+            task=task,
+            seed=seed,
+            timestep=timestep,
         )
-        '''
-        convLossLandscape1D(
-            model=best_cvx["model"],
-            train_loader3d=train_loader3d,
-            test_loader2d=test_loader2d,
-            hypers=hypers,
-            L=L,
-            T=T,
-            P_rec=P_rec,
-            loss_type=loss_type,
-            beta_l1=float(best_cvx["beta_l1"]),
-            device=device, 
-            dataset=task
-        )
-        '''
+
+        # 1D loss landscape (commented out for now)
+        # convLossLandscape1D(
+        #     model=best_cvx["model"],
+        #     train_loader3d=train_loader3d,
+        #     test_loader2d=test_loader2d,
+        #     hypers=hypers,
+        #     L=L,
+        #     T=T,
+        #     P_rec=P_rec,
+        #     loss_type=loss_type,
+        #     beta_l1=float(best_cvx["beta_l1"]),
+        #     device=device,
+        #     dataset=task,
+        #     task=task,
+        #     seed=seed,
+        #     timestep=timestep,
+        # )
     # ----- SNN baseline (STE) -----
+    # Optionally match STE hyperparameters to the best CVX (lr + beta).
+    ste_lr_use = ste_lr
+    ste_beta_path_reg_use = ste_beta_path_reg
+    if ste_match_cvx:
+        ste_lr_use = float(best_cvx["lr"])
+        ste_beta_path_reg_use = float(best_cvx["beta_l1"])
+
     d_in = X_train.shape[2]
     model_snn = SNNBaseline(
         d_in=d_in,
         L=L,
         P_rec=P_rec,
+        P_last=P_last_real,
         num_outputs=num_outputs,
         beta_leak=0.99,
         threshold=1,
@@ -1725,13 +1806,14 @@ def run_one_seed(
         model_snn,
         ste_train_loader,
         ste_val_loader,
-        lr=ste_lr,
+        lr=ste_lr_use,
         epochs=epochs,
         device=device,
         step_size=ste_step_size,
         gamma=ste_gamma,
         loss_type=loss_type,
-        log_train=True,
+        beta_path_reg=float(ste_beta_path_reg_use),
+        log_train=log_train,
     )
     ste_model = ste_out["model"]
     ste_test_score = snn_eval_score(ste_model, ste_test_loader, device=device, loss_type=loss_type)
@@ -1752,6 +1834,10 @@ def run_one_seed(
         "ste_val": float(ste_out["best_val_score"]),
         "cvx_beta_l1": float(best_cvx["beta_l1"]),
         "cvx_lr": float(best_cvx["lr"]),
+        "cvx_train_score_history": best_cvx.get("train_curve", []),
+        "cvx_train_loss_history": best_cvx.get("train_loss_curve", []),
+        "ste_train_score_history": ste_out.get("train_score_history", []),
+        "ste_train_loss_history": ste_out.get("train_loss_history", []),
     }
 
 
@@ -1763,6 +1849,187 @@ def mean_std(xs: List[float]) -> Tuple[float, float]:
 # ============================================================
 # MAIN
 # ============================================================
+
+
+def save_metrics_report(
+    path: str,
+    *,
+    task: str,
+    L: int,
+    T: int,
+    P_in: int,
+    P_rec: int,
+    P_last: int,
+    n_train_total: int,
+    n_test: int,
+    per_seed: Dict[int, Dict[str, object]],
+    final: Dict[str, float],
+):
+    """Save a human-readable metrics report (append to existing file; JSON sidecar commented out)."""
+    os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
+    time_str = datetime.now().strftime("%Y%m%d_%H%M%S")
+
+    # text report: append so we don't overwrite previous runs
+    with open(path, "a", encoding="utf-8") as f:
+        f.write(f"\n--- {time_str} {task} L={L} T={T} ---\n")
+        f.write(f"[info] {task}, L={L}, T={T}, P_in={P_in}, P_rec={P_rec}, P_last={P_last}, "
+                f"n_train_total={n_train_total}, n_test={n_test}\n")
+
+        for seed in sorted(per_seed.keys()):
+            d = per_seed[seed]
+            cvx_best = d.get("cvx_best", {})
+            ste_best = d.get("ste_best", {})
+            f.write(
+                f"[seed {seed}] -> cvx best beta={cvx_best.get('beta_l1')} lr={cvx_best.get('lr')} "
+                f"=> train_loss_history={cvx_best.get('train_loss_history')} "
+                f", train_acc_history={cvx_best.get('train_score_history')} "
+                f", val_score={cvx_best.get('val_score')} "
+                f"|| snn => train_loss_history={ste_best.get('train_loss_history')} "
+                f", train_acc_history={ste_best.get('train_score_history')}\n"
+            )
+            f.write(
+                f"[seed {seed}] -> cvx test_acc={d.get('cvx_test')} , snn test_acc={d.get('ste_test')}\n"
+            )
+
+        f.write(
+            f"[final test results] cvx={final['cvx_mean']:.6f}±{final['cvx_std']:.6f} , "
+            f"snn={final['ste_mean']:.6f}±{final['ste_std']:.6f} , "
+            f"delta={final['delta_mean']:.6f}±{final['delta_std']:.6f}\n"
+        )
+
+    # JSON sidecar for programmatic use (commented out for now)
+    # json_path = os.path.splitext(path)[0] + ".json"
+    # with open(json_path, "w", encoding="utf-8") as jf:
+    #     json.dump(
+    #         {
+    #             "info": {
+    #                 "task": task,
+    #                 "L": L,
+    #                 "T": T,
+    #                 "P_in": P_in,
+    #                 "P_rec": P_rec,
+    #                 "P_last": P_last,
+    #                 "n_train_total": n_train_total,
+    #                 "n_test": n_test,
+    #             },
+    #             "per_seed": per_seed,
+    #             "final": final,
+    #         },
+    #         jf,
+    #         indent=2,
+    #     )
+    print(f"[info] appended metrics report to: {path}")
+
+
+def plot_per_seed_loss_and_score(
+    per_seed: Dict[int, Dict[str, object]],
+    *,
+    task: str,
+    loss_type: str,
+    L: int,
+    T: int,
+    timestep: str,
+    out_dir: str = "plots",
+):
+    """
+    For each seed in per_seed_metrics, create ONE PNG:
+
+        plots/<task>/L_<L>_T_<T>/seed_<seed>/<timestep>_loss_comparison.png
+
+    Each figure has:
+      - Top subplot: train LOSS vs epoch
+      - Bottom subplot: train SCORE vs epoch
+            (accuracy for ce/hinge, -MSE for squared)
+
+    Style per seed:
+      - one color per seed
+      - STE-SNN: solid line
+      - CVX-SNN: dashed line
+    """
+    if not per_seed:
+        return
+
+    seeds = sorted(per_seed.keys())
+    cmap = plt.cm.get_cmap("tab10", max(len(seeds), 1))
+    ylabel_score = "Train accuracy" if loss_type in ("ce", "hinge") else "Train score (-MSE)"
+
+    for i, seed in enumerate(seeds):
+        d = per_seed[seed]
+        cvx_best = d.get("cvx_best", {})
+        ste_best = d.get("ste_best", {})
+
+        cvx_loss_hist = cvx_best.get("train_loss_history") or []
+        cvx_score_hist = cvx_best.get("train_score_history") or []
+        ste_loss_hist = ste_best.get("train_loss_history") or []
+        ste_score_hist = ste_best.get("train_score_history") or []
+
+        # If nothing was logged for this seed, skip
+        if not (cvx_loss_hist or cvx_score_hist or ste_loss_hist or ste_score_hist):
+            continue
+
+        # plots/<task>/L_<L>_T_<T>/seed_<seed>/<timestep>_loss_comparison.png
+        plot_dir = os.path.join(out_dir, task, f"L_{L}_T_{T}", f"seed_{seed}")
+        os.makedirs(plot_dir, exist_ok=True)
+
+        color = cmap(i)
+
+        plt.figure(figsize=(8, 6))
+
+        # ---- TOP: train loss ----
+        ax1 = plt.subplot(2, 1, 1)
+        if ste_loss_hist:
+            ax1.plot(
+                range(1, len(ste_loss_hist) + 1),
+                ste_loss_hist,
+                color=color,
+                linestyle="-",
+                linewidth=2.0,
+                label="STE-SNN loss",
+            )
+        if cvx_loss_hist:
+            ax1.plot(
+                range(1, len(cvx_loss_hist) + 1),
+                cvx_loss_hist,
+                color=color,
+                linestyle="--",
+                linewidth=2.0,
+                label="CVX-SNN loss",
+            )
+        ax1.set_ylabel("Train loss")
+        ax1.set_title(f"{task} — seed {seed}")
+        ax1.grid(True, alpha=0.25)
+        ax1.legend(fontsize=9)
+
+        # ---- BOTTOM: train score (acc or -MSE) ----
+        ax2 = plt.subplot(2, 1, 2, sharex=ax1)
+        if ste_score_hist:
+            ax2.plot(
+                range(1, len(ste_score_hist) + 1),
+                ste_score_hist,
+                color=color,
+                linestyle="-",
+                linewidth=2.0,
+                label="STE-SNN score",
+            )
+        if cvx_score_hist:
+            ax2.plot(
+                range(1, len(cvx_score_hist) + 1),
+                cvx_score_hist,
+                color=color,
+                linestyle="--",
+                linewidth=2.0,
+                label="CVX-SNN score",
+            )
+        ax2.set_xlabel("Epoch")
+        ax2.set_ylabel(ylabel_score)
+        ax2.grid(True, alpha=0.25)
+        ax2.legend(fontsize=9)
+
+        plt.tight_layout()
+        fname = os.path.join(plot_dir, f"{timestep}_loss_comparison.png")
+        plt.savefig(fname, dpi=200, bbox_inches="tight")
+        plt.close()
+        print(f"[info] saved per-seed loss/score plot to: {fname}")
 
 def main():
     parser = argparse.ArgumentParser()
@@ -1817,6 +2084,8 @@ def main():
     parser.add_argument("--ste_lr", type=float, default=1e-3)
     parser.add_argument("--ste_step_size", type=int, default=30)
     parser.add_argument("--ste_gamma", type=float, default=0.5)
+    parser.add_argument("--ste_beta_path_reg", type=float , default=1e-6)
+    parser.add_argument("--ste_match_cvx", type=bool, default=True)
 
     parser.add_argument("--seeds", type=int, nargs="+", default=[0, 1, 2, 3, 4])
     parser.add_argument("--device", type=str, default="auto", choices=["auto", "mps", "cpu"])
@@ -1824,6 +2093,8 @@ def main():
     parser.add_argument("--normalize_hidden", type=bool, default=False)
     parser.add_argument("--verbose_patterns", type=bool, default=True)
     parser.add_argument("--log_train", action="store_true")
+    parser.add_argument("--save_metrics_path", type=str, default="report.txt",
+                        help="Path to append metrics report (default: report.txt; use '' to disable)")
 
     # control trainability of leak / threshold
     parser.add_argument("--learn_beta", action="store_true")
@@ -1844,6 +2115,8 @@ def main():
 
     cvx_scores = []
     ste_scores = []
+    per_seed_metrics: Dict[int, Dict[str, object]] = {}
+    run_timestep = datetime.now().strftime("%Y%m%d_%H%M%S")
 
     for s in args.seeds:
         out = run_one_seed(
@@ -1869,14 +2142,35 @@ def main():
             ste_lr=args.ste_lr,
             ste_step_size=args.ste_step_size,
             ste_gamma=args.ste_gamma,
+            ste_beta_path_reg=args.ste_beta_path_reg,
+            ste_match_cvx=args.ste_match_cvx,
             learn_beta=args.learn_beta,
             learn_threshold=args.learn_threshold,
             normalize_hidden=args.normalize_hidden,
             verbose_patterns=args.verbose_patterns,
             log_train=args.log_train,
+            timestep=run_timestep,
         )
         cvx_scores.append(out["cvx_test"])
         ste_scores.append(out["ste_test"])
+
+        # store per-seed curves + best hypers
+        per_seed_metrics[s] = {
+            "cvx_best": {
+                "beta_l1": out.get("cvx_beta_l1"),
+                "lr": out.get("cvx_lr"),
+                "val_score": out.get("cvx_val"),
+                "train_score_history": out.get("cvx_train_score_history", []),
+                "train_loss_history": out.get("cvx_train_loss_history", []),
+            },
+            "ste_best": {
+                "val_score": out.get("ste_val"),
+                "train_score_history": out.get("ste_train_score_history", []),
+                "train_loss_history": out.get("ste_train_loss_history", []),
+            },
+            "cvx_test": out.get("cvx_test"),
+            "ste_test": out.get("ste_test"),
+        }
 
     cvx_mean, cvx_std = mean_std(cvx_scores)
     ste_mean, ste_std = mean_std(ste_scores)
@@ -1885,6 +2179,43 @@ def main():
     print("\n=== FINAL (mean ± std over seeds) ===")
     print(f"CVX  {metric_name} = {cvx_mean:.4f} ± {cvx_std:.4f}")
     print(f"STE  {metric_name} = {ste_mean:.4f} ± {ste_std:.4f}")
+    delta_mean = cvx_mean - ste_mean
+    delta_std = np.sqrt(cvx_std**2 + ste_std**2)
+    # Save metrics report (text + JSON) if requested.
+    if args.save_metrics_path:
+        final = {
+            "cvx_mean": float(cvx_mean),
+            "cvx_std": float(cvx_std),
+            "ste_mean": float(ste_mean),
+            "ste_std": float(ste_std),
+            "delta_mean": float(delta_mean),
+            "delta_std": float(delta_std),
+        }
+        save_metrics_report(
+            args.save_metrics_path,
+            task=args.task,
+            L=args.L,
+            T=args.T,
+            P_in=args.P_in,
+            P_rec=args.P_rec,
+            P_last=args.P_last,
+            n_train_total=args.n_train_total,
+            n_test=args.n_test,
+            per_seed=per_seed_metrics,
+            final=final,
+        )
+
+    plot_per_seed_loss_and_score(
+        per_seed_metrics,
+        task=args.task,
+        loss_type=args.loss,
+        L=args.L,
+        T=args.T,
+        timestep=run_timestep,
+    )
+
+    if cvx_mean < 0.55:
+        print("kill")
 
 
 if __name__ == "__main__":

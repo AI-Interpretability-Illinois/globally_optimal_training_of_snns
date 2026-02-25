@@ -3,9 +3,10 @@
 Run two_step_xor_seq over a grid of T and L.
 Scales P_in, P_rec, P_last by factor = max(T, N) / min(T, N) with N=6 (reference).
 Baseline widths at T=6: P_in=2000, P_rec=2000, P_last=5000.
+If snn_p2.py prints "kill" as the last line (cvx_mean < 55%), skips to the next (L, T).
 
 Usage:
-  python3 run_two_step_xor_grid.py [--dry-run] [extra args for snn.py]
+  python3 run_two_step_xor_grid.py [--dry-run] [extra args for snn_p2.py]
   e.g. python3 run_two_step_xor_grid.py --log_train
   e.g. python3 run_two_step_xor_grid.py --epochs 50 --seeds 0 1
 """
@@ -42,14 +43,14 @@ def scaled_widths(T: int) -> tuple[int, int, int]:
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Run two_step_xor_seq grid; pass extra args for snn.py (e.g. --log_train --epochs 200)")
+    parser = argparse.ArgumentParser(description="Run two_step_xor_seq grid; pass extra args for snn_p2.py (e.g. --log_train --epochs 200)")
     parser.add_argument("--dry-run", action="store_true", help="Print commands only, do not run")
     parser.add_argument("--lr-grid", dest="lr_grid", type=float, nargs="+", default=[1e-3],
                         help="CVX learning rate grid (default: 1e-3)")
     args, extra = parser.parse_known_args()
 
     script_dir = os.path.dirname(os.path.abspath(__file__))
-    snn_py = os.path.join(script_dir, "snn.py")
+    snn_py = os.path.join(script_dir, "snn_p2.py")
     venv_python = os.path.join(os.path.dirname(script_dir), ".venv", "bin", "python3")
     if not os.path.isfile(venv_python):
         venv_python = sys.executable
@@ -79,10 +80,26 @@ def main():
             if args.dry_run:
                 print("  ", " ".join(cmd))
                 continue
-            ret = subprocess.run(cmd, cwd=script_dir)
-            if ret.returncode != 0:
-                print(f"Exit code {ret.returncode} for L={L} T={T}", file=sys.stderr)
-                sys.exit(ret.returncode)
+            proc = subprocess.Popen(
+                cmd,
+                cwd=script_dir,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+                text=True,
+                bufsize=1,
+            )
+            last_line = ""
+            for line in proc.stdout:
+                print(line, end="")
+                if line.strip():
+                    last_line = line.strip()
+            ret = proc.wait()
+            if last_line == "kill":
+                print(f"[skip] L={L} T={T} (cvx_mean < 55%) — skipping remaining T for this L", file=sys.stderr)
+                break  # skip all remaining T for this L, go to next L
+            if ret != 0:
+                print(f"Exit code {ret} for L={L} T={T}", file=sys.stderr)
+                sys.exit(ret)
     print("Grid done.")
 
 
