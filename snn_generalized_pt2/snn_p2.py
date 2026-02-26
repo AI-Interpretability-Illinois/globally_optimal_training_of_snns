@@ -1743,7 +1743,7 @@ def run_one_seed(
         best_cvx["val_score"] = logged["best_val_score"]
         best_cvx["train_curve"] = logged["train_score_history"]
         best_cvx["train_loss_curve"] = logged.get("train_loss_history", [])
-        plot_cvx_loss_landscape_2d(
+        '''        plot_cvx_loss_landscape_2d(
             model=best_cvx["model"],
             train_loader3d=train_loader3d,
             test_loader2d=test_loader2d,
@@ -1759,7 +1759,7 @@ def run_one_seed(
             seed=seed,
             timestep=timestep,
         )
-
+        '''
         # 1D loss landscape (commented out for now)
         # convLossLandscape1D(
         #     model=best_cvx["model"],
