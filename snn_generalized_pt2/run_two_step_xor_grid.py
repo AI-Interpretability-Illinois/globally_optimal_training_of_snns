@@ -17,7 +17,7 @@ import os
 
 # Grid
 T_LIST = [2, 6, 10, 18, 26, 42, 54, 70, 86, 106]
-L_LIST = [2, 3, 5, 9, 15, 23, 33, 45, 59, 77, 97, 119]
+L_LIST = [3, 5, 9, 15, 23, 33, 45, 59, 77, 97, 119]
 
 # Reference (T ~ 6) baseline widths
 T_REF = 6
@@ -51,7 +51,7 @@ def main():
 
     script_dir = os.path.dirname(os.path.abspath(__file__))
     snn_py = os.path.join(script_dir, "snn_p2.py")
-    venv_python = os.path.join(os.path.dirname(script_dir), ".venv", "bin", "python3")
+    venv_python = os.path.join(os.path.dirname(script_dir), ".venv", "bin", "python")
     if not os.path.isfile(venv_python):
         venv_python = sys.executable
 
