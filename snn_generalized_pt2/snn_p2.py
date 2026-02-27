@@ -635,6 +635,21 @@ def generate_snn_sign_patterns(
             h_prev = h_t
 
         h_layers.append(h_curr_list)
+        # --- Intermediate layer diversity diagnostic ---
+        if verbose:
+            for t_idx, h_t in enumerate(h_curr_list):
+                h_bits = h_t.to(torch.uint8).cpu().numpy()
+                n_unique = len(set(h_bits.tobytes() for _ in [None]) 
+                              or {row.tobytes() for row in h_bits})
+                # cleaner:
+                n_unique = len({h_bits[i].tobytes() for i in range(h_bits.shape[0])})
+                if t_idx == 0 or t_idx == T-1:
+                    print(
+                        f"[diversity] layer {l}, t={t_idx}: "
+                        f"{n_unique}/{n} unique patterns "
+                        f"({100*n_unique/n:.1f}%), "
+                        f"activation rate={h_t.mean().item():.3f}"
+                    )
         d_in_l = h_dim  # next layer's input dimension
 
     # Last hidden state h^{L-1, T-1} is used for the convex last layer
@@ -643,29 +658,37 @@ def generate_snn_sign_patterns(
 
     # -------------------------------------------------
     # Last-layer hyperplanes + unique patterns (GPU)
+    # Process in column chunks to avoid OOM (e.g. in_dim_last=30k, chunk_P=120k => 13+ GiB).
     # -------------------------------------------------
     uniq: Dict[bytes, np.ndarray] = {}
     rounds = 0
     chunk_P = max(P_last_target * chunk_mult, P_last_target)
+    # Max columns per device tensor to stay under ~1 GiB: (in_dim_last * cols * 4 bytes)
+    max_cols_per_chunk = min(8192, max(512, (1 << 30) // (in_dim_last * 4)))
 
     while len(uniq) < P_last_target and rounds < max_rounds:
         rounds += 1
-        U_last_np = rng.normal(size=(in_dim_last, chunk_P)).astype(np.float32)
-        if normalize_hidden:
-            U_last_np = _col_normalize_np(U_last_np)
+        col_start = 0
+        while col_start < chunk_P and len(uniq) < P_last_target:
+            col_end = min(col_start + max_cols_per_chunk, chunk_P)
+            n_cols = col_end - col_start
+            U_last_np = rng.normal(size=(in_dim_last, n_cols)).astype(np.float32)
+            if normalize_hidden:
+                U_last_np = _col_normalize_np(U_last_np)
 
-        U_last = torch.from_numpy(U_last_np.astype(np_dtype, copy=False)).to(device)
+            U_last = torch.from_numpy(U_last_np.astype(np_dtype, copy=False)).to(device)
 
-        # sign patterns on device
-        D_bool_t = (h_last_T @ U_last >= 0.0)    # (n, chunk_P) bool
-        D_u8 = D_bool_t.to(torch.uint8).cpu().numpy()  # move only patterns to CPU
+            # sign patterns on device
+            D_bool_t = (h_last_T @ U_last >= 0.0)    # (n, n_cols) bool
+            D_u8 = D_bool_t.to(torch.uint8).cpu().numpy()  # move only patterns to CPU
 
-        for j in range(chunk_P):
-            key = D_u8[:, j].tobytes()
-            if key not in uniq:
-                uniq[key] = U_last_np[:, j].copy()
-                if len(uniq) >= P_last_target:
-                    break
+            for j in range(n_cols):
+                key = D_u8[:, j].tobytes()
+                if key not in uniq:
+                    uniq[key] = U_last_np[:, j].copy()
+                    if len(uniq) >= P_last_target:
+                        break
+            col_start = col_end
 
         if verbose:
             print(
