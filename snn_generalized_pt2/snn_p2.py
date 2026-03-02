@@ -29,6 +29,7 @@ import json
 from dataclasses import dataclass
 from datetime import datetime
 from typing import List, Tuple, Dict, Optional
+from collections import Counter
 
 import numpy as np
 import torch
@@ -70,6 +71,190 @@ from snn_data_modules import (
 )
 
 
+def normalized_mutual_info_score(y_true, y_pred, eps: float = 1e-12) -> float:
+    """
+    Lightweight NMI implementation to avoid heavy sklearn import at runtime.
+    """
+    y_true = np.asarray(y_true)
+    y_pred = np.asarray(y_pred)
+    if y_true.shape[0] != y_pred.shape[0]:
+        raise ValueError("y_true and y_pred must have the same number of samples.")
+
+    # Relabel to 0..n_classes-1
+    labels_true, inv_true = np.unique(y_true, return_inverse=True)
+    labels_pred, inv_pred = np.unique(y_pred, return_inverse=True)
+    n_true = labels_true.size
+    n_pred = labels_pred.size
+    n_samples = y_true.shape[0]
+
+    # Contingency table
+    idx = inv_true * n_pred + inv_pred
+    cont = np.bincount(idx, minlength=n_true * n_pred).reshape(n_true, n_pred)
+
+    # Marginals
+    pi = cont.sum(axis=1)  # (n_true,)
+    pj = cont.sum(axis=0)  # (n_pred,)
+
+    # Mutual information
+    rows, cols = np.nonzero(cont)
+    cont_vals = cont[rows, cols].astype(np.float64)
+    mi_terms = (cont_vals / n_samples) * (
+        np.log(cont_vals * n_samples + eps)
+        - np.log(pi[rows] + eps)
+        - np.log(pj[cols] + eps)
+    )
+    mi = mi_terms.sum()
+
+    def _entropy(counts: np.ndarray) -> float:
+        p = counts.astype(np.float64)
+        total = p.sum()
+        if total <= 0:
+            return 0.0
+        p /= total
+        p = p[p > 0]
+        return float(-(p * np.log(p + eps)).sum())
+
+    h_true = _entropy(pi)
+    h_pred = _entropy(pj)
+    denom = h_true + h_pred
+    if denom <= 0:
+        return 0.0
+    return float(2.0 * mi / denom)
+
+
+def compute_layer_diagnostics(
+    h_bits: np.ndarray,
+    y_np: np.ndarray,
+    *,
+    layer: int,
+    t_idx: int,
+    print_results: bool = True,
+) -> Dict[str, object]:
+    """
+    Unified diagnostic for a single (layer, timestep) activation matrix.
+
+    Parameters
+    ----------
+    h_bits : np.ndarray, shape (n, h_dim), dtype uint8
+        Binary activation matrix (0/1) for all samples at this (layer, timestep).
+    y_np : np.ndarray, shape (n,)
+        Ground-truth labels.
+    layer : int
+        Layer index (for display).
+    t_idx : int
+        Timestep index (for display).
+    print_results : bool
+        If True, print a summary line to stdout.
+
+    Returns
+    -------
+    dict with keys:
+        layer, t, n_samples, h_dim,
+        unique_rows, unique_cols, activation_rate, nmi, weighted_purity,
+        n_clusters, avg_cluster_size, median_cluster_size,
+        n_singletons, frac_singletons, n_nonsingleton_samples, frac_nonsingleton_samples,
+        avg_margin_nonsingleton, k_90_coverage, frac_k_90
+    """
+    n, h_dim = h_bits.shape
+
+    # ---- Row-wise: sample distinguishability ----
+    pattern_ids = np.array([h_bits[i].tobytes() for i in range(n)])
+    _, encoded = np.unique(pattern_ids, return_inverse=True)
+    n_unique_rows = int(len(set(encoded)))
+
+    # ---- Column-wise: neuron redundancy ----
+    n_unique_cols = len({h_bits[:, j].tobytes() for j in range(h_dim)})
+
+    # ---- Activation rate ----
+    act_rate = float(h_bits.astype(np.float64).mean())
+
+    # ---- NMI ----
+    nmi = normalized_mutual_info_score(y_np, encoded)
+
+    # ---- Per-pattern label analysis ----
+    pattern_labels: Dict[int, List[int]] = {}
+    for pid, label in zip(encoded, y_np):
+        pattern_labels.setdefault(int(pid), []).append(int(label))
+
+    # ---- Weighted purity ----
+    total_purity = 0.0
+    for labels in pattern_labels.values():
+        counts = Counter(labels)
+        majority = max(counts.values())
+        total_purity += majority
+    weighted_purity = total_purity / n
+
+    # ---- Cluster size distribution ----
+    sizes = np.array([len(v) for v in pattern_labels.values()])
+    n_clusters = len(pattern_labels)
+    avg_cluster_size = float(n / n_clusters) if n_clusters > 0 else 0.0
+    median_cluster_size = float(np.median(sizes)) if len(sizes) > 0 else 0.0
+    n_singletons = int(np.sum(sizes == 1))
+    frac_singletons = n_singletons / n_clusters if n_clusters > 0 else 0.0
+
+    # ---- Non-singleton sample coverage ----
+    n_nonsingleton_samples = int(np.sum(sizes[sizes > 1]))
+    frac_nonsingleton_samples = n_nonsingleton_samples / n if n > 0 else 0.0
+
+    # ---- Label margin for non-singleton clusters ----
+    margin_sum = 0.0
+    margin_weight = 0
+    for labels in pattern_labels.values():
+        if len(labels) <= 1:
+            continue
+        counts = Counter(labels)
+        majority_frac = max(counts.values()) / len(labels)
+        margin_sum += majority_frac * len(labels)
+        margin_weight += len(labels)
+    avg_margin_nonsingleton = (
+        margin_sum / margin_weight if margin_weight > 0 else 0.0
+    )
+
+    # ---- LASSO sparsity-friendliness: patterns to cover 90% of samples ----
+    sorted_sizes = np.sort(sizes)[::-1]
+    cumsum = np.cumsum(sorted_sizes)
+    k_90 = int(np.searchsorted(cumsum, 0.9 * n) + 1) if len(cumsum) > 0 else 0
+    frac_k_90 = k_90 / n_clusters if n_clusters > 0 else 0.0
+
+    result = {
+        "layer": layer,
+        "t": t_idx,
+        "n_samples": n,
+        "h_dim": h_dim,
+        "unique_rows": n_unique_rows,
+        "unique_cols": n_unique_cols,
+        "activation_rate": round(act_rate, 4),
+        "nmi": round(nmi, 4),
+        "weighted_purity": round(weighted_purity, 4),
+        "n_clusters": n_clusters,
+        "avg_cluster_size": round(avg_cluster_size, 2),
+        "median_cluster_size": round(median_cluster_size, 1),
+        "n_singletons": n_singletons,
+        "frac_singletons": round(frac_singletons, 4),
+        "n_nonsingleton_samples": n_nonsingleton_samples,
+        "frac_nonsingleton_samples": round(frac_nonsingleton_samples, 4),
+        "avg_margin_nonsingleton": round(avg_margin_nonsingleton, 4),
+        "k_90_coverage": k_90,
+        "frac_k_90": round(frac_k_90, 4),
+    }
+
+    if print_results:
+        print(
+            f"[diag] layer {layer}, t={t_idx}: "
+            f"rows {n_unique_rows}/{n}, "
+            f"cols {n_unique_cols}/{h_dim}, "
+            f"act={act_rate:.3f}, NMI={nmi:.4f}, "
+            f"purity={weighted_purity:.4f}, "
+            f"clusters={n_clusters} (avg_sz={avg_cluster_size:.1f}, "
+            f"singletons={n_singletons}/{n_clusters}), "
+            f"nonsingleton_samples={n_nonsingleton_samples}/{n} "
+            f"({100*frac_nonsingleton_samples:.1f}%), "
+            f"margin_ns={avg_margin_nonsingleton:.4f}, "
+            f"k_90={k_90}/{n_clusters} ({100*frac_k_90:.1f}%)"
+        )
+
+    return result
+
 
 # ============================================================
 # Device + seeds
@@ -82,6 +267,11 @@ def get_device(device_arg: str) -> torch.device:
         if torch.backends.mps.is_available():
             return torch.device("mps")
         print("[warn] MPS requested but not available; using CPU.")
+        return torch.device("cpu")
+    if device_arg.startswith("cuda"):
+        if torch.cuda.is_available():
+            return torch.device(device_arg)
+        print(f"[warn] {device_arg} requested but CUDA not available; using CPU.")
         return torch.device("cpu")
     # auto
     if torch.cuda.is_available():
@@ -506,9 +696,12 @@ class RNNHyperplanes:
     U_in_list: List[np.ndarray]   # per layer: (d_in_l, P_in)
     U_rec_list: List[np.ndarray]  # per layer: (P_rec_l-1, P_rec)
     U_last: np.ndarray            # (P_rec_last, P_last)
+    last_layer_readout: str = "membrane"  # "membrane" or "spike"
+    beta_list: Optional[List[np.ndarray]] = None  # per layer: (h_dim,) leak factors
 
 def generate_snn_sign_patterns(
-    X_seq: np.ndarray,   # (n, T, d_in)
+    X_seq: np.ndarray, 
+    Y: np.ndarray, # (n, )
     L: int,
     T: int,
     P_in: int,
@@ -520,7 +713,13 @@ def generate_snn_sign_patterns(
     chunk_mult: int = 4,
     max_rounds: int = 300,
     device: Optional[torch.device] = None,
-) -> Tuple[np.ndarray, RNNHyperplanes]:
+    init_method: str = "random",
+    target_act_rate: Optional[float] = None,
+    lsuv_tol: float = 0.02,
+    lsuv_max_iters: int = 20,
+    last_layer_readout: str = "membrane",
+    beta_dist: str = "fixed",
+) -> Tuple[np.ndarray, RNNHyperplanes, List[Dict[str, object]]]:
     """
     Generate sign patterns for a threshold-SNN with L hidden layers and T timesteps.
 
@@ -533,6 +732,7 @@ def generate_snn_sign_patterns(
       z_last_bool: (n, P_last_target) bool
       hypers:      RNNHyperplanes(U_in_list, U_rec_list, U_last)
                    where U_rec_list[l-1] has shape (2*h_dim_l+1, h_dim_l).
+      diagnostics: list of dicts, one per (layer, timestep) probed (empty if verbose=False).
     """
     rng = np.random.default_rng(seed)
     n, T_data, d_in = X_seq.shape
@@ -560,6 +760,7 @@ def generate_snn_sign_patterns(
 
     U_in_list: List[np.ndarray] = []
     U_rec_list: List[np.ndarray] = []
+    beta_list_all: List[np.ndarray] = []
 
     # Decide hidden widths: first L-2 layers = P_rec, last hidden layer = P_last_target
     if L <= 1:
@@ -569,17 +770,114 @@ def generate_snn_sign_patterns(
 
     d_in_l = d_in
 
+    y_np = Y  # already a NumPy array of shape (n,)
+    all_diagnostics: List[Dict[str, object]] = []
+
+    # --- Helper: run one layer's LIF forward pass for T timesteps ---
+    def _run_layer_forward(
+        h_prev_layer: List[torch.Tensor],  # (n, d_in_l) per timestep
+        U_in_t: torch.Tensor,              # (d_in_l, h_dim) on device
+        U_rec_t: torch.Tensor,             # (2*h_dim+1, h_dim) on device
+        h_dim_: int,
+    ) -> Tuple[List[torch.Tensor], List[torch.Tensor]]:
+        """Run LIF dynamics for one hidden layer.
+        Returns (h_list, v_list): spike tensors and membrane tensors per timestep."""
+        v_p = torch.zeros(n, h_dim_, dtype=dtype, device=device)
+        h_p = torch.zeros(n, h_dim_, dtype=dtype, device=device)
+        h_list: List[torch.Tensor] = []
+        v_list: List[torch.Tensor] = []
+        for t in range(T):
+            x_t = h_prev_layer[t]
+            v_in_t = x_t @ U_in_t
+            s_p = torch.cat(
+                [v_p, -h_p, -torch.ones((n, 1), dtype=dtype, device=device)],
+                dim=1,
+            )
+            v_rec_t = s_p @ U_rec_t
+            v_t = v_in_t + v_rec_t
+            h_t = (v_t >= 0.0).to(dtype)
+            h_list.append(h_t)
+            v_list.append(v_t)
+            v_p = v_t
+            h_p = h_t
+        return h_list, v_list
+
     # -------------------------------
     # Hidden layers 1 .. L-1 (GPU)
     # -------------------------------
+    v_layers: List[List[torch.Tensor]] = [[] for _ in range(L)]  # membrane potentials per layer
+    prev_act_rate: Optional[float] = None  # tracked for Micheli formula at deeper layers
+
     for l in range(1, L):
         h_dim = hidden_dims[l - 1]  # width of this hidden layer
 
-        # Input hyperplanes: from previous layer's h^{l-1,t} (dim = d_in_l) to h_dim neurons
-        U_in_np = rng.normal(size=(d_in_l, h_dim)).astype(np.float32)  # (d_in_l, h_dim)
+        # --- Input weight initialization ---
+        if init_method == "random":
+            U_in_np = rng.normal(size=(d_in_l, h_dim)).astype(np.float32)
+
+        elif init_method == "micheli":
+            # Micheli et al. 2024: Var[w_l] = 1 / (n_l * p_{l-1})
+            # For layer 1 (real-valued input): estimate input second moment from data
+            # For layer 2+ (binary spike input): use measured firing rate of previous layer
+            if l == 1:
+                # Real-valued input: use E[x²] per component as the "activity" measure
+                # Micheli reduces to Kaiming-like: Var[w] = 1 / (d_in * E[x²])
+                x_all = X_torch.reshape(-1, d_in)  # (n*T, d_in)
+                input_second_moment = float((x_all ** 2).mean().item())
+                input_second_moment = max(input_second_moment, 1e-6)  # safety
+                sigma_w = np.sqrt(1.0 / (d_in_l * input_second_moment))
+            else:
+                # Binary spike input: Var[w] = 1 / (n_l * p_{l-1})
+                p_prev = max(prev_act_rate if prev_act_rate is not None else 0.1, 1e-4)
+                sigma_w = np.sqrt(1.0 / (d_in_l * p_prev))
+
+            U_in_np = rng.normal(scale=sigma_w, size=(d_in_l, h_dim)).astype(np.float32)
+            if verbose:
+                print(
+                    f"[micheli] layer {l}: sigma_w={sigma_w:.4f} "
+                    f"(d_in={d_in_l}, "
+                    f"{'E[x²]=' + f'{input_second_moment:.4f}' if l == 1 else f'p_prev={p_prev:.4f}'})"
+                )
+
+        elif init_method == "lognormal":
+            # Log-normal magnitudes with random signs
+            magnitudes = rng.lognormal(mean=0.0, sigma=0.5, size=(d_in_l, h_dim))
+            signs = rng.choice([-1.0, 1.0], size=(d_in_l, h_dim))
+            U_in_np = (magnitudes * signs).astype(np.float32)
+
+        elif init_method == "lsuv":
+            # LSUV (Mishkin & Matas 2016): iterative rescaling to hit target activation rate
+            U_in_np = rng.normal(size=(d_in_l, h_dim)).astype(np.float32)
+        else:
+            raise ValueError(
+                f"Unknown init_method={init_method!r}. "
+                f"Choose from: random, micheli, lognormal, lsuv."
+            )
 
         # Recurrent hyperplanes: from [v_{t-1}, -h_{t-1}, -1] (dim = 2*h_dim+1) to h_dim
-        b = np.full((h_dim,), 0.99, dtype=np.float32)  # Decay rate
+        if beta_dist == "fixed":
+            b = np.full((h_dim,), 0.99, dtype=np.float32)
+        elif beta_dist == "het_loguniform":
+            # Log-uniform over [0.5, 0.999]: fast neurons forget quickly, slow ones integrate
+            log_lo, log_hi = np.log(0.5), np.log(0.999)
+            b = np.exp(rng.uniform(log_lo, log_hi, size=(h_dim,))).astype(np.float32)
+        elif beta_dist == "het_uniform":
+            # Uniform over [0.5, 0.999]
+            b = rng.uniform(0.5, 0.999, size=(h_dim,)).astype(np.float32)
+        elif beta_dist == "het_bimodal":
+            # Half fast (β~0.5), half slow (β~0.99): maximise timescale separation
+            b = np.empty(h_dim, dtype=np.float32)
+            n_fast = h_dim // 2
+            b[:n_fast] = rng.uniform(0.3, 0.6, size=(n_fast,))
+            b[n_fast:] = rng.uniform(0.95, 0.999, size=(h_dim - n_fast,))
+            rng.shuffle(b)
+        else:
+            raise ValueError(f"Unknown beta_dist={beta_dist!r}")
+
+        if verbose and l == 1:
+            print(f"[beta_dist={beta_dist}] layer {l}: beta min={b.min():.4f} max={b.max():.4f} "
+                  f"mean={b.mean():.4f} median={np.median(b):.4f}")
+
         g = np.full((h_dim,), 1.0, dtype=np.float32)   # Threshold
 
         U_rec_top = np.diag(b)   # (h_dim, h_dim)
@@ -590,70 +888,93 @@ def generate_snn_sign_patterns(
             U_in_np = _col_normalize_np(U_in_np)
             U_rec_np = _col_normalize_np(U_rec_np)
 
+        # --- LSUV iterative calibration (only for init_method="lsuv") ---
+        if init_method == "lsuv":
+            act_rate_target = target_act_rate if target_act_rate is not None else 0.15
+            tol = lsuv_tol
+            U_rec_gpu = torch.from_numpy(U_rec_np.astype(np_dtype, copy=False)).to(device)
+            act_last = 0.0
+            for lsuv_iter in range(lsuv_max_iters):
+                U_in_gpu = torch.from_numpy(U_in_np.astype(np_dtype, copy=False)).to(device)
+                h_trial, _ = _run_layer_forward(
+                    h_layers[l - 1], U_in_gpu, U_rec_gpu, h_dim,
+                )
+                act_last = h_trial[-1].float().mean().item()
+                if verbose:
+                    print(
+                        f"[lsuv] layer {l}, iter {lsuv_iter}: "
+                        f"act_rate(t={T-1})={act_last:.4f} "
+                        f"(target={act_rate_target:.3f})"
+                    )
+                if abs(act_last - act_rate_target) < tol:
+                    break
+                if act_last < 1e-6:
+                    U_in_np *= 2.0
+                elif act_last > 1.0 - 1e-6:
+                    U_in_np *= 0.5
+                else:
+                    from scipy.stats import norm as _norm
+                    q_current = _norm.ppf(1.0 - np.clip(act_last, 1e-4, 1 - 1e-4))
+                    q_target = _norm.ppf(1.0 - act_rate_target)
+                    if abs(q_current) < 1e-6:
+                        ratio = 1.2 if act_last < act_rate_target else 0.8
+                    else:
+                        ratio = q_current / q_target
+                        ratio = np.clip(ratio, 0.5, 2.0)
+                    U_in_np *= float(ratio)
+            if verbose:
+                print(
+                    f"[lsuv] layer {l}: final act_rate={act_last:.4f} "
+                    f"after {min(lsuv_iter + 1, lsuv_max_iters)} iters, "
+                    f"U_in scale={np.std(U_in_np):.4f}"
+                )
+
         if verbose:
             print(
                 f"[snn hypers] layer {l}: "
-                f"U_in={U_in_np.shape}, U_rec={U_rec_np.shape} (shared across all T)"
+                f"U_in={U_in_np.shape}, U_rec={U_rec_np.shape} (shared across all T), "
+                f"init={init_method}"
             )
 
         # Store CPU copies in hypers
         U_in_list.append(U_in_np)
         U_rec_list.append(U_rec_np)
+        beta_list_all.append(b.copy())
 
-        # Torch views on GPU for recurrence
+        # Torch views on GPU for recurrence (final weights after calibration)
         U_in = torch.from_numpy(U_in_np.astype(np_dtype, copy=False)).to(device)
         U_rec = torch.from_numpy(U_rec_np.astype(np_dtype, copy=False)).to(device)
 
-        v_prev = torch.zeros(n, h_dim, dtype=dtype, device=device)
-        h_prev = torch.zeros(n, h_dim, dtype=dtype, device=device)
-        h_curr_list: List[torch.Tensor] = []
+        # Run the actual forward pass with calibrated weights
+        h_curr_list, v_curr_list = _run_layer_forward(h_layers[l - 1], U_in, U_rec, h_dim)
 
-        for t in range(T):
-            # input to this layer at time t
-            x_t = h_layers[l - 1][t]  # (n, d_in_l)
-
-            # input contribution
-            v_in_t = x_t @ U_in  # (n, h_dim)
-
-            # recurrent contribution from previous membrane + spikes: [v_prev, -h_prev, -1]
-            s_prev = torch.cat(
-                [
-                    v_prev,
-                    -h_prev,
-                    -torch.ones((n, 1), dtype=dtype, device=device),
-                ],
-                dim=1,
-            )  # (n, 2*h_dim + 1)
-            v_rec_t = s_prev @ U_rec  # (n, h_dim)
-
-            # new membrane and spikes
-            v_t = v_in_t + v_rec_t
-            h_t = (v_t >= 0.0).to(dtype)
-
-            h_curr_list.append(h_t)
-            v_prev = v_t
-            h_prev = h_t
+        # Track firing rate for Micheli formula at next layer
+        prev_act_rate = h_curr_list[-1].float().mean().item()
 
         h_layers.append(h_curr_list)
+        v_layers[l] = v_curr_list
         # --- Intermediate layer diversity diagnostic ---
         if verbose:
-            for t_idx, h_t in enumerate(h_curr_list):
-                h_bits = h_t.to(torch.uint8).cpu().numpy()
-                n_unique = len(set(h_bits.tobytes() for _ in [None]) 
-                              or {row.tobytes() for row in h_bits})
-                # cleaner:
-                n_unique = len({h_bits[i].tobytes() for i in range(h_bits.shape[0])})
-                if t_idx == 0 or t_idx == T-1:
-                    print(
-                        f"[diversity] layer {l}, t={t_idx}: "
-                        f"{n_unique}/{n} unique patterns "
-                        f"({100*n_unique/n:.1f}%), "
-                        f"activation rate={h_t.mean().item():.3f}"
-                    )
+            for t_idx in [0, T-1]:
+                h_bits = h_curr_list[t_idx].to(torch.uint8).cpu().numpy()
+                diag = compute_layer_diagnostics(
+                    h_bits, y_np, layer=l, t_idx=t_idx, print_results=True,
+                )
+                all_diagnostics.append(diag)
         d_in_l = h_dim  # next layer's input dimension
 
-    # Last hidden state h^{L-1, T-1} is used for the convex last layer
-    h_last_T = h_layers[-1][-1]  # (n, h_dim_last) where h_dim_last = hidden_dims[-1]
+    # Last hidden state at T-1: pick membrane potential or spike for the convex last layer
+    if L <= 1:
+        # No hidden layers: raw input is used directly (no membrane vs spike distinction)
+        h_last_T = h_layers[-1][-1]
+    elif last_layer_readout == "membrane":
+        h_last_T = v_layers[L - 1][-1]  # (n, h_dim_last) real-valued membrane
+    elif last_layer_readout == "spike":
+        h_last_T = h_layers[-1][-1]      # (n, h_dim_last) binary spikes
+    else:
+        raise ValueError(f"Unknown last_layer_readout={last_layer_readout!r}. Choose from: membrane, spike.")
+    if verbose:
+        print(f"[snn patterns] last_layer_readout={last_layer_readout}")
     in_dim_last = h_last_T.shape[1]
 
     # -------------------------------------------------
@@ -724,8 +1045,10 @@ def generate_snn_sign_patterns(
         U_in_list=U_in_list,
         U_rec_list=U_rec_list,   # each (2*h_dim_l+1, h_dim_l)
         U_last=U_last_final,     # (h_dim_last, P_last_target)
+        last_layer_readout=last_layer_readout,
+        beta_list=beta_list_all,
     )
-    return z_last_bool, hypers
+    return z_last_bool, hypers, all_diagnostics
 
 def forward_snn_patterns_torch(
     X_seq: torch.Tensor,
@@ -738,12 +1061,15 @@ def forward_snn_patterns_torch(
     B, T_data, d_in = X_seq.shape
     assert T_data == T
 
+    last_layer_readout = hypers.last_layer_readout
+
     # layer 0: raw inputs
     h_prev_layers: List[List[torch.Tensor]] = []
     h0 = [X_seq[:, t, :].to(device) for t in range(T)]
     h_prev_layers.append(h0)
 
     d_in_l = d_in
+    v_last_list: List[torch.Tensor] = []  # membrane potentials for last hidden layer
 
     for l in range(1, L):
         U_in_np = hypers.U_in_list[l - 1]   # (d_in_l, h_dim_l)
@@ -757,6 +1083,7 @@ def forward_snn_patterns_torch(
         v_prev = torch.zeros(B, h_dim, device=device)
         h_prev = torch.zeros(B, h_dim, device=device)
         h_curr_list: List[torch.Tensor] = []
+        v_curr_list: List[torch.Tensor] = []
 
         for t in range(T):
             x_t = h_prev_layers[l - 1][t]  # (B, d_in_l)
@@ -771,16 +1098,23 @@ def forward_snn_patterns_torch(
             h_t = (v_t >= 0.0).float()
 
             h_curr_list.append(h_t)
+            v_curr_list.append(v_t)
             v_prev, h_prev = v_t, h_t
 
         h_prev_layers.append(h_curr_list)
+        # Keep membrane list for last hidden layer
+        if l == L - 1:
+            v_last_list = v_curr_list
         d_in_l = h_dim
 
-    # last hidden state has width = h_dim_last (which is P_last after your change)
-    h_last_T = h_prev_layers[-1][-1]  # (B, h_dim_last)
+    # Pick readout from last hidden layer
+    if L <= 1 or last_layer_readout == "spike":
+        readout_T = h_prev_layers[-1][-1]     # (B, h_dim_last) binary spikes or raw input
+    else:
+        readout_T = v_last_list[-1]           # (B, h_dim_last) real-valued membrane
 
     U_last = torch.from_numpy(hypers.U_last).float().to(device)  # (h_dim_last, P_last_target)
-    D_last = (h_last_T @ U_last >= 0.0).float()                  # (B, P_last_target)
+    D_last = (readout_T @ U_last >= 0.0).float()                  # (B, P_last_target)
 
     return D_last
 
@@ -1344,11 +1678,15 @@ class SNNBaseline(nn.Module):
         threshold: float = 1,
         learn_beta: bool = False,
         learn_threshold: bool = False,
+        last_layer_readout: str = "membrane",
+        beta_dist: str = "fixed",
+        seed: int = 0,
     ):
         super().__init__()
         self.L = L
         self.P_rec = P_rec
         self.P_last = P_last
+        self.last_layer_readout = last_layer_readout
 
         fcs = []
         lifs = []
@@ -1360,12 +1698,37 @@ class SNNBaseline(nn.Module):
         else:
             hidden_dims = [P_rec] * max(L - 2, 0) + [P_last]
 
+        rng_beta = np.random.default_rng(seed + 999)
         for h_dim in hidden_dims:
             fc = nn.Linear(in_dim, h_dim, bias=False)
             fcs.append(fc)
-            # NOTE: adjust keyword args if your snntorch version differs
+
+            # Per-neuron beta from distribution
+            if beta_dist == "fixed":
+                beta_init = beta_leak
+            elif beta_dist == "het_loguniform":
+                log_lo, log_hi = np.log(0.5), np.log(0.999)
+                beta_init = torch.tensor(
+                    np.exp(rng_beta.uniform(log_lo, log_hi, size=(h_dim,))),
+                    dtype=torch.float32
+                )
+            elif beta_dist == "het_uniform":
+                beta_init = torch.tensor(
+                    rng_beta.uniform(0.5, 0.999, size=(h_dim,)),
+                    dtype=torch.float32
+                )
+            elif beta_dist == "het_bimodal":
+                b = np.empty(h_dim, dtype=np.float32)
+                n_fast = h_dim // 2
+                b[:n_fast] = rng_beta.uniform(0.3, 0.6, size=(n_fast,))
+                b[n_fast:] = rng_beta.uniform(0.95, 0.999, size=(h_dim - n_fast,))
+                rng_beta.shuffle(b)
+                beta_init = torch.tensor(b, dtype=torch.float32)
+            else:
+                beta_init = beta_leak
+
             lif = snn.Leaky(
-                beta=beta_leak,
+                beta=beta_init,
                 threshold=threshold,
                 learn_beta=learn_beta,
                 learn_threshold=learn_threshold,
@@ -1382,7 +1745,7 @@ class SNNBaseline(nn.Module):
         """
         x_seq: (B, T, d_in)
         Returns:
-          - logits: (B, num_outputs) using last membrane of last layer
+          - logits: (B, num_outputs) using membrane or spike of last layer
           - last_mem: (B, P_last) final membrane (for analysis)
         """
         B, T, d_in = x_seq.shape
@@ -1403,7 +1766,11 @@ class SNNBaseline(nn.Module):
                 h_last = spk  # pass spikes to next layer; we could also use mem
 
         last_mem = mems[-1]          # shape (B, P_last)
-        logits = self.fc_out(h_last)
+        # Output readout: membrane potential or spikes from last hidden layer
+        if self.last_layer_readout == "membrane":
+            logits = self.fc_out(last_mem)
+        else:
+            logits = self.fc_out(h_last)
         return logits, last_mem
 
 
@@ -1632,6 +1999,10 @@ def run_one_seed(
     verbose_patterns: bool,
     log_train: bool,
     timestep: str,
+    init_method: str = "random",
+    target_act_rate: Optional[float] = None,
+    last_layer_readout: str = "membrane",
+    beta_dist: str = "fixed",
 ) -> Dict[str, object]:
     set_seed(seed)
 
@@ -1652,8 +2023,9 @@ def run_one_seed(
     print(f"[info] CVX grid betas={beta_grid} lrs={lr_grid} loss={loss_type}")
 
     # ----- CVX patterns (generated once) -----
-    z_train_bool, hypers = generate_snn_sign_patterns(
+    z_train_bool, hypers, layer_diagnostics = generate_snn_sign_patterns(
         X_train,
+        y_train,
         L=L,
         T=T,
         P_in=P_in,
@@ -1663,6 +2035,10 @@ def run_one_seed(
         normalize_hidden=normalize_hidden,
         verbose=verbose_patterns,
         device=device,
+        init_method=init_method,
+        target_act_rate=target_act_rate,
+        last_layer_readout=last_layer_readout,
+        beta_dist=beta_dist,
     )
     z_train = z_train_bool.astype(np.uint8)
     P_last_real = z_train.shape[1]
@@ -1741,8 +2117,8 @@ def run_one_seed(
                     "train_curve": out["train_score_history"],
                 })
 
-    if log_train:
-        print(f"[seed {seed}] re-train CVX best for logging: beta={best_cvx['beta_l1']} lr={best_cvx['lr']}")
+    if log_train and best_cvx["beta_l1"] is not None:
+        print(f"[seed {seed}] re-train CVX best: beta={best_cvx['beta_l1']} lr={best_cvx['lr']}")
         logged = train_cvx_head_first_order(
             train_loader3d=train_loader3d,
             val_loader2d=val_loader2d,
@@ -1762,49 +2138,14 @@ def run_one_seed(
             P_rec=P_rec,
             log_train=log_train,
         )
-        best_cvx["model"] = logged["model"]
-        best_cvx["val_score"] = logged["best_val_score"]
         best_cvx["train_curve"] = logged["train_score_history"]
         best_cvx["train_loss_curve"] = logged.get("train_loss_history", [])
-        '''        plot_cvx_loss_landscape_2d(
-            model=best_cvx["model"],
-            train_loader3d=train_loader3d,
-            test_loader2d=test_loader2d,
-            hypers=hypers,
-            L=L,
-            T=T,
-            P_rec=P_rec,
-            loss_type=loss_type,
-            beta_l1=float(best_cvx["beta_l1"]),
-            device=device,
-            dataset=task,
-            task=task,
-            seed=seed,
-            timestep=timestep,
-        )
-        '''
-        # 1D loss landscape (commented out for now)
-        # convLossLandscape1D(
-        #     model=best_cvx["model"],
-        #     train_loader3d=train_loader3d,
-        #     test_loader2d=test_loader2d,
-        #     hypers=hypers,
-        #     L=L,
-        #     T=T,
-        #     P_rec=P_rec,
-        #     loss_type=loss_type,
-        #     beta_l1=float(best_cvx["beta_l1"]),
-        #     device=device,
-        #     dataset=task,
-        #     task=task,
-        #     seed=seed,
-        #     timestep=timestep,
-        # )
+
     # ----- SNN baseline (STE) -----
     # Optionally match STE hyperparameters to the best CVX (lr + beta).
     ste_lr_use = ste_lr
     ste_beta_path_reg_use = ste_beta_path_reg
-    if ste_match_cvx:
+    if ste_match_cvx and best_cvx.get("lr") is not None and best_cvx.get("beta_l1") is not None:
         ste_lr_use = float(best_cvx["lr"])
         ste_beta_path_reg_use = float(best_cvx["beta_l1"])
 
@@ -1819,6 +2160,9 @@ def run_one_seed(
         threshold=1,
         learn_beta=learn_beta,
         learn_threshold=learn_threshold,
+        last_layer_readout=last_layer_readout,
+        beta_dist=beta_dist,
+        seed=seed,
     ).to(device)
 
     ste_train_loader = DataLoader(TensorDataset(Xtr_t, ytr_t), batch_size=batch_size, shuffle=True)
@@ -1855,12 +2199,13 @@ def run_one_seed(
         "ste_test": float(ste_test_score),
         "cvx_val": float(best_cvx["val_score"]),
         "ste_val": float(ste_out["best_val_score"]),
-        "cvx_beta_l1": float(best_cvx["beta_l1"]),
-        "cvx_lr": float(best_cvx["lr"]),
+        "cvx_beta_l1": float(best_cvx["beta_l1"]) if best_cvx["beta_l1"] is not None else None,
+        "cvx_lr": float(best_cvx["lr"]) if best_cvx["lr"] is not None else None,
         "cvx_train_score_history": best_cvx.get("train_curve", []),
         "cvx_train_loss_history": best_cvx.get("train_loss_curve", []),
         "ste_train_score_history": ste_out.get("train_score_history", []),
         "ste_train_loss_history": ste_out.get("train_loss_history", []),
+        "layer_diagnostics": layer_diagnostics,
     }
 
 
@@ -1913,6 +2258,29 @@ def save_metrics_report(
             f.write(
                 f"[seed {seed}] -> cvx test_acc={d.get('cvx_test')} , snn test_acc={d.get('ste_test')}\n"
             )
+
+            # Write layer diagnostics if available
+            layer_diags = d.get("layer_diagnostics", [])
+            if layer_diags:
+                f.write(f"[seed {seed}] layer diagnostics:\n")
+                for diag in layer_diags:
+                    f.write(
+                        f"  L{diag['layer']},t={diag['t']}: "
+                        f"rows={diag['unique_rows']}/{diag['n_samples']}, "
+                        f"cols={diag['unique_cols']}/{diag['h_dim']}, "
+                        f"act={diag['activation_rate']}, "
+                        f"NMI={diag['nmi']}, "
+                        f"purity={diag['weighted_purity']}, "
+                        f"clusters={diag['n_clusters']} "
+                        f"(avg_sz={diag['avg_cluster_size']}, "
+                        f"med_sz={diag['median_cluster_size']}, "
+                        f"singletons={diag['n_singletons']}), "
+                        f"nonsing_samples={diag['n_nonsingleton_samples']} "
+                        f"({diag['frac_nonsingleton_samples']}), "
+                        f"margin_ns={diag['avg_margin_nonsingleton']}, "
+                        f"k_90={diag['k_90_coverage']}/{diag['n_clusters']} "
+                        f"({diag['frac_k_90']})\n"
+                    )
 
         f.write(
             f"[final test results] cvx={final['cvx_mean']:.6f}±{final['cvx_std']:.6f} , "
@@ -2111,7 +2479,7 @@ def main():
     parser.add_argument("--ste_match_cvx", type=bool, default=True)
 
     parser.add_argument("--seeds", type=int, nargs="+", default=[0, 1, 2, 3, 4])
-    parser.add_argument("--device", type=str, default="auto", choices=["auto", "mps", "cpu"])
+    parser.add_argument("--device", type=str, default="auto")
 
     parser.add_argument("--normalize_hidden", type=bool, default=False)
     parser.add_argument("--verbose_patterns", type=bool, default=True)
@@ -2122,6 +2490,25 @@ def main():
     # control trainability of leak / threshold
     parser.add_argument("--learn_beta", action="store_true")
     parser.add_argument("--learn_threshold", action="store_true")
+
+    parser.add_argument("--target_act_rate", type=float, default=None,
+                        help="Target activation rate for LSUV init (default: 0.15). Ignored by other methods.")
+
+    parser.add_argument("--init_method", type=str, default="random",
+                        choices=["random", "micheli", "lognormal", "lsuv"],
+                        help="Weight initialization for U_in: "
+                             "random=N(0,1), "
+                             "micheli=Var[w]=1/(n_l*p_{l-1}), "
+                             "lognormal=lognormal magnitudes, "
+                             "lsuv=iterative calibration to target rate.")
+    parser.add_argument("--last_layer_readout", type=str, default="membrane",
+                        choices=["membrane", "spike"],
+                        help="Readout from last hidden layer: membrane potential (real) or spike (binary).")
+    parser.add_argument("--beta_dist", type=str, default="fixed",
+                        choices=["fixed", "het_loguniform", "het_uniform", "het_bimodal"],
+                        help="Distribution for per-neuron leak factor beta. "
+                             "'fixed'=0.99 for all, 'het_loguniform'=LogU[0.5,0.999], "
+                             "'het_uniform'=U[0.5,0.999], 'het_bimodal'=half fast/half slow.")
 
     args = parser.parse_args()
 
@@ -2135,6 +2522,8 @@ def main():
     print(f"[info] CVX grid betas={args.beta_grid} lrs={args.lr_grid}")
     print(f"[info] seeds={args.seeds} normalize_hidden={args.normalize_hidden}")
     print(f"[info] SNN learn_beta={args.learn_beta} learn_threshold={args.learn_threshold}")
+    print(f"[info] init_method={args.init_method} last_layer_readout={args.last_layer_readout} target_act_rate={args.target_act_rate}")
+    print(f"[info] beta_dist={args.beta_dist}")
 
     cvx_scores = []
     ste_scores = []
@@ -2173,6 +2562,10 @@ def main():
             verbose_patterns=args.verbose_patterns,
             log_train=args.log_train,
             timestep=run_timestep,
+            init_method=args.init_method,
+            target_act_rate=args.target_act_rate,
+            last_layer_readout=args.last_layer_readout,
+            beta_dist=args.beta_dist,
         )
         cvx_scores.append(out["cvx_test"])
         ste_scores.append(out["ste_test"])
@@ -2193,6 +2586,7 @@ def main():
             },
             "cvx_test": out.get("cvx_test"),
             "ste_test": out.get("ste_test"),
+            "layer_diagnostics": out.get("layer_diagnostics", []),
         }
 
     cvx_mean, cvx_std = mean_std(cvx_scores)
