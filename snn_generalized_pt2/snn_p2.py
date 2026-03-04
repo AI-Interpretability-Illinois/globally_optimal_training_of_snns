@@ -268,11 +268,6 @@ def get_device(device_arg: str) -> torch.device:
             return torch.device("mps")
         print("[warn] MPS requested but not available; using CPU.")
         return torch.device("cpu")
-    if device_arg.startswith("cuda"):
-        if torch.cuda.is_available():
-            return torch.device(device_arg)
-        print(f"[warn] {device_arg} requested but CUDA not available; using CPU.")
-        return torch.device("cpu")
     # auto
     if torch.cuda.is_available():
         return torch.device("cuda")
@@ -697,7 +692,6 @@ class RNNHyperplanes:
     U_rec_list: List[np.ndarray]  # per layer: (P_rec_l-1, P_rec)
     U_last: np.ndarray            # (P_rec_last, P_last)
     last_layer_readout: str = "membrane"  # "membrane" or "spike"
-    beta_list: Optional[List[np.ndarray]] = None  # per layer: (h_dim,) leak factors
 
 def generate_snn_sign_patterns(
     X_seq: np.ndarray, 
@@ -718,7 +712,6 @@ def generate_snn_sign_patterns(
     lsuv_tol: float = 0.02,
     lsuv_max_iters: int = 20,
     last_layer_readout: str = "membrane",
-    beta_dist: str = "fixed",
 ) -> Tuple[np.ndarray, RNNHyperplanes, List[Dict[str, object]]]:
     """
     Generate sign patterns for a threshold-SNN with L hidden layers and T timesteps.
@@ -760,7 +753,6 @@ def generate_snn_sign_patterns(
 
     U_in_list: List[np.ndarray] = []
     U_rec_list: List[np.ndarray] = []
-    beta_list_all: List[np.ndarray] = []
 
     # Decide hidden widths: first L-2 layers = P_rec, last hidden layer = P_last_target
     if L <= 1:
@@ -806,78 +798,25 @@ def generate_snn_sign_patterns(
     # Hidden layers 1 .. L-1 (GPU)
     # -------------------------------
     v_layers: List[List[torch.Tensor]] = [[] for _ in range(L)]  # membrane potentials per layer
-    prev_act_rate: Optional[float] = None  # tracked for Micheli formula at deeper layers
-
     for l in range(1, L):
         h_dim = hidden_dims[l - 1]  # width of this hidden layer
 
         # --- Input weight initialization ---
         if init_method == "random":
             U_in_np = rng.normal(size=(d_in_l, h_dim)).astype(np.float32)
-
         elif init_method == "micheli":
-            # Micheli et al. 2024: Var[w_l] = 1 / (n_l * p_{l-1})
-            # For layer 1 (real-valued input): estimate input second moment from data
-            # For layer 2+ (binary spike input): use measured firing rate of previous layer
-            if l == 1:
-                # Real-valued input: use E[x²] per component as the "activity" measure
-                # Micheli reduces to Kaiming-like: Var[w] = 1 / (d_in * E[x²])
-                x_all = X_torch.reshape(-1, d_in)  # (n*T, d_in)
-                input_second_moment = float((x_all ** 2).mean().item())
-                input_second_moment = max(input_second_moment, 1e-6)  # safety
-                sigma_w = np.sqrt(1.0 / (d_in_l * input_second_moment))
-            else:
-                # Binary spike input: Var[w] = 1 / (n_l * p_{l-1})
-                p_prev = max(prev_act_rate if prev_act_rate is not None else 0.1, 1e-4)
-                sigma_w = np.sqrt(1.0 / (d_in_l * p_prev))
-
-            U_in_np = rng.normal(scale=sigma_w, size=(d_in_l, h_dim)).astype(np.float32)
-            if verbose:
-                print(
-                    f"[micheli] layer {l}: sigma_w={sigma_w:.4f} "
-                    f"(d_in={d_in_l}, "
-                    f"{'E[x²]=' + f'{input_second_moment:.4f}' if l == 1 else f'p_prev={p_prev:.4f}'})"
-                )
-
+            # Gaussian init, will be calibrated by LSUV below
+            U_in_np = rng.normal(size=(d_in_l, h_dim)).astype(np.float32)
         elif init_method == "lognormal":
             # Log-normal magnitudes with random signs
             magnitudes = rng.lognormal(mean=0.0, sigma=0.5, size=(d_in_l, h_dim))
             signs = rng.choice([-1.0, 1.0], size=(d_in_l, h_dim))
             U_in_np = (magnitudes * signs).astype(np.float32)
-
-        elif init_method == "lsuv":
-            # LSUV (Mishkin & Matas 2016): iterative rescaling to hit target activation rate
-            U_in_np = rng.normal(size=(d_in_l, h_dim)).astype(np.float32)
         else:
-            raise ValueError(
-                f"Unknown init_method={init_method!r}. "
-                f"Choose from: random, micheli, lognormal, lsuv."
-            )
+            raise ValueError(f"Unknown init_method={init_method!r}. Choose from: random, micheli, lognormal.")
 
         # Recurrent hyperplanes: from [v_{t-1}, -h_{t-1}, -1] (dim = 2*h_dim+1) to h_dim
-        if beta_dist == "fixed":
-            b = np.full((h_dim,), 0.99, dtype=np.float32)
-        elif beta_dist == "het_loguniform":
-            # Log-uniform over [0.5, 0.999]: fast neurons forget quickly, slow ones integrate
-            log_lo, log_hi = np.log(0.5), np.log(0.999)
-            b = np.exp(rng.uniform(log_lo, log_hi, size=(h_dim,))).astype(np.float32)
-        elif beta_dist == "het_uniform":
-            # Uniform over [0.5, 0.999]
-            b = rng.uniform(0.5, 0.999, size=(h_dim,)).astype(np.float32)
-        elif beta_dist == "het_bimodal":
-            # Half fast (β~0.5), half slow (β~0.99): maximise timescale separation
-            b = np.empty(h_dim, dtype=np.float32)
-            n_fast = h_dim // 2
-            b[:n_fast] = rng.uniform(0.3, 0.6, size=(n_fast,))
-            b[n_fast:] = rng.uniform(0.95, 0.999, size=(h_dim - n_fast,))
-            rng.shuffle(b)
-        else:
-            raise ValueError(f"Unknown beta_dist={beta_dist!r}")
-
-        if verbose and l == 1:
-            print(f"[beta_dist={beta_dist}] layer {l}: beta min={b.min():.4f} max={b.max():.4f} "
-                  f"mean={b.mean():.4f} median={np.median(b):.4f}")
-
+        b = np.full((h_dim,), 0.99, dtype=np.float32)  # Decay rate
         g = np.full((h_dim,), 1.0, dtype=np.float32)   # Threshold
 
         U_rec_top = np.diag(b)   # (h_dim, h_dim)
@@ -888,8 +827,8 @@ def generate_snn_sign_patterns(
             U_in_np = _col_normalize_np(U_in_np)
             U_rec_np = _col_normalize_np(U_rec_np)
 
-        # --- LSUV iterative calibration (only for init_method="lsuv") ---
-        if init_method == "lsuv":
+        # --- LSUV-style activation rate calibration (Micheli init only) ---
+        if init_method == "micheli":
             act_rate_target = target_act_rate if target_act_rate is not None else 0.15
             tol = lsuv_tol
             U_rec_gpu = torch.from_numpy(U_rec_np.astype(np_dtype, copy=False)).to(device)
@@ -899,20 +838,24 @@ def generate_snn_sign_patterns(
                 h_trial, _ = _run_layer_forward(
                     h_layers[l - 1], U_in_gpu, U_rec_gpu, h_dim,
                 )
+                # Measure activation rate at last timestep
                 act_last = h_trial[-1].float().mean().item()
                 if verbose:
                     print(
-                        f"[lsuv] layer {l}, iter {lsuv_iter}: "
+                        f"[micheli] layer {l}, iter {lsuv_iter}: "
                         f"act_rate(t={T-1})={act_last:.4f} "
                         f"(target={act_rate_target:.3f})"
                     )
                 if abs(act_last - act_rate_target) < tol:
                     break
                 if act_last < 1e-6:
+                    # Completely dead — large scale-up
                     U_in_np *= 2.0
                 elif act_last > 1.0 - 1e-6:
+                    # Saturated — large scale-down
                     U_in_np *= 0.5
                 else:
+                    # Smooth adjustment via inverse-normal quantile ratio
                     from scipy.stats import norm as _norm
                     q_current = _norm.ppf(1.0 - np.clip(act_last, 1e-4, 1 - 1e-4))
                     q_target = _norm.ppf(1.0 - act_rate_target)
@@ -920,11 +863,11 @@ def generate_snn_sign_patterns(
                         ratio = 1.2 if act_last < act_rate_target else 0.8
                     else:
                         ratio = q_current / q_target
-                        ratio = np.clip(ratio, 0.5, 2.0)
+                        ratio = np.clip(ratio, 0.5, 2.0)  # safety clamp
                     U_in_np *= float(ratio)
             if verbose:
                 print(
-                    f"[lsuv] layer {l}: final act_rate={act_last:.4f} "
+                    f"[micheli] layer {l}: final act_rate={act_last:.4f} "
                     f"after {min(lsuv_iter + 1, lsuv_max_iters)} iters, "
                     f"U_in scale={np.std(U_in_np):.4f}"
                 )
@@ -939,7 +882,6 @@ def generate_snn_sign_patterns(
         # Store CPU copies in hypers
         U_in_list.append(U_in_np)
         U_rec_list.append(U_rec_np)
-        beta_list_all.append(b.copy())
 
         # Torch views on GPU for recurrence (final weights after calibration)
         U_in = torch.from_numpy(U_in_np.astype(np_dtype, copy=False)).to(device)
@@ -947,9 +889,6 @@ def generate_snn_sign_patterns(
 
         # Run the actual forward pass with calibrated weights
         h_curr_list, v_curr_list = _run_layer_forward(h_layers[l - 1], U_in, U_rec, h_dim)
-
-        # Track firing rate for Micheli formula at next layer
-        prev_act_rate = h_curr_list[-1].float().mean().item()
 
         h_layers.append(h_curr_list)
         v_layers[l] = v_curr_list
@@ -1046,7 +985,6 @@ def generate_snn_sign_patterns(
         U_rec_list=U_rec_list,   # each (2*h_dim_l+1, h_dim_l)
         U_last=U_last_final,     # (h_dim_last, P_last_target)
         last_layer_readout=last_layer_readout,
-        beta_list=beta_list_all,
     )
     return z_last_bool, hypers, all_diagnostics
 
@@ -1679,8 +1617,6 @@ class SNNBaseline(nn.Module):
         learn_beta: bool = False,
         learn_threshold: bool = False,
         last_layer_readout: str = "membrane",
-        beta_dist: str = "fixed",
-        seed: int = 0,
     ):
         super().__init__()
         self.L = L
@@ -1698,37 +1634,12 @@ class SNNBaseline(nn.Module):
         else:
             hidden_dims = [P_rec] * max(L - 2, 0) + [P_last]
 
-        rng_beta = np.random.default_rng(seed + 999)
         for h_dim in hidden_dims:
             fc = nn.Linear(in_dim, h_dim, bias=False)
             fcs.append(fc)
-
-            # Per-neuron beta from distribution
-            if beta_dist == "fixed":
-                beta_init = beta_leak
-            elif beta_dist == "het_loguniform":
-                log_lo, log_hi = np.log(0.5), np.log(0.999)
-                beta_init = torch.tensor(
-                    np.exp(rng_beta.uniform(log_lo, log_hi, size=(h_dim,))),
-                    dtype=torch.float32
-                )
-            elif beta_dist == "het_uniform":
-                beta_init = torch.tensor(
-                    rng_beta.uniform(0.5, 0.999, size=(h_dim,)),
-                    dtype=torch.float32
-                )
-            elif beta_dist == "het_bimodal":
-                b = np.empty(h_dim, dtype=np.float32)
-                n_fast = h_dim // 2
-                b[:n_fast] = rng_beta.uniform(0.3, 0.6, size=(n_fast,))
-                b[n_fast:] = rng_beta.uniform(0.95, 0.999, size=(h_dim - n_fast,))
-                rng_beta.shuffle(b)
-                beta_init = torch.tensor(b, dtype=torch.float32)
-            else:
-                beta_init = beta_leak
-
+            # NOTE: adjust keyword args if your snntorch version differs
             lif = snn.Leaky(
-                beta=beta_init,
+                beta=beta_leak,
                 threshold=threshold,
                 learn_beta=learn_beta,
                 learn_threshold=learn_threshold,
@@ -1895,7 +1806,8 @@ def train_snn_baseline(
     gamma: float,
     loss_type: str,
     beta_path_reg: float = 0.0,   # optional path reg if you want to add later
-    log_train: bool = False,
+    log_train: bool = True
+,
 ) -> Dict[str, object]:
     opt = torch.optim.Adam(model.parameters(), lr=lr)
     sched = torch.optim.lr_scheduler.StepLR(opt, step_size=step_size, gamma=gamma)
@@ -2002,7 +1914,6 @@ def run_one_seed(
     init_method: str = "random",
     target_act_rate: Optional[float] = None,
     last_layer_readout: str = "membrane",
-    beta_dist: str = "fixed",
 ) -> Dict[str, object]:
     set_seed(seed)
 
@@ -2038,7 +1949,6 @@ def run_one_seed(
         init_method=init_method,
         target_act_rate=target_act_rate,
         last_layer_readout=last_layer_readout,
-        beta_dist=beta_dist,
     )
     z_train = z_train_bool.astype(np.uint8)
     P_last_real = z_train.shape[1]
@@ -2117,8 +2027,8 @@ def run_one_seed(
                     "train_curve": out["train_score_history"],
                 })
 
-    if log_train and best_cvx["beta_l1"] is not None:
-        print(f"[seed {seed}] re-train CVX best: beta={best_cvx['beta_l1']} lr={best_cvx['lr']}")
+    if log_train:
+        print(f"[seed {seed}] re-train CVX best for logging: beta={best_cvx['beta_l1']} lr={best_cvx['lr']}")
         logged = train_cvx_head_first_order(
             train_loader3d=train_loader3d,
             val_loader2d=val_loader2d,
@@ -2138,14 +2048,49 @@ def run_one_seed(
             P_rec=P_rec,
             log_train=log_train,
         )
+        best_cvx["model"] = logged["model"]
+        best_cvx["val_score"] = logged["best_val_score"]
         best_cvx["train_curve"] = logged["train_score_history"]
         best_cvx["train_loss_curve"] = logged.get("train_loss_history", [])
-
+        '''        plot_cvx_loss_landscape_2d(
+            model=best_cvx["model"],
+            train_loader3d=train_loader3d,
+            test_loader2d=test_loader2d,
+            hypers=hypers,
+            L=L,
+            T=T,
+            P_rec=P_rec,
+            loss_type=loss_type,
+            beta_l1=float(best_cvx["beta_l1"]),
+            device=device,
+            dataset=task,
+            task=task,
+            seed=seed,
+            timestep=timestep,
+        )
+        '''
+        # 1D loss landscape (commented out for now)
+        # convLossLandscape1D(
+        #     model=best_cvx["model"],
+        #     train_loader3d=train_loader3d,
+        #     test_loader2d=test_loader2d,
+        #     hypers=hypers,
+        #     L=L,
+        #     T=T,
+        #     P_rec=P_rec,
+        #     loss_type=loss_type,
+        #     beta_l1=float(best_cvx["beta_l1"]),
+        #     device=device,
+        #     dataset=task,
+        #     task=task,
+        #     seed=seed,
+        #     timestep=timestep,
+        # )
     # ----- SNN baseline (STE) -----
     # Optionally match STE hyperparameters to the best CVX (lr + beta).
     ste_lr_use = ste_lr
     ste_beta_path_reg_use = ste_beta_path_reg
-    if ste_match_cvx and best_cvx.get("lr") is not None and best_cvx.get("beta_l1") is not None:
+    if ste_match_cvx:
         ste_lr_use = float(best_cvx["lr"])
         ste_beta_path_reg_use = float(best_cvx["beta_l1"])
 
@@ -2161,8 +2106,6 @@ def run_one_seed(
         learn_beta=learn_beta,
         learn_threshold=learn_threshold,
         last_layer_readout=last_layer_readout,
-        beta_dist=beta_dist,
-        seed=seed,
     ).to(device)
 
     ste_train_loader = DataLoader(TensorDataset(Xtr_t, ytr_t), batch_size=batch_size, shuffle=True)
@@ -2199,8 +2142,8 @@ def run_one_seed(
         "ste_test": float(ste_test_score),
         "cvx_val": float(best_cvx["val_score"]),
         "ste_val": float(ste_out["best_val_score"]),
-        "cvx_beta_l1": float(best_cvx["beta_l1"]) if best_cvx["beta_l1"] is not None else None,
-        "cvx_lr": float(best_cvx["lr"]) if best_cvx["lr"] is not None else None,
+        "cvx_beta_l1": float(best_cvx["beta_l1"]),
+        "cvx_lr": float(best_cvx["lr"]),
         "cvx_train_score_history": best_cvx.get("train_curve", []),
         "cvx_train_loss_history": best_cvx.get("train_loss_curve", []),
         "ste_train_score_history": ste_out.get("train_score_history", []),
@@ -2479,7 +2422,7 @@ def main():
     parser.add_argument("--ste_match_cvx", type=bool, default=True)
 
     parser.add_argument("--seeds", type=int, nargs="+", default=[0, 1, 2, 3, 4])
-    parser.add_argument("--device", type=str, default="auto")
+    parser.add_argument("--device", type=str, default="auto", choices=["auto", "mps", "cpu"])
 
     parser.add_argument("--normalize_hidden", type=bool, default=False)
     parser.add_argument("--verbose_patterns", type=bool, default=True)
@@ -2492,23 +2435,14 @@ def main():
     parser.add_argument("--learn_threshold", action="store_true")
 
     parser.add_argument("--target_act_rate", type=float, default=None,
-                        help="Target activation rate for LSUV init (default: 0.15). Ignored by other methods.")
+                        help="Target activation rate for micheli init (default: 0.15 when micheli is selected).")
 
     parser.add_argument("--init_method", type=str, default="random",
-                        choices=["random", "micheli", "lognormal", "lsuv"],
-                        help="Weight initialization for U_in: "
-                             "random=N(0,1), "
-                             "micheli=Var[w]=1/(n_l*p_{l-1}), "
-                             "lognormal=lognormal magnitudes, "
-                             "lsuv=iterative calibration to target rate.")
+                        choices=["random", "micheli", "lognormal"],
+                        help="Weight initialization method for U_in.")
     parser.add_argument("--last_layer_readout", type=str, default="membrane",
                         choices=["membrane", "spike"],
                         help="Readout from last hidden layer: membrane potential (real) or spike (binary).")
-    parser.add_argument("--beta_dist", type=str, default="fixed",
-                        choices=["fixed", "het_loguniform", "het_uniform", "het_bimodal"],
-                        help="Distribution for per-neuron leak factor beta. "
-                             "'fixed'=0.99 for all, 'het_loguniform'=LogU[0.5,0.999], "
-                             "'het_uniform'=U[0.5,0.999], 'het_bimodal'=half fast/half slow.")
 
     args = parser.parse_args()
 
@@ -2523,7 +2457,6 @@ def main():
     print(f"[info] seeds={args.seeds} normalize_hidden={args.normalize_hidden}")
     print(f"[info] SNN learn_beta={args.learn_beta} learn_threshold={args.learn_threshold}")
     print(f"[info] init_method={args.init_method} last_layer_readout={args.last_layer_readout} target_act_rate={args.target_act_rate}")
-    print(f"[info] beta_dist={args.beta_dist}")
 
     cvx_scores = []
     ste_scores = []
@@ -2565,7 +2498,6 @@ def main():
             init_method=args.init_method,
             target_act_rate=args.target_act_rate,
             last_layer_readout=args.last_layer_readout,
-            beta_dist=args.beta_dist,
         )
         cvx_scores.append(out["cvx_test"])
         ste_scores.append(out["ste_test"])
