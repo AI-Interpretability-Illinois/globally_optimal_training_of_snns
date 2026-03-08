@@ -35,6 +35,7 @@ import numpy as np
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+import cvxpy as cp
 from torch.utils.data import DataLoader, TensorDataset
 from torchvision import datasets, transforms
 import matplotlib.pyplot as plt
@@ -731,6 +732,7 @@ def generate_snn_sign_patterns(
     lsuv_max_iters: int = 20,
     last_layer_readout: str = "membrane",
     beta_dist: str = "fixed",
+    transfer_u_in_list: Optional[List[np.ndarray]] = None,
 ) -> Tuple[np.ndarray, RNNHyperplanes, List[Dict[str, object]]]:
     """
     Generate sign patterns for a threshold-SNN with L hidden layers and T timesteps.
@@ -824,7 +826,18 @@ def generate_snn_sign_patterns(
         h_dim = hidden_dims[l - 1]  # width of this hidden layer
 
         # --- Input weight initialization ---
-        if init_method == "random":
+        if transfer_u_in_list is not None:
+            if len(transfer_u_in_list) != (L - 1):
+                raise ValueError(
+                    f"transfer_u_in_list must have {L-1} entries, got {len(transfer_u_in_list)}."
+                )
+            U_in_np = np.asarray(transfer_u_in_list[l - 1], dtype=np.float32).copy()
+            if U_in_np.shape != (d_in_l, h_dim):
+                raise ValueError(
+                    f"Transferred U_in for layer {l} has shape {U_in_np.shape}, "
+                    f"expected {(d_in_l, h_dim)}."
+                )
+        elif init_method == "random":
             U_in_np = rng.normal(size=(d_in_l, h_dim)).astype(np.float32)
 
         elif init_method == "micheli":
@@ -900,8 +913,9 @@ def generate_snn_sign_patterns(
             U_in_np = _col_normalize_np(U_in_np)
             U_rec_np = _col_normalize_np(U_rec_np)
 
-        # --- LSUV iterative calibration (only for init_method="lsuv") ---
-        if init_method == "lsuv":
+        # --- LSUV-style iterative calibration ---
+        # In transfer mode we still calibrate layer scales to avoid collapsed activity.
+        if init_method == "lsuv" or transfer_u_in_list is not None:
             act_rate_target = target_act_rate if target_act_rate is not None else 0.15
             tol = lsuv_tol
             U_rec_gpu = torch.from_numpy(U_rec_np.astype(np_dtype, copy=False)).to(device)
@@ -1566,101 +1580,122 @@ def train_cvx_head_first_order(
     log_train: bool = False,
 ) -> Dict[str, object]:
     model = CvxLastLayer(P_last, num_outputs).to(device)
+    ds = train_loader3d.dataset
+    if not isinstance(ds, TensorDataset) or len(ds.tensors) < 3:
+        raise ValueError("Expected TensorDataset(X, y, z_train) for CVX solver.")
+    _, y_t, z_t = ds.tensors
 
-    if optimizer_name == "adam":
-        opt = torch.optim.Adam(model.parameters(), lr=lr)
+    Z = z_t.detach().cpu().numpy().astype(np.float64)
+    n_samples = Z.shape[0]
+    if n_samples == 0:
+        raise ValueError("Empty train set for CVX solve.")
+
+    W_var = cp.Variable((P_last, num_outputs))
+    ZW = Z @ W_var
+
+    if loss_type == "ce":
+        y_np = y_t.detach().cpu().numpy().astype(np.int64)
+        y_onehot = np.eye(num_outputs, dtype=np.float64)[y_np]
+        ce_terms = cp.log_sum_exp(ZW, axis=1) - cp.sum(cp.multiply(ZW, y_onehot), axis=1)
+        loss_expr = cp.sum(ce_terms) / n_samples
+    elif loss_type == "hinge":
+        y_np = y_t.detach().cpu().numpy().astype(np.float64).reshape(-1)
+        margin = cp.multiply(y_np, cp.reshape(ZW, (n_samples,)))
+        loss_expr = cp.sum(cp.pos(1.0 - margin)) / n_samples
+    elif loss_type == "squared":
+        y_np = y_t.detach().cpu().numpy().astype(np.float64).reshape(-1)
+        resid = cp.reshape(ZW, (n_samples,)) - y_np
+        loss_expr = cp.sum_squares(resid) / n_samples
     else:
-        opt = torch.optim.SGD(model.parameters(), lr=lr, momentum=0.9)
+        raise ValueError(f"Unknown loss_type={loss_type}")
 
-    sched = torch.optim.lr_scheduler.StepLR(opt, step_size=step_size, gamma=gamma)
+    objective = cp.Minimize(loss_expr + float(beta_l1) * cp.norm1(W_var))
+    prob = cp.Problem(objective)
 
-    best_val_score = -1e30
-    best_state = None
-    train_acc_history: List[float] = []
-    train_loss_history: List[float] = []
+    solved = False
+    for solver_name, solver_kwargs in (
+        ("SCS", {"max_iters": 10000, "eps": 1e-4}),
+        ("CLARABEL", {}),
+        ("OSQP", {}),
+    ):
+        try:
+            prob.solve(solver=solver_name, verbose=False, **solver_kwargs)
+            if W_var.value is not None:
+                solved = True
+                break
+        except Exception:
+            continue
+    if not solved:
+        raise RuntimeError("CVX solve failed for all attempted solvers (SCS/CLARABEL/OSQP).")
 
-    for ep in range(1, epochs + 1):
-        model.train()
-        epoch_loss_sum = 0.0
-        epoch_count = 0
+    W_np = np.asarray(W_var.value, dtype=np.float32)
+    with torch.no_grad():
+        model.W.copy_(torch.from_numpy(W_np).to(device))
 
-        for xb, yb, zb in train_loader3d:
-            xb = xb.to(device)
-            yb = yb.to(device)
-            zb = zb.to(device)
-            logits = model(zb)
-            loss = cvx_loss(logits, yb, model, loss_type=loss_type, beta_l1=beta_l1)
-            opt.zero_grad()
-            loss.backward()
-            opt.step()
+    train_score = cvx_eval_acc_or_mse(
+        model,
+        DataLoader(TensorDataset(torch.from_numpy(np.zeros((n_samples, 1, 1), dtype=np.float32)),
+                                 y_t.clone()),
+                   batch_size=4096,
+                   shuffle=False),
+        hypers,
+        L=L,
+        T=T,
+        P_rec=P_rec,
+        device=device,
+        loss_type=loss_type,
+    ) if False else 0.0
 
-            bs = int(yb.numel())
-            epoch_loss_sum += float(loss.detach().item()) * bs
-            epoch_count += bs
-
-        sched.step()
-        epoch_train_loss = epoch_loss_sum / max(epoch_count, 1)
-
-        train_score = cvx_eval_acc_or_mse(
-            model, train_loader2d=None,  # we'll re-use patterns via train_loader3d
-            hypers=hypers, L=L, T=T, P_rec=P_rec, device=device, loss_type=loss_type
-        ) if False else None  # optional; we log using cached z below
-
-        # More efficient: accuracy over cached z in train_loader3d
-        if loss_type in ("ce", "hinge"):
-            correct, total = 0, 0
-            model.eval()
-            with torch.no_grad():
-                for _, yb, zb in train_loader3d:
-                    yb = yb.to(device)
-                    zb = zb.to(device)
-                    logits = model(zb)
-                    if loss_type == "ce":
-                        preds = logits.argmax(dim=1)
-                        correct += (preds == yb).sum().item()
-                    else:
-                        preds = torch.where(logits.squeeze(-1) >= 0, 1.0, -1.0)
-                        correct += (preds == yb.float()).sum().item()
-                    total += yb.numel()
-            train_score = correct / max(total, 1)
+    # Compute train score directly on cached z without re-running pattern forward.
+    with torch.no_grad():
+        logits_t = model(torch.from_numpy(Z.astype(np.float32)).to(device))
+        y_dev = y_t.to(device)
+        if loss_type == "ce":
+            train_score = (logits_t.argmax(dim=1) == y_dev).float().mean().item()
+        elif loss_type == "hinge":
+            preds = torch.where(logits_t.squeeze(-1) >= 0, 1.0, -1.0)
+            train_score = (preds == y_dev.float()).float().mean().item()
         else:
-            # squared regression: track negative MSE on train cached z
-            mse_sum, tot = 0.0, 0
-            model.eval()
-            with torch.no_grad():
-                for _, yb, zb in train_loader3d:
-                    yb = yb.to(device)
-                    zb = zb.to(device)
-                    logits = model(zb).squeeze(-1)
-                    mse_sum += F.mse_loss(logits, yb.float(), reduction="sum").item()
-                    tot += yb.numel()
-            train_score = -mse_sum / max(tot, 1)
+            train_score = -F.mse_loss(logits_t.squeeze(-1), y_dev.float()).item()
+        train_loss = cvx_loss(logits_t, y_dev, model, loss_type=loss_type, beta_l1=beta_l1).item()
 
-        if log_train:
-            train_acc_history.append(train_score)
-            train_loss_history.append(epoch_train_loss)
+    val_score = cvx_eval_acc_or_mse(
+        model, val_loader2d, hypers, L=L, T=T, P_rec=P_rec, device=device, loss_type=loss_type
+    )
 
-        val_score = cvx_eval_acc_or_mse(
-            model, val_loader2d, hypers, L=L, T=T, P_rec=P_rec, device=device, loss_type=loss_type
-        )
-
-        if val_score > best_val_score:
-            best_val_score = val_score
-            best_state = {k: v.detach().cpu().clone() for k, v in model.state_dict().items()}
-
-        if log_train:
-            print(f"[CVX] ep={ep:03d}/{epochs} train_score={train_score:.4f} val_score={val_score:.4f} "
-                  f"lr={sched.get_last_lr()[0]:.2e}")
-
-    if best_state is not None:
-        model.load_state_dict(best_state)
+    if log_train:
+        print(f"[CVX] ep=001/001 train_score={train_score:.4f} val_score={val_score:.4f} lr={lr:.2e}")
 
     return {
         "model": model,
-        "best_val_score": best_val_score,
-        "train_score_history": train_acc_history,
-        "train_loss_history": train_loss_history,
+        "best_val_score": val_score,
+        "train_score_history": [float(train_score)] if log_train else [],
+        "train_loss_history": [float(train_loss)] if log_train else [],
     }
+
+
+def _extract_transfer_u_in_from_snn(model: "SNNBaseline") -> List[np.ndarray]:
+    transfer: List[np.ndarray] = []
+    for fc in model.fcs:
+        # SNN fc weight is (out_dim, in_dim); pattern generator expects (in_dim, out_dim).
+        transfer.append(fc.weight.detach().cpu().numpy().T.astype(np.float32, copy=True))
+    return transfer
+
+
+def _initialize_snn_hidden_from_transfer(model: "SNNBaseline", transfer_u_in_list: List[np.ndarray]) -> None:
+    if len(transfer_u_in_list) != len(model.fcs):
+        raise ValueError(
+            f"transfer_u_in_list length mismatch: {len(transfer_u_in_list)} vs {len(model.fcs)}."
+        )
+    with torch.no_grad():
+        for idx, fc in enumerate(model.fcs):
+            w_t = torch.from_numpy(transfer_u_in_list[idx].T).to(fc.weight.device, dtype=fc.weight.dtype)
+            if tuple(w_t.shape) != tuple(fc.weight.shape):
+                raise ValueError(
+                    f"Transferred SNN hidden weight shape mismatch at layer {idx}: "
+                    f"{tuple(w_t.shape)} vs {tuple(fc.weight.shape)}."
+                )
+            fc.weight.copy_(w_t)
 
 
 # ============================================================
@@ -2033,6 +2068,50 @@ def run_one_seed(
     print(f"[info] n_train_total={n_train_total} val_frac={val_frac} => n_train={X_train.shape[0]} n_val={X_val.shape[0]} n_test={X_test.shape[0]}")
     print(f"[info] P_in={P_in} P_rec={P_rec} P_last(target)={P_last}")
     print(f"[info] CVX grid betas={beta_grid} lrs={lr_grid} loss={loss_type}")
+    print("[info] init pipeline: pretrain SNN (80 epochs) -> transfer hidden weights to CVX patterns + STE init")
+
+    num_outputs = num_classes if loss_type == "ce" else 1
+    d_in = X_train.shape[2]
+
+    # ----- 80-epoch SNN pretrain to obtain transferable hidden weights -----
+    Xtr_pre = torch.from_numpy(X_train).float()
+    ytr_pre = torch.from_numpy(y_train)
+    Xva_pre = torch.from_numpy(X_val).float()
+    yva_pre = torch.from_numpy(y_val)
+    if loss_type == "hinge":
+        ytr_pre = (2 * ytr_pre - 1).float()
+        yva_pre = (2 * yva_pre - 1).float()
+
+    pre_model = SNNBaseline(
+        d_in=d_in,
+        L=L,
+        P_rec=P_rec,
+        P_last=P_last,
+        num_outputs=num_outputs,
+        beta_leak=0.99,
+        threshold=1,
+        learn_beta=learn_beta,
+        learn_threshold=learn_threshold,
+        last_layer_readout=last_layer_readout,
+        beta_dist=beta_dist,
+        seed=seed,
+    ).to(device)
+    pre_train_loader = DataLoader(TensorDataset(Xtr_pre, ytr_pre), batch_size=batch_size, shuffle=True)
+    pre_val_loader = DataLoader(TensorDataset(Xva_pre, yva_pre), batch_size=batch_size, shuffle=False)
+    _ = train_snn_baseline(
+        pre_model,
+        pre_train_loader,
+        pre_val_loader,
+        lr=ste_lr,
+        epochs=80,
+        device=device,
+        step_size=ste_step_size,
+        gamma=ste_gamma,
+        loss_type=loss_type,
+        beta_path_reg=float(ste_beta_path_reg),
+        log_train=False,
+    )
+    transfer_u_in_list = _extract_transfer_u_in_from_snn(pre_model)
 
     # ----- CVX patterns (generated once) -----
     z_train_bool, hypers, layer_diagnostics = generate_snn_sign_patterns(
@@ -2051,6 +2130,7 @@ def run_one_seed(
         target_act_rate=target_act_rate,
         last_layer_readout=last_layer_readout,
         beta_dist=beta_dist,
+        transfer_u_in_list=transfer_u_in_list,
     )
     z_train = z_train_bool.astype(np.uint8)
     P_last_real = z_train.shape[1]
@@ -2078,7 +2158,6 @@ def run_one_seed(
     test_loader2d = DataLoader(test_ds2d, batch_size=batch_size, shuffle=False)
 
     # ----- CVX grid search over (beta_l1, lr) -----
-    num_outputs = num_classes if loss_type == "ce" else 1
     best_cvx = {
         "val_score": -1e30,
         "beta_l1": None,
@@ -2177,7 +2256,6 @@ def run_one_seed(
         ste_lr_use = float(best_cvx["lr"])
         ste_beta_path_reg_use = float(best_cvx["beta_l1"])
 
-    d_in = X_train.shape[2]
     model_snn = SNNBaseline(
         d_in=d_in,
         L=L,
@@ -2192,6 +2270,7 @@ def run_one_seed(
         beta_dist=beta_dist,
         seed=seed,
     ).to(device)
+    _initialize_snn_hidden_from_transfer(model_snn, transfer_u_in_list)
 
     ste_train_loader = DataLoader(TensorDataset(Xtr_t, ytr_t), batch_size=batch_size, shuffle=True)
     ste_val_loader = DataLoader(TensorDataset(Xva_t, yva_t), batch_size=batch_size, shuffle=False)

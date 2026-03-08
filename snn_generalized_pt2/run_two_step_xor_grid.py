@@ -28,9 +28,9 @@ from datetime import datetime
 from itertools import product
 from pathlib import Path
 
-# ── Grid axes ──────────────────────────────────────────────
+# ── Grid axes ────────────────────────────────────────────── , 3, 5, 7, 9, 15, 23, 33, 45, 59, 77, 97, 119
 T_LIST = [2, 6, 10, 18, 26, 42, 54, 70, 86, 106]
-L_LIST = [3, 5, 9, 15, 23, 33, 45, 59, 77, 97, 119]
+L_LIST = [2]
 INIT_METHODS = ["random", "micheli", "lognormal", "lsuv"]
 BETA_DISTS = ["fixed", "het_loguniform", "het_uniform", "het_bimodal"]
 
@@ -108,7 +108,7 @@ def run_one_config(cfg: dict, gpu_id: int, out_dir: str, script_dir: str) -> dic
 
     cmd = [
         sys.executable, snn_py,
-        "--task", "two_step_xor_seq",
+        "--task", "binary_adding_seq",
         "--T", str(T),
         "--L", str(L),
         "--P_in", str(P_in),
@@ -119,11 +119,11 @@ def run_one_config(cfg: dict, gpu_id: int, out_dir: str, script_dir: str) -> dic
         "--last_layer_readout", LAST_LAYER_READOUT,
         "--seeds", *[str(s) for s in SEEDS],
         "--epochs", str(EPOCHS),
-        "--lr_grid", *[str(v) for v in LR_GRID],
+        # "--lr_grid", *[str(v) for v in LR_GRID],
         "--log_train",
-        "--verbose_patterns",
+        "--loss",f"squared",
         "--save_metrics_path", metrics_path,
-        "--device", f"cuda",
+        # "--device", f"cuda",
     ]
 
     # Pin to exactly one GPU
@@ -274,7 +274,6 @@ def print_summary(results: list[dict]):
             else:
                 print(f"  {'—':>16}", end="")
         print()
-
 
 def main():
     parser = argparse.ArgumentParser(
