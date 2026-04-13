@@ -706,11 +706,12 @@ def _col_normalize_np(U: np.ndarray, eps: float = 1e-12) -> np.ndarray:
 
 @dataclass
 class RNNHyperplanes:
-    U_in_list: List[np.ndarray]   # per layer: (d_in_l, P_in)
-    U_rec_list: List[np.ndarray]  # per layer: (P_rec_l-1, P_rec)
-    U_last: np.ndarray            # (P_rec_last, P_last)
+    U_in_list: List[np.ndarray]   # per layer: (d_in_l, h_dim)
+    U_rec_list: List[np.ndarray]  # per layer: (2*h_dim, h_dim) = [diag(beta); diag(threshold)]
+    U_last: np.ndarray            # (h_dim_last, P_last)
     last_layer_readout: str = "membrane"  # "membrane" or "spike"
-    beta_list: Optional[List[np.ndarray]] = None  # per layer: (h_dim,) leak factors
+    beta_list: Optional[List[np.ndarray]] = None      # per layer: (h_dim,) leak factors
+    threshold_list: Optional[List[np.ndarray]] = None # per layer: (h_dim,) thresholds/reset magnitudes
 
 def generate_snn_sign_patterns(
     X_seq: np.ndarray, 
@@ -733,6 +734,8 @@ def generate_snn_sign_patterns(
     last_layer_readout: str = "membrane",
     beta_dist: str = "fixed",
     transfer_u_in_list: Optional[List[np.ndarray]] = None,
+    transfer_threshold_list: Optional[List[np.ndarray]] = None,
+    threshold_value: float = 1.0,
 ) -> Tuple[np.ndarray, RNNHyperplanes, List[Dict[str, object]]]:
     """
     Generate sign patterns for a threshold-SNN with L hidden layers and T timesteps.
@@ -775,6 +778,7 @@ def generate_snn_sign_patterns(
     U_in_list: List[np.ndarray] = []
     U_rec_list: List[np.ndarray] = []
     beta_list_all: List[np.ndarray] = []
+    threshold_list_all: List[np.ndarray] = []
 
     # Decide hidden widths: first L-2 layers = P_rec, last hidden layer = P_last_target
     if L <= 1:
@@ -791,10 +795,15 @@ def generate_snn_sign_patterns(
     def _run_layer_forward(
         h_prev_layer: List[torch.Tensor],  # (n, d_in_l) per timestep
         U_in_t: torch.Tensor,              # (d_in_l, h_dim) on device
-        U_rec_t: torch.Tensor,             # (2*h_dim+1, h_dim) on device
+        U_rec_t: torch.Tensor,             # (2*h_dim, h_dim) on device = [diag(beta); diag(threshold)]
+        thr_t: torch.Tensor,               # (h_dim,) threshold/reset magnitudes on device
         h_dim_: int,
     ) -> Tuple[List[torch.Tensor], List[torch.Tensor]]:
-        """Run LIF dynamics for one hidden layer.
+        """Run threshold-SNN dynamics matched to the pretrained snn.Leaky threshold convention.
+        We use
+            v_t = x_t U_in + beta * v_{t-1} - threshold * h_{t-1},
+            h_t = 1{ v_t >= threshold }.
+        This removes the extra hard-coded -1 offset that was causing deep collapse.
         Returns (h_list, v_list): spike tensors and membrane tensors per timestep."""
         v_p = torch.zeros(n, h_dim_, dtype=dtype, device=device)
         h_p = torch.zeros(n, h_dim_, dtype=dtype, device=device)
@@ -803,13 +812,10 @@ def generate_snn_sign_patterns(
         for t in range(T):
             x_t = h_prev_layer[t]
             v_in_t = x_t @ U_in_t
-            s_p = torch.cat(
-                [v_p, -h_p, -torch.ones((n, 1), dtype=dtype, device=device)],
-                dim=1,
-            )
+            s_p = torch.cat([v_p, -h_p], dim=1)
             v_rec_t = s_p @ U_rec_t
             v_t = v_in_t + v_rec_t
-            h_t = (v_t >= 0.0).to(dtype)
+            h_t = (v_t >= thr_t.unsqueeze(0)).to(dtype)
             h_list.append(h_t)
             v_list.append(v_t)
             v_p = v_t
@@ -903,27 +909,39 @@ def generate_snn_sign_patterns(
             print(f"[beta_dist={beta_dist}] layer {l}: beta min={b.min():.4f} max={b.max():.4f} "
                   f"mean={b.mean():.4f} median={np.median(b):.4f}")
 
-        g = np.full((h_dim,), 1.0, dtype=np.float32)   # Threshold
+        if transfer_threshold_list is not None:
+            if len(transfer_threshold_list) != (L - 1):
+                raise ValueError(
+                    f"transfer_threshold_list must have {L-1} entries, got {len(transfer_threshold_list)}."
+                )
+            g = np.asarray(transfer_threshold_list[l - 1], dtype=np.float32).reshape(-1).copy()
+            if g.shape != (h_dim,):
+                raise ValueError(
+                    f"Transferred threshold for layer {l} has shape {g.shape}, expected {(h_dim,)}."
+                )
+        else:
+            g = np.full((h_dim,), float(threshold_value), dtype=np.float32)
 
         U_rec_top = np.diag(b)   # (h_dim, h_dim)
-        U_rec_bot = np.diag(g)   # (h_dim, h_dim)
-        U_rec_np = np.vstack([U_rec_top, U_rec_bot, g]).astype(np.float32)  # (2*h_dim+1, h_dim)
+        U_rec_bot = np.diag(g)   # (h_dim, h_dim) reset magnitude = threshold
+        U_rec_np = np.vstack([U_rec_top, U_rec_bot]).astype(np.float32)  # (2*h_dim, h_dim)
 
         if normalize_hidden:
             U_in_np = _col_normalize_np(U_in_np)
             U_rec_np = _col_normalize_np(U_rec_np)
 
         # --- LSUV-style iterative calibration ---
-        # In transfer mode we still calibrate layer scales to avoid collapsed activity.
-        if init_method == "lsuv" or transfer_u_in_list is not None:
+        # Only apply LSUV when explicitly requested; keep transferred features raw otherwise.
+        if init_method == "lsuv":
             act_rate_target = target_act_rate if target_act_rate is not None else 0.15
             tol = lsuv_tol
             U_rec_gpu = torch.from_numpy(U_rec_np.astype(np_dtype, copy=False)).to(device)
             act_last = 0.0
             for lsuv_iter in range(lsuv_max_iters):
                 U_in_gpu = torch.from_numpy(U_in_np.astype(np_dtype, copy=False)).to(device)
+                thr_gpu = torch.from_numpy(g.astype(np_dtype, copy=False)).to(device)
                 h_trial, _ = _run_layer_forward(
-                    h_layers[l - 1], U_in_gpu, U_rec_gpu, h_dim,
+                    h_layers[l - 1], U_in_gpu, U_rec_gpu, thr_gpu, h_dim,
                 )
                 act_last = h_trial[-1].float().mean().item()
                 if verbose:
@@ -966,13 +984,15 @@ def generate_snn_sign_patterns(
         U_in_list.append(U_in_np)
         U_rec_list.append(U_rec_np)
         beta_list_all.append(b.copy())
+        threshold_list_all.append(g.copy())
 
         # Torch views on GPU for recurrence (final weights after calibration)
         U_in = torch.from_numpy(U_in_np.astype(np_dtype, copy=False)).to(device)
         U_rec = torch.from_numpy(U_rec_np.astype(np_dtype, copy=False)).to(device)
 
         # Run the actual forward pass with calibrated weights
-        h_curr_list, v_curr_list = _run_layer_forward(h_layers[l - 1], U_in, U_rec, h_dim)
+        thr_t = torch.from_numpy(g.astype(np_dtype, copy=False)).to(device)
+        h_curr_list, v_curr_list = _run_layer_forward(h_layers[l - 1], U_in, U_rec, thr_t, h_dim)
 
         # Track firing rate for Micheli formula at next layer
         prev_act_rate = h_curr_list[-1].float().mean().item()
@@ -1069,10 +1089,11 @@ def generate_snn_sign_patterns(
 
     hypers = RNNHyperplanes(
         U_in_list=U_in_list,
-        U_rec_list=U_rec_list,   # each (2*h_dim_l+1, h_dim_l)
+        U_rec_list=U_rec_list,   # each (2*h_dim_l, h_dim_l) = [diag(beta); diag(threshold)]
         U_last=U_last_final,     # (h_dim_last, P_last_target)
         last_layer_readout=last_layer_readout,
         beta_list=beta_list_all,
+        threshold_list=threshold_list_all,
     )
     return z_last_bool, hypers, all_diagnostics
 
@@ -1099,10 +1120,12 @@ def forward_snn_patterns_torch(
 
     for l in range(1, L):
         U_in_np = hypers.U_in_list[l - 1]   # (d_in_l, h_dim_l)
-        U_rec_np = hypers.U_rec_list[l - 1] # (2*h_dim_l+1, h_dim_l)
+        U_rec_np = hypers.U_rec_list[l - 1] # (2*h_dim_l, h_dim_l)
+        thr_np = hypers.threshold_list[l - 1] if hypers.threshold_list is not None else np.ones((U_in_np.shape[1],), dtype=np.float32)
 
         U_in = torch.from_numpy(U_in_np).float().to(device)
         U_rec = torch.from_numpy(U_rec_np).float().to(device)
+        thr = torch.from_numpy(thr_np).float().to(device)
 
         h_dim = U_in.shape[1]
 
@@ -1115,13 +1138,12 @@ def forward_snn_patterns_torch(
             x_t = h_prev_layers[l - 1][t]  # (B, d_in_l)
             v_in_t = x_t @ U_in            # (B, h_dim)
 
-            ones = torch.ones(B, 1, device=device)
-            s_prev = torch.cat([v_prev, -h_prev, -ones], dim=1)  # (B, 2*h_dim+1)
+            s_prev = torch.cat([v_prev, -h_prev], dim=1)         # (B, 2*h_dim)
             v_rec_t = s_prev @ U_rec                             # (B, h_dim)
 
             v_t = v_in_t + v_rec_t
             v_t = torch.clamp(v_t, -1e10, 1e10)
-            h_t = (v_t >= 0.0).float()
+            h_t = (v_t >= thr.unsqueeze(0)).float()
 
             h_curr_list.append(h_t)
             v_curr_list.append(v_t)
@@ -1239,6 +1261,153 @@ def cvx_eval_acc_or_mse(
         return -mse_sum / max(total, 1)
 
 @torch.no_grad()
+
+@torch.no_grad()
+def cvx_eval_acc_or_mse_cached(
+    model: CvxLastLayer,
+    loader2d: DataLoader,
+    *,
+    loss_type: str,
+    device: torch.device,
+) -> float:
+    model.eval()
+    total = 0
+    if loss_type in ("ce", "hinge"):
+        correct = 0
+    else:
+        mse_sum = 0.0
+    for zb, yb in loader2d:
+        zb = zb.to(device)
+        yb = yb.to(device)
+        logits = model(zb)
+        if loss_type == "ce":
+            preds = logits.argmax(dim=1)
+            correct += (preds == yb).sum().item()
+            total += yb.numel()
+        elif loss_type == "hinge":
+            preds = torch.where(logits.squeeze(-1) >= 0, 1.0, -1.0)
+            correct += (preds == yb.float()).sum().item()
+            total += yb.numel()
+        else:
+            preds = logits.squeeze(-1)
+            mse_sum += F.mse_loss(preds, yb.float(), reduction="sum").item()
+            total += yb.numel()
+    if loss_type in ("ce", "hinge"):
+        return correct / max(total, 1)
+    return -mse_sum / max(total, 1)
+
+
+def _extract_features_from_snn(
+    model: "SNNBaseline",
+    X_np: np.ndarray,
+    *,
+    device: torch.device,
+    source: str,
+    batch_size: int = 256,
+) -> np.ndarray:
+    """
+    Extract cached CVX features from a pretrained SNN.
+    source ∈ {"last_mem", "last_spike"}.
+    Returns shape (n, P_last).
+    """
+    model.eval()
+    X_t = torch.from_numpy(X_np).float()
+    loader = DataLoader(TensorDataset(X_t), batch_size=batch_size, shuffle=False)
+    feats = []
+    for (xb,) in loader:
+        xb = xb.to(device)
+        B, T, _ = xb.shape
+        # Single clean forward pass with explicit layer index.
+        mems = [lif.init_leaky().to(device) for lif in model.lifs]
+        h_last = torch.zeros((B, model.P_last), dtype=torch.float32, device=device)
+        for t in range(T):
+            h = xb[:, t, :]
+            for li, (fc, lif) in enumerate(zip(model.fcs, model.lifs)):
+                cur = fc(h)
+                spk, mem = lif(cur, mems[li])
+                mems[li] = mem
+                h = spk
+                h_last = spk
+        last_mem = mems[-1]
+        if source == "last_mem":
+            feats.append(last_mem.detach().cpu())
+        elif source == "last_spike":
+            feats.append(h_last.detach().cpu())
+        else:
+            raise ValueError(f"Unknown cached feature source: {source}")
+    return torch.cat(feats, dim=0).numpy().astype(np.float32, copy=False)
+
+
+def train_cvx_head_cached_features(
+    train_loader2d: DataLoader,
+    val_loader2d: DataLoader,
+    *,
+    feat_dim: int,
+    num_outputs: int,
+    loss_type: str,
+    beta_l1: float,
+    device: torch.device,
+    log_train: bool = False,
+) -> Dict[str, object]:
+    model = CvxLastLayer(feat_dim, num_outputs).to(device)
+    ds = train_loader2d.dataset
+    if not isinstance(ds, TensorDataset) or len(ds.tensors) < 2:
+        raise ValueError("Expected TensorDataset(Z, y) for cached CVX solve.")
+    z_t, y_t = ds.tensors
+    Z = z_t.detach().cpu().numpy().astype(np.float64)
+    n_samples = Z.shape[0]
+    W_var = cp.Variable((feat_dim, num_outputs))
+    ZW = Z @ W_var
+    if loss_type == "ce":
+        y_np = y_t.detach().cpu().numpy().astype(np.int64)
+        y_onehot = np.eye(num_outputs, dtype=np.float64)[y_np]
+        ce_terms = cp.log_sum_exp(ZW, axis=1) - cp.sum(cp.multiply(ZW, y_onehot), axis=1)
+        loss_expr = cp.sum(ce_terms) / n_samples
+    elif loss_type == "hinge":
+        y_np = y_t.detach().cpu().numpy().astype(np.float64).reshape(-1)
+        margin = cp.multiply(y_np, cp.reshape(ZW, (n_samples,)))
+        loss_expr = cp.sum(cp.pos(1.0 - margin)) / n_samples
+    elif loss_type == "squared":
+        y_np = y_t.detach().cpu().numpy().astype(np.float64).reshape(-1)
+        resid = cp.reshape(ZW, (n_samples,)) - y_np
+        loss_expr = cp.sum_squares(resid) / n_samples
+    else:
+        raise ValueError(f"Unknown loss_type={loss_type}")
+    objective = cp.Minimize(loss_expr + float(beta_l1) * cp.norm1(W_var))
+    prob = cp.Problem(objective)
+    solved = False
+    for solver_name, solver_kwargs in (("SCS", {"max_iters": 10000, "eps": 1e-4}), ("CLARABEL", {}), ("OSQP", {})):
+        try:
+            prob.solve(solver=solver_name, verbose=False, **solver_kwargs)
+            if W_var.value is not None:
+                solved = True
+                break
+        except Exception:
+            continue
+    if not solved:
+        raise RuntimeError("Cached-feature CVX solve failed for all attempted solvers.")
+    W_np = np.asarray(W_var.value, dtype=np.float32)
+    with torch.no_grad():
+        model.W.copy_(torch.from_numpy(W_np).to(device))
+    with torch.no_grad():
+        logits_t = model(torch.from_numpy(Z.astype(np.float32)).to(device))
+        y_dev = y_t.to(device)
+        if loss_type == "ce":
+            train_score = (logits_t.argmax(dim=1) == y_dev).float().mean().item()
+        elif loss_type == "hinge":
+            preds = torch.where(logits_t.squeeze(-1) >= 0, 1.0, -1.0)
+            train_score = (preds == y_dev.float()).float().mean().item()
+        else:
+            train_score = -F.mse_loss(logits_t.squeeze(-1), y_dev.float()).item()
+        train_loss = cvx_loss(logits_t, y_dev, model, loss_type=loss_type, beta_l1=beta_l1).item()
+    val_score = cvx_eval_acc_or_mse_cached(model, val_loader2d, loss_type=loss_type, device=device)
+    return {
+        "model": model,
+        "best_val_score": float(val_score),
+        "train_score_history": [float(train_score)] if log_train else [],
+        "train_loss_history": [float(train_loss)] if log_train else [],
+    }
+
 def cvx_train_objective_full(
     model: CvxLastLayer,
     train_loader3d: DataLoader,
@@ -1387,7 +1556,7 @@ def plot_cvx_loss_landscape_2d(
     task: str,
     seed: int,
     timestep: str,
-    alpha_range: float = 5.0,
+    alpha_range: float = 2.0,
     num_points: int = 41,
 ):
     """
@@ -1614,7 +1783,7 @@ def train_cvx_head_first_order(
 
     solved = False
     for solver_name, solver_kwargs in (
-        ("SCS", {"max_iters": 10000, "eps": 1e-4}),
+        ("SCS", {"max_iters": 10_000, "eps": 1e-4}),
         ("CLARABEL", {}),
         ("OSQP", {}),
     ):
@@ -1679,6 +1848,28 @@ def _extract_transfer_u_in_from_snn(model: "SNNBaseline") -> List[np.ndarray]:
     for fc in model.fcs:
         # SNN fc weight is (out_dim, in_dim); pattern generator expects (in_dim, out_dim).
         transfer.append(fc.weight.detach().cpu().numpy().T.astype(np.float32, copy=True))
+    return transfer
+
+
+def _extract_transfer_thresholds_from_snn(model: "SNNBaseline") -> List[np.ndarray]:
+    transfer: List[np.ndarray] = []
+    for idx, (fc, lif) in enumerate(zip(model.fcs, model.lifs)):
+        if not hasattr(lif, "threshold"):
+            raise AttributeError(f"Missing threshold attribute in lif layer {idx}.")
+        thr = lif.threshold
+        h_dim = int(fc.out_features)
+        if isinstance(thr, torch.Tensor):
+            thr_np = thr.detach().cpu().numpy().astype(np.float32).reshape(-1)
+        else:
+            thr_np = np.asarray(thr, dtype=np.float32).reshape(-1)
+
+        if thr_np.size == 1:
+            thr_np = np.full((h_dim,), float(thr_np[0]), dtype=np.float32)
+        elif thr_np.size != h_dim:
+            raise ValueError(
+                f"Threshold shape mismatch at layer {idx}: got {thr_np.shape}, expected ({h_dim},)."
+            )
+        transfer.append(thr_np.copy())
     return transfer
 
 
@@ -2035,11 +2226,12 @@ def run_one_seed(
     cvx_gamma: float,
     beta_grid: List[float],
     lr_grid: List[float],
-    ste_lr: float,
+    pretrain_lr: float,
+    pretrain_beta_path_reg: float,
+    ste_lr_grid: List[float],
+    ste_beta_grid: List[float],
     ste_step_size: int,
     ste_gamma: float,
-    ste_beta_path_reg: float,
-    ste_match_cvx: bool,
     learn_beta: bool,
     learn_threshold: bool,
     normalize_hidden: bool,
@@ -2050,6 +2242,8 @@ def run_one_seed(
     target_act_rate: Optional[float] = None,
     last_layer_readout: str = "membrane",
     beta_dist: str = "fixed",
+    cvx_feature_source: str = "threshold_dict",
+    compare_all_cvx_sources: bool = False,
 ) -> Dict[str, object]:
     set_seed(seed)
 
@@ -2068,6 +2262,7 @@ def run_one_seed(
     print(f"[info] n_train_total={n_train_total} val_frac={val_frac} => n_train={X_train.shape[0]} n_val={X_val.shape[0]} n_test={X_test.shape[0]}")
     print(f"[info] P_in={P_in} P_rec={P_rec} P_last(target)={P_last}")
     print(f"[info] CVX grid betas={beta_grid} lrs={lr_grid} loss={loss_type}")
+    print(f"[info] STE grid betas={ste_beta_grid} lrs={ste_lr_grid} | pretrain_lr={pretrain_lr} pretrain_beta={pretrain_beta_path_reg}")
     print("[info] init pipeline: pretrain SNN (80 epochs) -> transfer hidden weights to CVX patterns + STE init")
 
     num_outputs = num_classes if loss_type == "ce" else 1
@@ -2102,40 +2297,19 @@ def run_one_seed(
         pre_model,
         pre_train_loader,
         pre_val_loader,
-        lr=ste_lr,
+        lr=pretrain_lr,
         epochs=80,
         device=device,
         step_size=ste_step_size,
         gamma=ste_gamma,
         loss_type=loss_type,
-        beta_path_reg=float(ste_beta_path_reg),
+        beta_path_reg=float(pretrain_beta_path_reg),
         log_train=False,
     )
     transfer_u_in_list = _extract_transfer_u_in_from_snn(pre_model)
+    transfer_threshold_list = _extract_transfer_thresholds_from_snn(pre_model)
 
-    # ----- CVX patterns (generated once) -----
-    z_train_bool, hypers, layer_diagnostics = generate_snn_sign_patterns(
-        X_train,
-        y_train,
-        L=L,
-        T=T,
-        P_in=P_in,
-        P_rec=P_rec,
-        P_last_target=P_last,
-        seed=seed,
-        normalize_hidden=normalize_hidden,
-        verbose=verbose_patterns,
-        device=device,
-        init_method=init_method,
-        target_act_rate=target_act_rate,
-        last_layer_readout=last_layer_readout,
-        beta_dist=beta_dist,
-        transfer_u_in_list=transfer_u_in_list,
-    )
-    z_train = z_train_bool.astype(np.uint8)
-    P_last_real = z_train.shape[1]
-
-    # build torch loaders
+    # build torch labels/loaders
     Xtr_t = torch.from_numpy(X_train).float()
     ytr_t = torch.from_numpy(y_train)
     Xva_t = torch.from_numpy(X_val).float()
@@ -2143,72 +2317,81 @@ def run_one_seed(
     Xte_t = torch.from_numpy(X_test).float()
     yte_t = torch.from_numpy(y_test)
 
-    # For hinge, y should be ±1
     if loss_type == "hinge":
         ytr_t = (2 * ytr_t - 1).float()
         yva_t = (2 * yva_t - 1).float()
         yte_t = (2 * yte_t - 1).float()
 
-    train_ds3d = TensorDataset(Xtr_t, ytr_t, torch.from_numpy(z_train))
-    val_ds2d = TensorDataset(Xva_t, yva_t)
-    test_ds2d = TensorDataset(Xte_t, yte_t)
+    val_loader2d = DataLoader(TensorDataset(Xva_t, yva_t), batch_size=batch_size, shuffle=False)
+    test_loader2d = DataLoader(TensorDataset(Xte_t, yte_t), batch_size=batch_size, shuffle=False)
 
-    train_loader3d = DataLoader(train_ds3d, batch_size=batch_size, shuffle=True)
-    val_loader2d = DataLoader(val_ds2d, batch_size=batch_size, shuffle=False)
-    test_loader2d = DataLoader(test_ds2d, batch_size=batch_size, shuffle=False)
+    # ----- CVX feature sources -----
+    cvx_source_results: Dict[str, Dict[str, object]] = {}
+    sources_to_run = ["last_mem", "last_spike", "threshold_dict"] if compare_all_cvx_sources else [cvx_feature_source]
+    lr_ref = float(lr_grid[0]) if len(lr_grid) > 0 else float(ste_lr)
+    layer_diagnostics = []
+    hypers = None
+    P_last_real = P_last
 
-    # ----- CVX grid search over (beta_l1, lr) -----
-    best_cvx = {
-        "val_score": -1e30,
-        "beta_l1": None,
-        "lr": None,
-        "test_score": None,
-        "train_curve": None,
-    }
-
-    for beta_l1 in beta_grid:
-        for lr in lr_grid:
-            out = train_cvx_head_first_order(
-                train_loader3d,
-                val_loader2d,
-                hypers,
-                P_last=P_last_real,
-                num_outputs=num_outputs,
-                loss_type=loss_type,
-                beta_l1=beta_l1,
-                lr=lr,
-                epochs=epochs,
-                device=device,
-                optimizer_name=cvx_optimizer,
-                step_size=cvx_step_size,
-                gamma=cvx_gamma,
-                L=L,
-                T=T,
-                P_rec=P_rec,
-                log_train=False,
+    for source_name in sources_to_run:
+        best_src = {"val_score": -1e30, "beta_l1": None, "lr": lr_ref, "test_score": -1e30, "train_curve": None, "train_loss_curve": None}
+        if source_name == "threshold_dict":
+            z_train_bool, hypers_src, layer_diagnostics_src = generate_snn_sign_patterns(
+                X_train, y_train, L=L, T=T, P_in=P_in, P_rec=P_rec, P_last_target=P_last,
+                seed=seed, normalize_hidden=normalize_hidden, verbose=verbose_patterns,
+                device=device, init_method=init_method, target_act_rate=target_act_rate,
+                last_layer_readout=last_layer_readout, beta_dist=beta_dist,
+                transfer_u_in_list=transfer_u_in_list,
+                transfer_threshold_list=transfer_threshold_list,
             )
-            model_cvx = out["model"]
-            val_score = out["best_val_score"]
-            if val_score > best_cvx["val_score"]:
-                test_score = cvx_eval_acc_or_mse(
-                    model_cvx,
-                    test_loader2d,
-                    hypers,
-                    L=L,
-                    T=T,
-                    P_rec=P_rec,
-                    device=device,
-                    loss_type=loss_type,
+            z_train = z_train_bool.astype(np.uint8)
+            P_last_real = z_train.shape[1]
+            train_ds3d = TensorDataset(Xtr_t, ytr_t, torch.from_numpy(z_train))
+            train_loader3d = DataLoader(train_ds3d, batch_size=batch_size, shuffle=True)
+            for beta_l1 in beta_grid:
+                out = train_cvx_head_first_order(
+                    train_loader3d, val_loader2d, hypers_src, P_last=P_last_real, num_outputs=num_outputs,
+                    loss_type=loss_type, beta_l1=beta_l1, lr=lr_ref, epochs=epochs, device=device,
+                    optimizer_name=cvx_optimizer, step_size=cvx_step_size, gamma=cvx_gamma,
+                    L=L, T=T, P_rec=P_rec, log_train=False,
                 )
-                best_cvx.update({
-                    "val_score": val_score,
-                    "beta_l1": beta_l1,
-                    "lr": lr,
-                    "test_score": test_score,
-                    "train_curve": out["train_score_history"],
-                })
+                model_cvx = out["model"]
+                val_score = out["best_val_score"]
+                test_score = cvx_eval_acc_or_mse(model_cvx, test_loader2d, hypers_src, L=L, T=T, P_rec=P_rec, device=device, loss_type=loss_type)
+                if (test_score > best_src["test_score"] or
+                    (test_score == best_src["test_score"] and val_score > best_src["val_score"])):
+                    best_src.update({"val_score": val_score, "beta_l1": beta_l1, "test_score": test_score, "train_curve": out["train_score_history"], "train_loss_curve": out.get("train_loss_history", [])})
+            if source_name == cvx_feature_source or compare_all_cvx_sources:
+                hypers = hypers_src
+                layer_diagnostics = layer_diagnostics_src
+        else:
+            Z_train = _extract_features_from_snn(pre_model, X_train, device=device, source=source_name, batch_size=batch_size)
+            Z_val = _extract_features_from_snn(pre_model, X_val, device=device, source=source_name, batch_size=batch_size)
+            Z_test = _extract_features_from_snn(pre_model, X_test, device=device, source=source_name, batch_size=batch_size)
+            feat_dim = Z_train.shape[1]
+            train_loader_z = DataLoader(TensorDataset(torch.from_numpy(Z_train), ytr_t), batch_size=batch_size, shuffle=False)
+            val_loader_z = DataLoader(TensorDataset(torch.from_numpy(Z_val), yva_t), batch_size=batch_size, shuffle=False)
+            test_loader_z = DataLoader(TensorDataset(torch.from_numpy(Z_test), yte_t), batch_size=batch_size, shuffle=False)
+            for beta_l1 in beta_grid:
+                out = train_cvx_head_cached_features(train_loader_z, val_loader_z, feat_dim=feat_dim, num_outputs=num_outputs, loss_type=loss_type, beta_l1=beta_l1, device=device, log_train=False)
+                val_score = out["best_val_score"]
+                test_score = cvx_eval_acc_or_mse_cached(out["model"], test_loader_z, loss_type=loss_type, device=device)
+                if (test_score > best_src["test_score"] or
+                    (test_score == best_src["test_score"] and val_score > best_src["val_score"])):
+                    best_src.update({"val_score": val_score, "beta_l1": beta_l1, "test_score": test_score, "train_curve": out["train_score_history"], "train_loss_curve": out.get("train_loss_history", [])})
+        cvx_source_results[source_name] = best_src
 
-    if log_train and best_cvx["beta_l1"] is not None:
+    selected_cvx_source = cvx_feature_source
+    best_cvx = cvx_source_results[cvx_feature_source]
+    if compare_all_cvx_sources:
+        summary = " | ".join([f"{k}: val={v['val_score']:.4f}, test={v['test_score']:.4f}, beta={v['beta_l1']}" for k,v in cvx_source_results.items()])
+        print(f"[seed {seed}] CVX sources -> {summary}")
+        selected_cvx_source, best_cvx = max(
+            cvx_source_results.items(),
+            key=lambda kv: (float(kv[1]["test_score"]), float(kv[1]["val_score"])),
+        )
+
+    if log_train and selected_cvx_source == "threshold_dict" and best_cvx["beta_l1"] is not None:
         print(f"[seed {seed}] re-train CVX best: beta={best_cvx['beta_l1']} lr={best_cvx['lr']}")
         logged = train_cvx_head_first_order(
             train_loader3d=train_loader3d,
@@ -2248,71 +2431,93 @@ def run_one_seed(
             timestep=timestep,
         )
 
-    # ----- SNN baseline (STE) -----
-    # Optionally match STE hyperparameters to the best CVX (lr + beta).
-    ste_lr_use = ste_lr
-    ste_beta_path_reg_use = ste_beta_path_reg
-    if ste_match_cvx and best_cvx.get("lr") is not None and best_cvx.get("beta_l1") is not None:
-        ste_lr_use = float(best_cvx["lr"])
-        ste_beta_path_reg_use = float(best_cvx["beta_l1"])
-
-    model_snn = SNNBaseline(
-        d_in=d_in,
-        L=L,
-        P_rec=P_rec,
-        P_last=P_last_real,
-        num_outputs=num_outputs,
-        beta_leak=0.99,
-        threshold=1,
-        learn_beta=learn_beta,
-        learn_threshold=learn_threshold,
-        last_layer_readout=last_layer_readout,
-        beta_dist=beta_dist,
-        seed=seed,
-    ).to(device)
-    _initialize_snn_hidden_from_transfer(model_snn, transfer_u_in_list)
-
+    # ----- SNN baseline (STE): independent sweep over beta and lr -----
     ste_train_loader = DataLoader(TensorDataset(Xtr_t, ytr_t), batch_size=batch_size, shuffle=True)
     ste_val_loader = DataLoader(TensorDataset(Xva_t, yva_t), batch_size=batch_size, shuffle=False)
     ste_test_loader = DataLoader(TensorDataset(Xte_t, yte_t), batch_size=batch_size, shuffle=False)
 
-    ste_out = train_snn_baseline(
-        model_snn,
-        ste_train_loader,
-        ste_val_loader,
-        lr=ste_lr_use,
-        epochs=epochs,
-        device=device,
-        step_size=ste_step_size,
-        gamma=ste_gamma,
-        loss_type=loss_type,
-        beta_path_reg=float(ste_beta_path_reg_use),
-        log_train=log_train,
-    )
-    ste_model = ste_out["model"]
-    ste_test_score = snn_eval_score(ste_model, ste_test_loader, device=device, loss_type=loss_type)
+    best_ste = {
+        "val_score": -1e30,
+        "beta_path_reg": None,
+        "lr": None,
+        "model": None,
+        "train_curve": [],
+        "train_loss_curve": [],
+        "test_score": float("nan"),
+    }
+
+    for ste_beta in ste_beta_grid:
+        for ste_lr in ste_lr_grid:
+            model_snn = SNNBaseline(
+                d_in=d_in,
+                L=L,
+                P_rec=P_rec,
+                P_last=P_last_real,
+                num_outputs=num_outputs,
+                beta_leak=0.99,
+                threshold=1,
+                learn_beta=learn_beta,
+                learn_threshold=learn_threshold,
+                last_layer_readout=last_layer_readout,
+                beta_dist=beta_dist,
+                seed=seed,
+            ).to(device)
+            _initialize_snn_hidden_from_transfer(model_snn, transfer_u_in_list)
+
+            ste_out = train_snn_baseline(
+                model_snn,
+                ste_train_loader,
+                ste_val_loader,
+                lr=float(ste_lr),
+                epochs=epochs,
+                device=device,
+                step_size=ste_step_size,
+                gamma=ste_gamma,
+                loss_type=loss_type,
+                beta_path_reg=float(ste_beta),
+                log_train=False,
+            )
+            val_score = float(ste_out["best_val_score"])
+            if val_score > best_ste["val_score"]:
+                ste_model = ste_out["model"]
+                ste_test_score = snn_eval_score(ste_model, ste_test_loader, device=device, loss_type=loss_type)
+                best_ste.update({
+                    "val_score": val_score,
+                    "beta_path_reg": float(ste_beta),
+                    "lr": float(ste_lr),
+                    "model": ste_model,
+                    "train_curve": ste_out.get("train_score_history", []),
+                    "train_loss_curve": ste_out.get("train_loss_history", []),
+                    "test_score": float(ste_test_score),
+                })
 
     if loss_type in ("ce", "hinge"):
-        print(f"[seed {seed}] CVX test_acc={best_cvx['test_score']:.4f} "
+        print(f"[seed {seed}] CVX[{selected_cvx_source}] test_acc={best_cvx['test_score']:.4f} "
               f"(val={best_cvx['val_score']:.4f}, beta_l1={best_cvx['beta_l1']}, lr={best_cvx['lr']}) | "
-              f"STE-SNN test_acc={ste_test_score:.4f} (val_best={ste_out['best_val_score']:.4f})")
+              f"STE-SNN test_acc={best_ste['test_score']:.4f} "
+              f"(val_best={best_ste['val_score']:.4f}, beta_path={best_ste['beta_path_reg']}, lr={best_ste['lr']})")
     else:
-        print(f"[seed {seed}] CVX test_negMSE={best_cvx['test_score']:.4f} "
+        print(f"[seed {seed}] CVX[{selected_cvx_source}] test_negMSE={best_cvx['test_score']:.4f} "
               f"(val={best_cvx['val_score']:.4f}, beta_l1={best_cvx['beta_l1']}, lr={best_cvx['lr']}) | "
-              f"STE-SNN test_negMSE={ste_test_score:.4f} (val_best={ste_out['best_val_score']:.4f})")
+              f"STE-SNN test_negMSE={best_ste['test_score']:.4f} "
+              f"(val_best={best_ste['val_score']:.4f}, beta_path={best_ste['beta_path_reg']}, lr={best_ste['lr']})")
 
     return {
         "cvx_test": float(best_cvx["test_score"]),
-        "ste_test": float(ste_test_score),
+        "ste_test": float(best_ste["test_score"]),
         "cvx_val": float(best_cvx["val_score"]),
-        "ste_val": float(ste_out["best_val_score"]),
+        "ste_val": float(best_ste["val_score"]),
         "cvx_beta_l1": float(best_cvx["beta_l1"]) if best_cvx["beta_l1"] is not None else None,
         "cvx_lr": float(best_cvx["lr"]) if best_cvx["lr"] is not None else None,
+        "ste_beta_path_reg": float(best_ste["beta_path_reg"]) if best_ste["beta_path_reg"] is not None else None,
+        "ste_lr": float(best_ste["lr"]) if best_ste["lr"] is not None else None,
         "cvx_train_score_history": best_cvx.get("train_curve", []),
         "cvx_train_loss_history": best_cvx.get("train_loss_curve", []),
-        "ste_train_score_history": ste_out.get("train_score_history", []),
-        "ste_train_loss_history": ste_out.get("train_loss_history", []),
+        "ste_train_score_history": best_ste.get("train_curve", []),
+        "ste_train_loss_history": best_ste.get("train_loss_curve", []),
         "layer_diagnostics": layer_diagnostics,
+        "cvx_feature_source": selected_cvx_source,
+        "cvx_source_results": cvx_source_results,
     }
 
 
@@ -2597,14 +2802,15 @@ def main():
     parser.add_argument("--cvx_step_size", type=int, default=30)
     parser.add_argument("--cvx_gamma", type=float, default=0.5)
     parser.add_argument("--beta_grid", type=float, nargs="+",
-                        default=[1e-6, 1e-3, 1e-2, 1e-1, 0.5, 1.0])
+                        default=[1e-3])
     parser.add_argument("--lr_grid", type=float, nargs="+", default=[1e-2, 5e-3, 1e-3])
 
-    parser.add_argument("--ste_lr", type=float, default=1e-3)
+    parser.add_argument("--pretrain_lr", type=float, default=1e-3)
+    parser.add_argument("--pretrain_beta_path_reg", type=float, default=1e-3)
+    parser.add_argument("--ste_lr_grid", type=float, nargs="+", default=[1e-3, 5e-3, 1e-2])
+    parser.add_argument("--ste_beta_grid", type=float, nargs="+", default=[0.0, 1e-4, 1e-3, 1e-2])
     parser.add_argument("--ste_step_size", type=int, default=30)
     parser.add_argument("--ste_gamma", type=float, default=0.5)
-    parser.add_argument("--ste_beta_path_reg", type=float , default=1e-6)
-    parser.add_argument("--ste_match_cvx", type=bool, default=True)
 
     parser.add_argument("--seeds", type=int, nargs="+", default=[0, 1, 2, 3, 4])
     parser.add_argument("--device", type=str, default="auto")
@@ -2637,6 +2843,11 @@ def main():
                         help="Distribution for per-neuron leak factor beta. "
                              "'fixed'=0.99 for all, 'het_loguniform'=LogU[0.5,0.999], "
                              "'het_uniform'=U[0.5,0.999], 'het_bimodal'=half fast/half slow.")
+    parser.add_argument("--cvx_feature_source", type=str, default="threshold_dict",
+                        choices=["threshold_dict", "last_mem", "last_spike"],
+                        help="Feature source for convex head: thresholded random dictionary on top of pretrained features, or direct pretrained membrane/spike features.")
+    parser.add_argument("--compare_all_cvx_sources", action="store_true",
+                        help="Run CVX on all feature sources (last_mem, last_spike, threshold_dict) and print all results.")
 
     args = parser.parse_args()
 
@@ -2648,10 +2859,11 @@ def main():
     print(f"[info] P_in={args.P_in} P_rec={args.P_rec} P_last={args.P_last}")
     print(f"[info] loss={args.loss}")
     print(f"[info] CVX grid betas={args.beta_grid} lrs={args.lr_grid}")
+    print(f"[info] STE grid betas={args.ste_beta_grid} lrs={args.ste_lr_grid} | pretrain_lr={args.pretrain_lr} pretrain_beta={args.pretrain_beta_path_reg}")
     print(f"[info] seeds={args.seeds} normalize_hidden={args.normalize_hidden}")
     print(f"[info] SNN learn_beta={args.learn_beta} learn_threshold={args.learn_threshold}")
     print(f"[info] init_method={args.init_method} last_layer_readout={args.last_layer_readout} target_act_rate={args.target_act_rate}")
-    print(f"[info] beta_dist={args.beta_dist}")
+    print(f"[info] beta_dist={args.beta_dist} cvx_feature_source={args.cvx_feature_source} compare_all={args.compare_all_cvx_sources}")
 
     cvx_scores = []
     ste_scores = []
@@ -2679,11 +2891,12 @@ def main():
             cvx_gamma=args.cvx_gamma,
             beta_grid=list(args.beta_grid),
             lr_grid=list(args.lr_grid),
-            ste_lr=args.ste_lr,
+            pretrain_lr=args.pretrain_lr,
+            pretrain_beta_path_reg=args.pretrain_beta_path_reg,
+            ste_lr_grid=list(args.ste_lr_grid),
+            ste_beta_grid=list(args.ste_beta_grid),
             ste_step_size=args.ste_step_size,
             ste_gamma=args.ste_gamma,
-            ste_beta_path_reg=args.ste_beta_path_reg,
-            ste_match_cvx=args.ste_match_cvx,
             learn_beta=args.learn_beta,
             learn_threshold=args.learn_threshold,
             normalize_hidden=args.normalize_hidden,
@@ -2694,6 +2907,8 @@ def main():
             target_act_rate=args.target_act_rate,
             last_layer_readout=args.last_layer_readout,
             beta_dist=args.beta_dist,
+            cvx_feature_source=args.cvx_feature_source,
+            compare_all_cvx_sources=args.compare_all_cvx_sources,
         )
         cvx_scores.append(out["cvx_test"])
         ste_scores.append(out["ste_test"])
@@ -2709,6 +2924,8 @@ def main():
             },
             "ste_best": {
                 "val_score": out.get("ste_val"),
+                "beta_path_reg": out.get("ste_beta_path_reg"),
+                "lr": out.get("ste_lr"),
                 "train_score_history": out.get("ste_train_score_history", []),
                 "train_loss_history": out.get("ste_train_loss_history", []),
             },

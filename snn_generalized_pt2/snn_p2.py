@@ -24,8 +24,10 @@ NOTE:
 """
 
 import argparse
+import csv
 import os
 import json
+import re
 from dataclasses import dataclass
 from datetime import datetime
 from typing import List, Tuple, Dict, Optional
@@ -35,6 +37,7 @@ import numpy as np
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+import cvxpy as cp
 from torch.utils.data import DataLoader, TensorDataset
 from torchvision import datasets, transforms
 import matplotlib.pyplot as plt
@@ -371,6 +374,115 @@ def make_moving_gaussian_blobs_seq(
     return X, labels, 2
 
 
+def _int_to_base_str(x: int, base: int) -> str:
+    if x == 0:
+        return "0"
+    digits = []
+    while x > 0:
+        digits.append(str(x % base))
+        x //= base
+    return "".join(reversed(digits))
+
+
+def _digits_lsd_fixed(x: int, base: int, T: int) -> List[int]:
+    out = []
+    for _ in range(T):
+        out.append(x % base)
+        x //= base
+    return out
+
+
+def make_arithmetic_seq(
+    n: int,
+    T: int,
+    seed: int,
+    *,
+    op: str,
+    base: int,
+) -> Tuple[np.ndarray, np.ndarray, int]:
+    """
+    Arithmetic dataset with per-timestep input:
+      (operand_1_digit, operand_2_digit, carry_or_remainder)
+
+    Label is class-id for the full output string produced at the last timestep.
+    Supported ops: add, sub, mul, div
+    Supported bases: 2, 3, 5, 7, 10
+    """
+    if op not in {"add", "sub", "mul", "div"}:
+        raise ValueError(f"Unsupported arithmetic op: {op}")
+    if base not in {2, 3, 5, 7, 10}:
+        raise ValueError(f"Unsupported arithmetic base: {base}")
+    if T <= 0:
+        raise ValueError(f"T must be positive for arithmetic_seq, got T={T}")
+
+    rng = np.random.default_rng(seed)
+    X = np.zeros((n, T, 3), dtype=np.float32)
+    result_strings: List[str] = []
+
+    max_val = base ** T
+    for i in range(n):
+        a = int(rng.integers(0, max_val))
+        b = int(rng.integers(0, max_val))
+
+        if op == "sub" and a < b:
+            a, b = b, a
+
+        if op == "div":
+            # Keep divisor simple and non-zero for stable long-division style carry (remainder).
+            b = int(rng.integers(1, base))
+
+        a_digits = _digits_lsd_fixed(a, base, T)
+        b_digits = _digits_lsd_fixed(b, base, T) if op != "div" else [b] * T
+
+        carry = 0
+        for t in range(T):
+            d1 = a_digits[t]
+            d2 = b_digits[t]
+            carry_in = carry
+            X[i, t, 0] = float(d1)
+            X[i, t, 1] = float(d2)
+            X[i, t, 2] = float(carry_in)
+
+            if op == "add":
+                s = d1 + d2 + carry_in
+                carry = s // base
+            elif op == "sub":
+                s = d1 - d2 - carry_in
+                if s < 0:
+                    s += base
+                    carry = 1
+                else:
+                    carry = 0
+            elif op == "mul":
+                # Column-wise schoolbook multiplication carry.
+                col_sum = carry_in
+                for j in range(t + 1):
+                    col_sum += a_digits[j] * b_digits[t - j]
+                carry = col_sum // base
+            else:  # div
+                # Use remainder as carry signal in base expansion.
+                carry = (carry_in * base + d1) % b
+
+        if op == "add":
+            res = _int_to_base_str(a + b, base)
+        elif op == "sub":
+            res = _int_to_base_str(a - b, base)
+        elif op == "mul":
+            res = _int_to_base_str(a * b, base)
+        else:
+            q = a // b
+            r = a % b
+            res = f"{_int_to_base_str(q, base)}|r{_int_to_base_str(r, base)}"
+
+        result_strings.append(res)
+
+    uniq = sorted(set(result_strings))
+    str_to_id = {s: k for k, s in enumerate(uniq)}
+    y = np.asarray([str_to_id[s] for s in result_strings], dtype=np.int64)
+    num_classes = len(uniq)
+    return X, y, num_classes
+
+
 @dataclass
 class MNISTCache:
     X_train: np.ndarray  # (60000, 784)
@@ -514,6 +626,8 @@ def build_dataset(
     n_train_total: int,
     n_test: int,
     seed: int,
+    arith_op: str = "add",
+    arith_base: int = 2,
 ) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, int]:
     """Unified dataset builder.
 
@@ -535,6 +649,20 @@ def build_dataset(
             else make_two_step_xor_seq(n_train_total + n_test, T, seed=seed)
             if task == "two_step_xor_seq"
             else make_moving_gaussian_blobs_seq(n_train_total + n_test, T, seed=seed)
+        )
+        X_total = X_seq[:n_train_total]
+        y_total = y[:n_train_total]
+        X_test = X_seq[n_train_total : n_train_total + n_test]
+        y_test = y[n_train_total : n_train_total + n_test]
+        return X_total, y_total, X_test, y_test, num_classes
+
+    if task == "arithmetic_seq":
+        X_seq, y, num_classes = make_arithmetic_seq(
+            n=n_train_total + n_test,
+            T=T,
+            seed=seed,
+            op=arith_op,
+            base=arith_base,
         )
         X_total = X_seq[:n_train_total]
         y_total = y[:n_train_total]
@@ -612,13 +740,43 @@ def build_dataset(
     if task.startswith("dfa:"):
         from dfa_tasks import make_dfa_dataset
         dfa_spec = task[4:]  # strip "dfa:" prefix
-        X_all, y_all, num_classes = make_dfa_dataset(
-            dfa_spec, n=n_train_total + n_test, T=T, seed=seed, balanced=True
+
+        # Train pool at base length T, balanced.
+        X_total, y_total, num_classes = make_dfa_dataset(
+            dfa_spec, n=n_train_total, T=T, seed=seed, balanced=True
         )
-        X_total = X_all[:n_train_total]
-        y_total = y_all[:n_train_total]
-        X_test = X_all[n_train_total : n_train_total + n_test]
-        y_test = y_all[n_train_total : n_train_total + n_test]
+
+        # OOD-length test bench: split n_test into T/2, T, 3T/2.
+        t_short = max(1, T // 2)
+        t_mid = T
+        t_long = max(1, (3 * T) // 2)
+        n_short = n_test // 3
+        n_mid = n_test // 3
+        n_long = n_test - n_short - n_mid
+
+        def _pad_to_len(X: np.ndarray, tgt_len: int) -> np.ndarray:
+            if X.shape[1] == tgt_len:
+                return X
+            if X.shape[1] > tgt_len:
+                return X[:, :tgt_len, :]
+            pad = np.zeros((X.shape[0], tgt_len - X.shape[1], X.shape[2]), dtype=X.dtype)
+            return np.concatenate([X, pad], axis=1)
+
+        X_s, y_s, _ = make_dfa_dataset(dfa_spec, n=n_short, T=t_short, seed=seed + 101, balanced=True)
+        X_m, y_m, _ = make_dfa_dataset(dfa_spec, n=n_mid, T=t_mid, seed=seed + 202, balanced=True)
+        X_l, y_l, _ = make_dfa_dataset(dfa_spec, n=n_long, T=t_long, seed=seed + 303, balanced=True)
+
+        X_test = np.concatenate(
+            [_pad_to_len(X_s, t_long), _pad_to_len(X_m, t_long), _pad_to_len(X_l, t_long)],
+            axis=0,
+        )
+        y_test = np.concatenate([y_s, y_m, y_l], axis=0)
+
+        # Shuffle test set after concatenation while preserving class counts.
+        rng = np.random.default_rng(seed + 404)
+        perm = rng.permutation(X_test.shape[0])
+        X_test = X_test[perm]
+        y_test = y_test[perm]
         return X_total, y_total, X_test, y_test, num_classes
 
     # Static CIFAR-10 / CIFAR-100 vision.
@@ -683,13 +841,43 @@ def build_dataset(
 
 
 def split_train_val(X: np.ndarray, y: np.ndarray, val_frac: float, seed: int):
+    """
+    Stratified split for classification labels; plain random split fallback.
+    """
     n = X.shape[0]
-    idx = np.arange(n)
     rng = np.random.default_rng(seed)
-    rng.shuffle(idx)
-    n_val = int(round(val_frac * n))
-    val_idx = idx[:n_val]
-    tr_idx = idx[n_val:]
+
+    y_arr = np.asarray(y)
+    is_classification = (
+        y_arr.ndim == 1
+        and np.issubdtype(y_arr.dtype, np.integer)
+        and np.unique(y_arr).size >= 2
+    )
+    if not is_classification:
+        idx = np.arange(n)
+        rng.shuffle(idx)
+        n_val = int(round(val_frac * n))
+        val_idx = idx[:n_val]
+        tr_idx = idx[n_val:]
+        return X[tr_idx], y[tr_idx], X[val_idx], y[val_idx]
+
+    classes = np.unique(y_arr)
+    tr_parts = []
+    va_parts = []
+    for c in classes:
+        cls_idx = np.where(y_arr == c)[0]
+        rng.shuffle(cls_idx)
+        n_val_c = int(round(val_frac * cls_idx.size))
+        # Keep both splits populated when possible.
+        if cls_idx.size > 1:
+            n_val_c = min(max(n_val_c, 1), cls_idx.size - 1)
+        va_parts.append(cls_idx[:n_val_c])
+        tr_parts.append(cls_idx[n_val_c:])
+
+    val_idx = np.concatenate(va_parts) if len(va_parts) > 0 else np.array([], dtype=np.int64)
+    tr_idx = np.concatenate(tr_parts) if len(tr_parts) > 0 else np.array([], dtype=np.int64)
+    rng.shuffle(val_idx)
+    rng.shuffle(tr_idx)
     return X[tr_idx], y[tr_idx], X[val_idx], y[val_idx]
 
 
@@ -1071,13 +1259,13 @@ def forward_snn_patterns_torch(
     device: torch.device,
 ) -> torch.Tensor:
     B, T_data, d_in = X_seq.shape
-    assert T_data == T
+    T_eff = T_data
 
     last_layer_readout = hypers.last_layer_readout
 
     # layer 0: raw inputs
     h_prev_layers: List[List[torch.Tensor]] = []
-    h0 = [X_seq[:, t, :].to(device) for t in range(T)]
+    h0 = [X_seq[:, t, :].to(device) for t in range(T_eff)]
     h_prev_layers.append(h0)
 
     d_in_l = d_in
@@ -1097,7 +1285,7 @@ def forward_snn_patterns_torch(
         h_curr_list: List[torch.Tensor] = []
         v_curr_list: List[torch.Tensor] = []
 
-        for t in range(T):
+        for t in range(T_eff):
             x_t = h_prev_layers[l - 1][t]  # (B, d_in_l)
             v_in_t = x_t @ U_in            # (B, h_dim)
 
@@ -1129,6 +1317,233 @@ def forward_snn_patterns_torch(
     D_last = (readout_T @ U_last >= 0.0).float()                  # (B, P_last_target)
 
     return D_last
+
+
+@torch.no_grad()
+def forward_snn_hidden_spikes_torch(
+    X_seq: torch.Tensor,
+    hypers: RNNHyperplanes,
+    *,
+    L: int,
+    T: int,
+    device: torch.device,
+) -> List[List[torch.Tensor]]:
+    """
+    Return hidden spikes for all hidden layers and timesteps.
+    Output layout:
+      spikes_by_layer[l-1][t] = spike tensor for hidden layer l at timestep t.
+    Shapes:
+      each tensor is (B, h_dim_l), dtype float32 with values in {0,1}.
+    """
+    B, T_data, d_in = X_seq.shape
+    assert T_data == T
+
+    h_prev_layers: List[List[torch.Tensor]] = []
+    h0 = [X_seq[:, t, :].to(device) for t in range(T)]
+    h_prev_layers.append(h0)
+
+    hidden_spikes: List[List[torch.Tensor]] = []
+    d_in_l = d_in
+    for l in range(1, L):
+        U_in_np = hypers.U_in_list[l - 1]
+        U_rec_np = hypers.U_rec_list[l - 1]
+        U_in = torch.from_numpy(U_in_np).float().to(device)
+        U_rec = torch.from_numpy(U_rec_np).float().to(device)
+        h_dim = U_in.shape[1]
+
+        v_prev = torch.zeros(B, h_dim, device=device)
+        h_prev = torch.zeros(B, h_dim, device=device)
+        h_curr_list: List[torch.Tensor] = []
+
+        for t in range(T):
+            x_t = h_prev_layers[l - 1][t]
+            v_in_t = x_t @ U_in
+            ones = torch.ones(B, 1, device=device)
+            s_prev = torch.cat([v_prev, -h_prev, -ones], dim=1)
+            v_rec_t = s_prev @ U_rec
+            v_t = v_in_t + v_rec_t
+            v_t = torch.clamp(v_t, -1e10, 1e10)
+            h_t = (v_t >= 0.0).float()
+
+            h_curr_list.append(h_t)
+            v_prev, h_prev = v_t, h_t
+
+        h_prev_layers.append(h_curr_list)
+        hidden_spikes.append(h_curr_list)
+        d_in_l = h_dim
+
+    return hidden_spikes
+
+
+def save_activation_indices_csv(
+    X_seq: np.ndarray,
+    y: np.ndarray,
+    hypers: RNNHyperplanes,
+    *,
+    task: str,
+    L: int,
+    T: int,
+    device: torch.device,
+    out_csv_path: str,
+) -> None:
+    """
+    Save activation-index report in a sequence-first textual format:
+      - header with task / DFA metadata
+      - per-datapoint line: sequence -> label (+ violation_t for DFA tasks)
+      - per-(layer,t) activation signature lines
+    """
+    X_t = torch.from_numpy(X_seq).float().to(device)
+    spikes_by_layer = forward_snn_hidden_spikes_torch(X_t, hypers, L=L, T=T, device=device)
+    y_np = np.asarray(y)
+    n = X_seq.shape[0]
+    d_in = X_seq.shape[2]
+
+    dfa_name = None
+    dfa_obj = None
+    dfa_alphabet = None
+    if task.startswith("dfa:"):
+        from dfa_tasks import get_dfa
+
+        dfa_name = task[4:]
+        dfa_obj = get_dfa(dfa_name)
+        dfa_alphabet = dfa_obj.alphabet
+        if len(dfa_alphabet) != d_in:
+            raise ValueError(
+                f"save_activation_indices_csv: dfa alphabet size {len(dfa_alphabet)} "
+                f"!= sequence dim {d_in}"
+            )
+
+    def decode_tokens_for_i(i: int) -> List[str]:
+        seq_i = X_seq[i]
+        toks: List[str] = []
+        for t in range(T):
+            row = seq_i[t]
+            if np.allclose(row, 0.0):
+                continue
+            idx = int(np.argmax(row))
+            if dfa_alphabet is not None:
+                toks.append(str(dfa_alphabet[idx]))
+            else:
+                toks.append(str(idx))
+        return toks
+
+    def first_accept_to_reject_timestep(tokens: List[str]) -> int:
+        if dfa_obj is None:
+            return -1
+        state = dfa_obj.start
+        prev_accept = state in dfa_obj.accept
+        for t, sym in enumerate(tokens):
+            state = dfa_obj.step(state, sym)
+            cur_accept = state in dfa_obj.accept if state != -1 else False
+            if prev_accept and (not cur_accept):
+                return t
+            prev_accept = cur_accept
+        return -1
+
+    os.makedirs(os.path.dirname(out_csv_path) or ".", exist_ok=True)
+    with open(out_csv_path, "w", newline="") as f:
+        f.write("# format: activation_indices_v2\n")
+        f.write(f"# task: {task}\n")
+        f.write(f"# L: {L}\n")
+        f.write(f"# T: {T}\n")
+        if dfa_name is not None and dfa_obj is not None:
+            f.write(f"# dfa_name: {dfa_name}\n")
+            f.write(f"# dfa_states: {sorted(dfa_obj.states)}\n")
+            f.write(f"# dfa_accept_states: {sorted(dfa_obj.accept)}\n")
+            f.write(f"# dfa_alphabet: {','.join(dfa_obj.alphabet)}\n")
+            f.write("# dfa_transition_rule: first_accept_to_reject_t\n")
+        f.write("\n")
+        for i in range(n):
+            label_i = y_np[i].item() if hasattr(y_np[i], "item") else y_np[i]
+            tokens = decode_tokens_for_i(i)
+            seq_str = "(" + ",".join(tokens) + ")"
+            vt = first_accept_to_reject_timestep(tokens)
+            f.write(f"datapoint={i} sequence={seq_str} -> label={int(label_i)} violation_t={vt}\n")
+            for l in range(1, L):
+                h_list = spikes_by_layer[l - 1]
+                for t in range(T):
+                    act = h_list[t][i].detach().cpu().numpy()
+                    idx = np.flatnonzero(act > 0.5).astype(np.int64).tolist()
+                    idx_str = ";".join(str(v) for v in idx)
+                    f.write(f"({l},{t}),{idx_str}\n")
+            f.write("\n")
+
+
+def solve_binary_max_margin_with_cvx(
+    z_train: np.ndarray,
+    y_train_pm1: np.ndarray,
+    *,
+    prefer_solvers: Optional[List[str]] = None,
+) -> Dict[str, object]:
+    """
+    Hard-margin max-margin separator (binary labels in {-1,+1}) on cached z features.
+
+    Solves:
+      minimize ||w||_2^2
+      s.t. y_i * (z_i^T w + b) >= 1, for all i
+
+    Returns dict with learned w, b, geometric margin, and train accuracy.
+    Raises RuntimeError if no solver succeeds or data is not separable.
+    """
+    Z = np.asarray(z_train, dtype=np.float64)
+    y = np.asarray(y_train_pm1, dtype=np.float64).reshape(-1)
+    if Z.ndim != 2:
+        raise ValueError(f"z_train must be 2D, got shape={Z.shape}")
+    if y.shape[0] != Z.shape[0]:
+        raise ValueError(f"y_train length {y.shape[0]} != z_train rows {Z.shape[0]}")
+    if not np.all(np.isin(y, [-1.0, 1.0])):
+        raise ValueError("y_train_pm1 must contain only -1/+1 labels.")
+
+    n, p = Z.shape
+    w = cp.Variable(p)
+    b = cp.Variable()
+    margins = cp.multiply(y, Z @ w + b)
+    constraints = [margins >= 1.0]
+    objective = cp.Minimize(cp.sum_squares(w))
+    prob = cp.Problem(objective, constraints)
+
+    solvers = prefer_solvers or ["OSQP", "SCS", "CLARABEL"]
+    solved = False
+    last_err = None
+    for s in solvers:
+        try:
+            if s == "SCS":
+                prob.solve(solver=s, verbose=False, max_iters=20000, eps=1e-5)
+            else:
+                prob.solve(solver=s, verbose=False)
+            if w.value is not None and b.value is not None and prob.status in ("optimal", "optimal_inaccurate"):
+                solved = True
+                break
+        except Exception as e:  # noqa: BLE001
+            last_err = e
+
+    if not solved:
+        msg = "Max-margin CVX solve failed."
+        if last_err is not None:
+            msg += f" Last error: {last_err}"
+        raise RuntimeError(msg)
+
+    w_np = np.asarray(w.value, dtype=np.float64).reshape(-1)
+    b_np = float(b.value)
+    logits = Z @ w_np + b_np
+    preds = np.where(logits >= 0.0, 1.0, -1.0)
+    train_acc = float((preds == y).mean())
+    if train_acc < 1.0:
+        raise RuntimeError(
+            f"Hard-margin solution did not achieve 100% train accuracy (got {train_acc:.4f}). "
+            "Data may be non-separable under current features."
+        )
+
+    w_norm = float(np.linalg.norm(w_np) + 1e-12)
+    geom_margin = float(1.0 / w_norm)
+    return {
+        "w": w_np.astype(np.float32),
+        "b": b_np,
+        "geom_margin": geom_margin,
+        "train_acc": train_acc,
+        "status": prob.status,
+        "objective": float(prob.value),
+    }
 
 
 # ============================================================
@@ -1373,7 +1788,7 @@ def plot_cvx_loss_landscape_2d(
     task: str,
     seed: int,
     timestep: str,
-    alpha_range: float = 5.0,
+    alpha_range: float = 2.0,
     num_points: int = 41,
 ):
     """
@@ -2015,6 +2430,10 @@ def run_one_seed(
     target_act_rate: Optional[float] = None,
     last_layer_readout: str = "membrane",
     beta_dist: str = "fixed",
+    max_margin_solver: bool = False,
+    save_activation_indices: bool = False,
+    arith_op: str = "add",
+    arith_base: int = 2,
 ) -> Dict[str, object]:
     set_seed(seed)
 
@@ -2025,6 +2444,8 @@ def run_one_seed(
         n_train_total=n_train_total,
         n_test=n_test,
         seed=seed,
+        arith_op=arith_op,
+        arith_base=arith_base,
     )
 
     X_train, y_train, X_val, y_val = split_train_val(X_total, y_total, val_frac=val_frac, seed=seed)
@@ -2033,6 +2454,18 @@ def run_one_seed(
     print(f"[info] n_train_total={n_train_total} val_frac={val_frac} => n_train={X_train.shape[0]} n_val={X_val.shape[0]} n_test={X_test.shape[0]}")
     print(f"[info] P_in={P_in} P_rec={P_rec} P_last(target)={P_last}")
     print(f"[info] CVX grid betas={beta_grid} lrs={lr_grid} loss={loss_type}")
+    if task.startswith("dfa:"):
+        t_short = max(1, T // 2)
+        t_mid = T
+        t_long = max(1, (3 * T) // 2)
+        n_short = n_test // 3
+        n_mid = n_test // 3
+        n_long = n_test - n_short - n_mid
+        print(
+            f"[info] DFA OOD test-length split: "
+            f"{n_short}@T/2({t_short}), {n_mid}@T({t_mid}), {n_long}@3T/2({t_long}) "
+            f"(short/mid are padded to {t_long} for batching)"
+        )
 
     # ----- CVX patterns (generated once) -----
     z_train_bool, hypers, layer_diagnostics = generate_snn_sign_patterns(
@@ -2054,6 +2487,28 @@ def run_one_seed(
     )
     z_train = z_train_bool.astype(np.uint8)
     P_last_real = z_train.shape[1]
+
+    if save_activation_indices:
+        safe_task = re.sub(r"[^A-Za-z0-9_.-]+", "_", task)
+        auto_path = os.path.join(
+            "activation_indices",
+            safe_task,
+            f"L_{L}_T_{T}",
+            f"{timestep}.csv",
+        )
+        save_activation_indices_csv(
+            X_train,
+            y_train,
+            hypers,
+            task=task,
+            L=L,
+            T=T,
+            device=device,
+            out_csv_path=auto_path,
+        )
+        print(f"[seed {seed}] saved activation-index csv: {auto_path}")
+
+    max_margin_out: Optional[Dict[str, object]] = None
 
     # build torch loaders
     Xtr_t = torch.from_numpy(X_train).float()
@@ -2077,6 +2532,35 @@ def run_one_seed(
     val_loader2d = DataLoader(val_ds2d, batch_size=batch_size, shuffle=False)
     test_loader2d = DataLoader(test_ds2d, batch_size=batch_size, shuffle=False)
 
+    # Optional DFA OOD-length test splits for per-length reporting.
+    dfa_test_loaders_by_len: Dict[str, DataLoader] = {}
+    if task.startswith("dfa:"):
+        from dfa_tasks import make_dfa_dataset
+        dfa_spec = task[4:]
+        t_short = max(1, T // 2)
+        t_mid = T
+        t_long = max(1, (3 * T) // 2)
+        n_short = n_test // 3
+        n_mid = n_test // 3
+        n_long = n_test - n_short - n_mid
+
+        X_s, y_s, _ = make_dfa_dataset(dfa_spec, n=n_short, T=t_short, seed=seed + 101, balanced=True)
+        X_m, y_m, _ = make_dfa_dataset(dfa_spec, n=n_mid, T=t_mid, seed=seed + 202, balanced=True)
+        X_l, y_l, _ = make_dfa_dataset(dfa_spec, n=n_long, T=t_long, seed=seed + 303, balanced=True)
+
+        def _mk_loader(X_np: np.ndarray, y_np: np.ndarray) -> DataLoader:
+            x_t = torch.from_numpy(X_np).float()
+            y_t = torch.from_numpy(y_np)
+            if loss_type == "hinge":
+                y_t = (2 * y_t - 1).float()
+            return DataLoader(TensorDataset(x_t, y_t), batch_size=batch_size, shuffle=False)
+
+        dfa_test_loaders_by_len = {
+            "T/2": _mk_loader(X_s, y_s),
+            "T": _mk_loader(X_m, y_m),
+            "3T/2": _mk_loader(X_l, y_l),
+        }
+
     # ----- CVX grid search over (beta_l1, lr) -----
     num_outputs = num_classes if loss_type == "ce" else 1
     best_cvx = {
@@ -2085,19 +2569,110 @@ def run_one_seed(
         "lr": None,
         "test_score": None,
         "train_curve": None,
+        "train_loss_curve": [],
+        "model": None,
+        "max_margin_w": None,
+        "max_margin_b": None,
     }
 
-    for beta_l1 in beta_grid:
-        for lr in lr_grid:
-            out = train_cvx_head_first_order(
-                train_loader3d,
-                val_loader2d,
-                hypers,
-                P_last=P_last_real,
+    @torch.no_grad()
+    def _eval_max_margin_on_loader(
+        loader: DataLoader,
+        w_np: np.ndarray,
+        b_val: float,
+    ) -> float:
+        if loss_type != "hinge":
+            return float("nan")
+        w_t = torch.from_numpy(w_np).float().to(device)
+        total, correct = 0, 0
+        for xb, yb in loader:
+            xb = xb.to(device)
+            yb = yb.to(device).float()
+            z = forward_snn_patterns_torch(xb, hypers, L=L, T=T, device=device)
+            logits = z @ w_t + float(b_val)
+            preds = torch.where(logits >= 0, 1.0, -1.0)
+            correct += (preds == yb).sum().item()
+            total += yb.numel()
+        return correct / max(total, 1)
+
+    if max_margin_solver:
+        if loss_type != "hinge":
+            print(f"[seed {seed}] max-margin solver skipped (requires --loss hinge, got {loss_type}).")
+        else:
+            y_pm1 = np.where(y_train.astype(np.float64) > 0, 1.0, -1.0)
+            for beta_l1 in beta_grid:
+                try:
+                    mm = solve_binary_max_margin_with_cvx(z_train, y_pm1)
+                    val_score = _eval_max_margin_on_loader(val_loader2d, mm["w"], mm["b"])
+                    if log_train:
+                        print(
+                            f"[CVX-MM] beta={beta_l1} train_acc={mm['train_acc']:.4f} "
+                            f"val_acc={val_score:.4f} margin={mm['geom_margin']:.6f}"
+                        )
+                    if val_score > best_cvx["val_score"]:
+                        best_cvx.update({
+                            "val_score": float(val_score),
+                            "beta_l1": float(beta_l1),
+                            "lr": None,
+                            "train_curve": [float(mm["train_acc"])],
+                            "train_loss_curve": [],
+                            "max_margin_w": mm["w"],
+                            "max_margin_b": float(mm["b"]),
+                        })
+                        max_margin_out = mm
+                except Exception as e:
+                    if log_train:
+                        print(f"[CVX-MM] beta={beta_l1} failed: {e}")
+    else:
+        for beta_l1 in beta_grid:
+            for lr in lr_grid:
+                out = train_cvx_head_first_order(
+                    train_loader3d,
+                    val_loader2d,
+                    hypers,
+                    P_last=P_last_real,
+                    num_outputs=num_outputs,
+                    loss_type=loss_type,
+                    beta_l1=beta_l1,
+                    lr=lr,
+                    epochs=epochs,
+                    device=device,
+                    optimizer_name=cvx_optimizer,
+                    step_size=cvx_step_size,
+                    gamma=cvx_gamma,
+                    L=L,
+                    T=T,
+                    P_rec=P_rec,
+                    log_train=False,
+                )
+                model_cvx = out["model"]
+                val_score = out["best_val_score"]
+                if val_score > best_cvx["val_score"]:
+                    best_cvx.update({
+                        "val_score": val_score,
+                        "beta_l1": beta_l1,
+                        "lr": lr,
+                        "train_curve": out["train_score_history"],
+                        "model": model_cvx,
+                    })
+
+    if log_train and best_cvx["beta_l1"] is not None:
+        if max_margin_solver:
+            print(
+                f"[seed {seed}] CVX max-margin best: beta={best_cvx['beta_l1']} "
+                f"val={best_cvx['val_score']:.4f}"
+            )
+        else:
+            print(f"[seed {seed}] re-train CVX best: beta={best_cvx['beta_l1']} lr={best_cvx['lr']}")
+            logged = train_cvx_head_first_order(
+                train_loader3d=train_loader3d,
+                val_loader2d=val_loader2d,
+                hypers=hypers,
+                P_last=P_last,
                 num_outputs=num_outputs,
                 loss_type=loss_type,
-                beta_l1=beta_l1,
-                lr=lr,
+                beta_l1=float(best_cvx["beta_l1"]),
+                lr=float(best_cvx["lr"]),
                 epochs=epochs,
                 device=device,
                 optimizer_name=cvx_optimizer,
@@ -2106,68 +2681,26 @@ def run_one_seed(
                 L=L,
                 T=T,
                 P_rec=P_rec,
-                log_train=False,
+                log_train=log_train,
             )
-            model_cvx = out["model"]
-            val_score = out["best_val_score"]
-            if val_score > best_cvx["val_score"]:
-                test_score = cvx_eval_acc_or_mse(
-                    model_cvx,
-                    test_loader2d,
-                    hypers,
-                    L=L,
-                    T=T,
-                    P_rec=P_rec,
-                    device=device,
-                    loss_type=loss_type,
-                )
-                best_cvx.update({
-                    "val_score": val_score,
-                    "beta_l1": beta_l1,
-                    "lr": lr,
-                    "test_score": test_score,
-                    "train_curve": out["train_score_history"],
-                })
-
-    if log_train and best_cvx["beta_l1"] is not None:
-        print(f"[seed {seed}] re-train CVX best: beta={best_cvx['beta_l1']} lr={best_cvx['lr']}")
-        logged = train_cvx_head_first_order(
-            train_loader3d=train_loader3d,
-            val_loader2d=val_loader2d,
-            hypers=hypers,
-            P_last=P_last,
-            num_outputs=num_outputs,
-            loss_type=loss_type,
-            beta_l1=float(best_cvx["beta_l1"]),
-            lr=float(best_cvx["lr"]),
-            epochs=epochs,
-            device=device,
-            optimizer_name=cvx_optimizer,
-            step_size=cvx_step_size,
-            gamma=cvx_gamma,
-            L=L,
-            T=T,
-            P_rec=P_rec,
-            log_train=log_train,
-        )
-        best_cvx["train_curve"] = logged["train_score_history"]
-        best_cvx["train_loss_curve"] = logged.get("train_loss_history", [])
-        plot_cvx_loss_landscape_2d(
-            model_cvx,
-            train_loader3d,
-            val_loader2d,
-            hypers,
-            L=L,
-            T=T,
-            P_rec=P_rec,
-            loss_type=loss_type,
-            beta_l1=float(best_cvx["beta_l1"]),
-            device=device,
-            dataset=task,
-            task=task,
-            seed=seed,
-            timestep=timestep,
-        )
+            best_cvx["train_curve"] = logged["train_score_history"]
+            best_cvx["train_loss_curve"] = logged.get("train_loss_history", [])
+            plot_cvx_loss_landscape_2d(
+                logged["model"],
+                train_loader3d,
+                val_loader2d,
+                hypers,
+                L=L,
+                T=T,
+                P_rec=P_rec,
+                loss_type=loss_type,
+                beta_l1=float(best_cvx["beta_l1"]),
+                device=device,
+                dataset=task,
+                task=task,
+                seed=seed,
+                timestep=timestep,
+            )
 
     # ----- SNN baseline (STE) -----
     # Optionally match STE hyperparameters to the best CVX (lr + beta).
@@ -2213,6 +2746,54 @@ def run_one_seed(
     ste_model = ste_out["model"]
     ste_test_score = snn_eval_score(ste_model, ste_test_loader, device=device, loss_type=loss_type)
 
+    # Test evaluation after CVX selection (separate from selection loop).
+    if max_margin_solver and best_cvx["max_margin_w"] is not None and best_cvx["max_margin_b"] is not None:
+        best_cvx["test_score"] = _eval_max_margin_on_loader(
+            test_loader2d,
+            best_cvx["max_margin_w"],
+            float(best_cvx["max_margin_b"]),
+        )
+    elif best_cvx["model"] is not None:
+        best_cvx["test_score"] = cvx_eval_acc_or_mse(
+            best_cvx["model"],
+            test_loader2d,
+            hypers,
+            L=L,
+            T=T,
+            P_rec=P_rec,
+            device=device,
+            loss_type=loss_type,
+        )
+    else:
+        best_cvx["test_score"] = float("nan")
+
+    cvx_test_by_len: Dict[str, float] = {}
+    ste_test_by_len: Dict[str, float] = {}
+    if dfa_test_loaders_by_len:
+        for key, loader_k in dfa_test_loaders_by_len.items():
+            if max_margin_solver and best_cvx["max_margin_w"] is not None and best_cvx["max_margin_b"] is not None:
+                cvx_test_by_len[key] = float(
+                    _eval_max_margin_on_loader(loader_k, best_cvx["max_margin_w"], float(best_cvx["max_margin_b"]))
+                )
+            elif best_cvx["model"] is not None:
+                cvx_test_by_len[key] = float(
+                    cvx_eval_acc_or_mse(
+                        best_cvx["model"],
+                        loader_k,
+                        hypers,
+                        L=L,
+                        T=T,
+                        P_rec=P_rec,
+                        device=device,
+                        loss_type=loss_type,
+                    )
+                )
+            else:
+                cvx_test_by_len[key] = float("nan")
+            ste_test_by_len[key] = float(
+                snn_eval_score(ste_model, loader_k, device=device, loss_type=loss_type)
+            )
+
     if loss_type in ("ce", "hinge"):
         print(f"[seed {seed}] CVX test_acc={best_cvx['test_score']:.4f} "
               f"(val={best_cvx['val_score']:.4f}, beta_l1={best_cvx['beta_l1']}, lr={best_cvx['lr']}) | "
@@ -2221,6 +2802,12 @@ def run_one_seed(
         print(f"[seed {seed}] CVX test_negMSE={best_cvx['test_score']:.4f} "
               f"(val={best_cvx['val_score']:.4f}, beta_l1={best_cvx['beta_l1']}, lr={best_cvx['lr']}) | "
               f"STE-SNN test_negMSE={ste_test_score:.4f} (val_best={ste_out['best_val_score']:.4f})")
+    if dfa_test_loaders_by_len and loss_type in ("ce", "hinge"):
+        print(
+            f"[seed {seed}] per-length test_acc (T/2, T, 3T/2): "
+            f"CVX=({cvx_test_by_len['T/2']:.4f}, {cvx_test_by_len['T']:.4f}, {cvx_test_by_len['3T/2']:.4f}) | "
+            f"STE=({ste_test_by_len['T/2']:.4f}, {ste_test_by_len['T']:.4f}, {ste_test_by_len['3T/2']:.4f})"
+        )
 
     return {
         "cvx_test": float(best_cvx["test_score"]),
@@ -2234,6 +2821,9 @@ def run_one_seed(
         "ste_train_score_history": ste_out.get("train_score_history", []),
         "ste_train_loss_history": ste_out.get("train_loss_history", []),
         "layer_diagnostics": layer_diagnostics,
+        "max_margin_result": max_margin_out,
+        "cvx_test_by_len": cvx_test_by_len,
+        "ste_test_by_len": ste_test_by_len,
     }
 
 
@@ -2286,6 +2876,14 @@ def save_metrics_report(
             f.write(
                 f"[seed {seed}] -> cvx test_acc={d.get('cvx_test')} , snn test_acc={d.get('ste_test')}\n"
             )
+            cvx_test_by_len = d.get("cvx_test_by_len", {})
+            ste_test_by_len = d.get("ste_test_by_len", {})
+            if cvx_test_by_len and ste_test_by_len:
+                f.write(
+                    f"[seed {seed}] -> per-length test_acc "
+                    f"CVX(T/2,T,3T/2)=({cvx_test_by_len.get('T/2')}, {cvx_test_by_len.get('T')}, {cvx_test_by_len.get('3T/2')}) "
+                    f"STE(T/2,T,3T/2)=({ste_test_by_len.get('T/2')}, {ste_test_by_len.get('T')}, {ste_test_by_len.get('3T/2')})\n"
+                )
 
             # Write layer diagnostics if available
             layer_diags = d.get("layer_diagnostics", [])
@@ -2457,6 +3055,7 @@ def main():
         "parity_seq",
         "two_step_xor_seq",
         "moving_blobs_seq",
+        "arithmetic_seq",
         "mnist_seq",
         "mnist_perm_seq",
         "ptb_seq",
@@ -2542,6 +3141,12 @@ def main():
 
     parser.add_argument("--target_act_rate", type=float, default=None,
                         help="Target activation rate for LSUV init (default: 0.15). Ignored by other methods.")
+    parser.add_argument("--arith_op", type=str, default="add",
+                        choices=["add", "sub", "mul", "div"],
+                        help="Operation for arithmetic_seq task.")
+    parser.add_argument("--arith_base", type=int, default=2,
+                        choices=[2, 3, 5, 7, 10],
+                        help="Numeric base for arithmetic_seq task.")
 
     parser.add_argument("--init_method", type=str, default="random",
                         choices=["random", "micheli", "lognormal", "lsuv"],
@@ -2558,6 +3163,12 @@ def main():
                         help="Distribution for per-neuron leak factor beta. "
                              "'fixed'=0.99 for all, 'het_loguniform'=LogU[0.5,0.999], "
                              "'het_uniform'=U[0.5,0.999], 'het_bimodal'=half fast/half slow.")
+    parser.add_argument("--max_margin_solver", action="store_true",
+                        help="Run binary hard-margin CVX solver on cached train patterns (hinge only).")
+    parser.add_argument("--save_activation_indices", action="store_true",
+                        help="Save activation indices automatically to "
+                             "activation_indices/<task_name>/L_<L>_T_<T>/<timestamp>.csv "
+                             "(text report with sequence+label blocks and (l,t) activations)")
 
     args = parser.parse_args()
 
@@ -2573,6 +3184,8 @@ def main():
     print(f"[info] SNN learn_beta={args.learn_beta} learn_threshold={args.learn_threshold}")
     print(f"[info] init_method={args.init_method} last_layer_readout={args.last_layer_readout} target_act_rate={args.target_act_rate}")
     print(f"[info] beta_dist={args.beta_dist}")
+    if args.task == "arithmetic_seq":
+        print(f"[info] arithmetic_seq config: op={args.arith_op} base={args.arith_base}")
 
     cvx_scores = []
     ste_scores = []
@@ -2615,7 +3228,12 @@ def main():
             target_act_rate=args.target_act_rate,
             last_layer_readout=args.last_layer_readout,
             beta_dist=args.beta_dist,
+            max_margin_solver=args.max_margin_solver,
+            save_activation_indices=args.save_activation_indices,
+            arith_op=args.arith_op,
+            arith_base=args.arith_base,
         )
+
         cvx_scores.append(out["cvx_test"])
         ste_scores.append(out["ste_test"])
 
@@ -2635,6 +3253,8 @@ def main():
             },
             "cvx_test": out.get("cvx_test"),
             "ste_test": out.get("ste_test"),
+            "cvx_test_by_len": out.get("cvx_test_by_len", {}),
+            "ste_test_by_len": out.get("ste_test_by_len", {}),
             "layer_diagnostics": out.get("layer_diagnostics", []),
         }
 

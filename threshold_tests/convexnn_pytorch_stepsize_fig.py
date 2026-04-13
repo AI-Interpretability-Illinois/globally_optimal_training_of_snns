@@ -53,12 +53,14 @@ class FCNetwork(nn.Module):
     def __init__(self, H, num_classes=10, input_dim=3072):
         self.num_classes = num_classes
         super(FCNetwork, self).__init__()
-        self.layer1 = nn.Sequential(nn.Linear(input_dim, H, bias=False), nn.ReLU())
+        self.layer1 = nn.Linear(input_dim, H, bias=False)
         self.layer2 = nn.Linear(H, num_classes, bias=False)
 
     def forward(self, x):
         x = x.reshape(x.size(0), -1)
-        out = self.layer2(self.layer1(x))
+        input_from_fc1 = self.layer1(x)
+        x_thresh = (input_from_fc1 > 0.0).float()
+        out = self.layer2(x_thresh)
         return out
     
 # functions for generating sign patterns

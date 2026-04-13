@@ -456,6 +456,91 @@ def dyck1_bounded(max_depth: int = 3) -> DFA:
                      trans, lambda q: q == 0)
 
 
+def is_balanced_unbounded(s: List[str]) -> bool:
+    """
+    Dyck-1 membership with unbounded depth (not regular / not a DFA).
+    """
+    depth = 0
+    for ch in s:
+        if ch == "(":
+            depth += 1
+        elif ch == ")":
+            depth -= 1
+            if depth < 0:
+                return False
+        else:
+            return False
+    return depth == 0
+
+
+def generate_dyck1_unbounded_strings(
+    length: int,
+    n: int,
+    seed: int = 0,
+    balanced: bool = True,
+) -> Tuple[List[List[str]], np.ndarray]:
+    """
+    Generate Dyck-1 examples at fixed length using stack-based acceptance.
+
+    Notes:
+      - This is NOT a DFA generator (unbounded depth).
+      - For odd `length`, positives do not exist.
+    """
+    rng = np.random.default_rng(seed)
+    sigma = ["(", ")"]
+
+    if not balanced or length % 2 == 1:
+        syms = rng.integers(0, 2, size=(n, length))
+        strings = [[sigma[i] for i in row] for row in syms]
+        labels = np.array([1 if is_balanced_unbounded(s) else 0 for s in strings], dtype=np.int64)
+        return strings, labels
+
+    # Balanced sampling (roughly 50/50) by rejection.
+    target_pos = n // 2
+    target_neg = n - target_pos
+    pos_strings: List[List[str]] = []
+    neg_strings: List[List[str]] = []
+
+    max_attempts = n * 200
+    attempts = 0
+    while (len(pos_strings) < target_pos or len(neg_strings) < target_neg) and attempts < max_attempts:
+        batch = max(512, n)
+        syms = rng.integers(0, 2, size=(batch, length))
+        for row in syms:
+            s = [sigma[i] for i in row]
+            if is_balanced_unbounded(s):
+                if len(pos_strings) < target_pos:
+                    pos_strings.append(s)
+            else:
+                if len(neg_strings) < target_neg:
+                    neg_strings.append(s)
+            attempts += 1
+            if len(pos_strings) >= target_pos and len(neg_strings) >= target_neg:
+                break
+
+    # Fallback fill if rejection didn't hit target exactly.
+    while len(pos_strings) < target_pos and attempts < max_attempts * 2:
+        row = rng.integers(0, 2, size=(length,))
+        s = [sigma[i] for i in row]
+        if is_balanced_unbounded(s):
+            pos_strings.append(s)
+        attempts += 1
+
+    while len(neg_strings) < target_neg:
+        row = rng.integers(0, 2, size=(length,))
+        s = [sigma[i] for i in row]
+        if not is_balanced_unbounded(s):
+            neg_strings.append(s)
+
+    strings = pos_strings[:target_pos] + neg_strings[:target_neg]
+    labels = np.array([1] * min(len(pos_strings), target_pos) + [0] * target_neg, dtype=np.int64)
+
+    perm = rng.permutation(len(strings))
+    strings = [strings[i] for i in perm]
+    labels = labels[perm]
+    return strings, labels
+
+
 # ── Specific pattern containment (SL-class) ──
 
 def contains_substring(pattern: str, alphabet: Optional[List[str]] = None) -> DFA:
@@ -606,7 +691,8 @@ def get_dfa(name: str) -> DFA:
 
     raise KeyError(
         f"Unknown DFA '{name}'. Available: {sorted(BUILTIN_DFAS.keys())}\n"
-        f"Or use 'att:/path/to/file.att' for custom DFAs."
+        f"Or use 'att:/path/to/file.att' for custom DFAs.\n"
+        f"Special non-DFA language specs supported in make_dfa_dataset: ['dyck1_unbounded']."
     )
 
 
@@ -649,6 +735,20 @@ def make_dfa_dataset(
     y : np.ndarray, shape (n,) ∈ {0, 1}
     num_classes : int = 2
     """
+    if dfa_spec == "dyck1_unbounded":
+        strings, labels = generate_dyck1_unbounded_strings(
+            length=T,
+            n=n,
+            seed=seed,
+            balanced=balanced,
+        )
+        sym2idx = {"(": 0, ")": 1}
+        X = np.zeros((len(strings), T, 2), dtype=np.float32)
+        for i, s in enumerate(strings):
+            for t in range(min(len(s), T)):
+                X[i, t, sym2idx[s[t]]] = 1.0
+        return X, labels, 2
+
     if dfa_spec.startswith("mlregtest:"):
         # Load pre-generated data from MLRegTest files
         prefix = dfa_spec[len("mlregtest:"):]
