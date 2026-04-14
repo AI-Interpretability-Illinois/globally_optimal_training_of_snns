@@ -1376,11 +1376,17 @@ def train_cvx_head_cached_features(
     objective = cp.Minimize(loss_expr + float(beta_l1) * cp.norm1(W_var))
     prob = cp.Problem(objective)
     solved = False
+    used_solver: Optional[str] = None
+    solver_num_iters: Optional[int] = None
     for solver_name, solver_kwargs in (("SCS", {"max_iters": 10000, "eps": 1e-4}), ("CLARABEL", {}), ("OSQP", {})):
         try:
             prob.solve(solver=solver_name, verbose=False, **solver_kwargs)
             if W_var.value is not None:
                 solved = True
+                used_solver = solver_name
+                stats = prob.solver_stats
+                if stats is not None and hasattr(stats, "num_iters") and stats.num_iters is not None:
+                    solver_num_iters = int(stats.num_iters)
                 break
         except Exception:
             continue
@@ -1404,6 +1410,10 @@ def train_cvx_head_cached_features(
     return {
         "model": model,
         "best_val_score": float(val_score),
+        "train_score": float(train_score),
+        "train_loss": float(train_loss),
+        "solver_name": used_solver,
+        "solver_num_iters": solver_num_iters,
         "train_score_history": [float(train_score)] if log_train else [],
         "train_loss_history": [float(train_loss)] if log_train else [],
     }
@@ -1782,6 +1792,8 @@ def train_cvx_head_first_order(
     prob = cp.Problem(objective)
 
     solved = False
+    used_solver: Optional[str] = None
+    solver_num_iters: Optional[int] = None
     for solver_name, solver_kwargs in (
         ("SCS", {"max_iters": 10_000, "eps": 1e-4}),
         ("CLARABEL", {}),
@@ -1791,6 +1803,10 @@ def train_cvx_head_first_order(
             prob.solve(solver=solver_name, verbose=False, **solver_kwargs)
             if W_var.value is not None:
                 solved = True
+                used_solver = solver_name
+                stats = prob.solver_stats
+                if stats is not None and hasattr(stats, "num_iters") and stats.num_iters is not None:
+                    solver_num_iters = int(stats.num_iters)
                 break
         except Exception:
             continue
@@ -1838,6 +1854,10 @@ def train_cvx_head_first_order(
     return {
         "model": model,
         "best_val_score": val_score,
+        "train_score": float(train_score),
+        "train_loss": float(train_loss),
+        "solver_name": used_solver,
+        "solver_num_iters": solver_num_iters,
         "train_score_history": [float(train_score)] if log_train else [],
         "train_loss_history": [float(train_loss)] if log_train else [],
     }
@@ -2306,6 +2326,17 @@ def run_one_seed(
         beta_path_reg=float(pretrain_beta_path_reg),
         log_train=False,
     )
+
+    # Report pretrained model quality before transfer/fine-tuning stages.
+    yte_pre = torch.from_numpy(y_test)
+    if loss_type == "hinge":
+        yte_pre = (2 * yte_pre - 1).float()
+    pre_test_loader = DataLoader(TensorDataset(torch.from_numpy(X_test).float(), yte_pre), batch_size=batch_size, shuffle=False)
+    pre_train_score = snn_eval_score(pre_model, pre_train_loader, device=device, loss_type=loss_type)
+    pre_test_score = snn_eval_score(pre_model, pre_test_loader, device=device, loss_type=loss_type)
+    metric_name = "acc" if loss_type in ("ce", "hinge") else "negMSE"
+    print(f"[pretrain] train_{metric_name}={pre_train_score:.4f} test_{metric_name}={pre_test_score:.4f}")
+
     transfer_u_in_list = _extract_transfer_u_in_from_snn(pre_model)
     transfer_threshold_list = _extract_transfer_thresholds_from_snn(pre_model)
 
@@ -2334,7 +2365,18 @@ def run_one_seed(
     P_last_real = P_last
 
     for source_name in sources_to_run:
-        best_src = {"val_score": -1e30, "beta_l1": None, "lr": lr_ref, "test_score": -1e30, "train_curve": None, "train_loss_curve": None}
+        best_src = {
+            "val_score": -1e30,
+            "beta_l1": None,
+            "lr": lr_ref,
+            "test_score": -1e30,
+            "train_score": float("nan"),
+            "train_loss": float("nan"),
+            "solver_name": None,
+            "solver_num_iters": None,
+            "train_curve": None,
+            "train_loss_curve": None,
+        }
         if source_name == "threshold_dict":
             z_train_bool, hypers_src, layer_diagnostics_src = generate_snn_sign_patterns(
                 X_train, y_train, L=L, T=T, P_in=P_in, P_rec=P_rec, P_last_target=P_last,
@@ -2360,7 +2402,19 @@ def run_one_seed(
                 test_score = cvx_eval_acc_or_mse(model_cvx, test_loader2d, hypers_src, L=L, T=T, P_rec=P_rec, device=device, loss_type=loss_type)
                 if (test_score > best_src["test_score"] or
                     (test_score == best_src["test_score"] and val_score > best_src["val_score"])):
-                    best_src.update({"val_score": val_score, "beta_l1": beta_l1, "test_score": test_score, "train_curve": out["train_score_history"], "train_loss_curve": out.get("train_loss_history", [])})
+                    best_src.update(
+                        {
+                            "val_score": val_score,
+                            "beta_l1": beta_l1,
+                            "test_score": test_score,
+                            "train_score": out.get("train_score", float("nan")),
+                            "train_loss": out.get("train_loss", float("nan")),
+                            "solver_name": out.get("solver_name"),
+                            "solver_num_iters": out.get("solver_num_iters"),
+                            "train_curve": out["train_score_history"],
+                            "train_loss_curve": out.get("train_loss_history", []),
+                        }
+                    )
             if source_name == cvx_feature_source or compare_all_cvx_sources:
                 hypers = hypers_src
                 layer_diagnostics = layer_diagnostics_src
@@ -2378,13 +2432,31 @@ def run_one_seed(
                 test_score = cvx_eval_acc_or_mse_cached(out["model"], test_loader_z, loss_type=loss_type, device=device)
                 if (test_score > best_src["test_score"] or
                     (test_score == best_src["test_score"] and val_score > best_src["val_score"])):
-                    best_src.update({"val_score": val_score, "beta_l1": beta_l1, "test_score": test_score, "train_curve": out["train_score_history"], "train_loss_curve": out.get("train_loss_history", [])})
+                    best_src.update(
+                        {
+                            "val_score": val_score,
+                            "beta_l1": beta_l1,
+                            "test_score": test_score,
+                            "train_score": out.get("train_score", float("nan")),
+                            "train_loss": out.get("train_loss", float("nan")),
+                            "solver_name": out.get("solver_name"),
+                            "solver_num_iters": out.get("solver_num_iters"),
+                            "train_curve": out["train_score_history"],
+                            "train_loss_curve": out.get("train_loss_history", []),
+                        }
+                    )
         cvx_source_results[source_name] = best_src
 
     selected_cvx_source = cvx_feature_source
     best_cvx = cvx_source_results[cvx_feature_source]
     if compare_all_cvx_sources:
-        summary = " | ".join([f"{k}: val={v['val_score']:.4f}, test={v['test_score']:.4f}, beta={v['beta_l1']}" for k,v in cvx_source_results.items()])
+        summary = " | ".join(
+            [
+                f"{k}: train={v['train_score']:.4f}, val={v['val_score']:.4f}, test={v['test_score']:.4f}, "
+                f"beta={v['beta_l1']}, iters={v.get('solver_num_iters')}"
+                for k, v in cvx_source_results.items()
+            ]
+        )
         print(f"[seed {seed}] CVX sources -> {summary}")
         selected_cvx_source, best_cvx = max(
             cvx_source_results.items(),
@@ -2438,6 +2510,7 @@ def run_one_seed(
 
     best_ste = {
         "val_score": -1e30,
+        "train_score": float("nan"),
         "beta_path_reg": None,
         "lr": None,
         "model": None,
@@ -2480,9 +2553,11 @@ def run_one_seed(
             val_score = float(ste_out["best_val_score"])
             if val_score > best_ste["val_score"]:
                 ste_model = ste_out["model"]
+                ste_train_score = snn_eval_score(ste_model, ste_train_loader, device=device, loss_type=loss_type)
                 ste_test_score = snn_eval_score(ste_model, ste_test_loader, device=device, loss_type=loss_type)
                 best_ste.update({
                     "val_score": val_score,
+                    "train_score": float(ste_train_score),
                     "beta_path_reg": float(ste_beta),
                     "lr": float(ste_lr),
                     "model": ste_model,
@@ -2493,22 +2568,32 @@ def run_one_seed(
 
     if loss_type in ("ce", "hinge"):
         print(f"[seed {seed}] CVX[{selected_cvx_source}] test_acc={best_cvx['test_score']:.4f} "
-              f"(val={best_cvx['val_score']:.4f}, beta_l1={best_cvx['beta_l1']}, lr={best_cvx['lr']}) | "
+              f"(train={best_cvx['train_score']:.4f}, val={best_cvx['val_score']:.4f}, "
+              f"beta_l1={best_cvx['beta_l1']}, lr={best_cvx['lr']}, "
+              f"solver={best_cvx.get('solver_name')}, iters={best_cvx.get('solver_num_iters')}) | "
               f"STE-SNN test_acc={best_ste['test_score']:.4f} "
-              f"(val_best={best_ste['val_score']:.4f}, beta_path={best_ste['beta_path_reg']}, lr={best_ste['lr']})")
+              f"(train={best_ste['train_score']:.4f}, val_best={best_ste['val_score']:.4f}, "
+              f"beta_path={best_ste['beta_path_reg']}, lr={best_ste['lr']})")
     else:
         print(f"[seed {seed}] CVX[{selected_cvx_source}] test_negMSE={best_cvx['test_score']:.4f} "
-              f"(val={best_cvx['val_score']:.4f}, beta_l1={best_cvx['beta_l1']}, lr={best_cvx['lr']}) | "
+              f"(train={best_cvx['train_score']:.4f}, val={best_cvx['val_score']:.4f}, "
+              f"beta_l1={best_cvx['beta_l1']}, lr={best_cvx['lr']}, "
+              f"solver={best_cvx.get('solver_name')}, iters={best_cvx.get('solver_num_iters')}) | "
               f"STE-SNN test_negMSE={best_ste['test_score']:.4f} "
-              f"(val_best={best_ste['val_score']:.4f}, beta_path={best_ste['beta_path_reg']}, lr={best_ste['lr']})")
+              f"(train={best_ste['train_score']:.4f}, val_best={best_ste['val_score']:.4f}, "
+              f"beta_path={best_ste['beta_path_reg']}, lr={best_ste['lr']})")
 
     return {
         "cvx_test": float(best_cvx["test_score"]),
         "ste_test": float(best_ste["test_score"]),
+        "cvx_train": float(best_cvx["train_score"]),
+        "ste_train": float(best_ste["train_score"]),
         "cvx_val": float(best_cvx["val_score"]),
         "ste_val": float(best_ste["val_score"]),
         "cvx_beta_l1": float(best_cvx["beta_l1"]) if best_cvx["beta_l1"] is not None else None,
         "cvx_lr": float(best_cvx["lr"]) if best_cvx["lr"] is not None else None,
+        "cvx_solver_name": best_cvx.get("solver_name"),
+        "cvx_solver_num_iters": best_cvx.get("solver_num_iters"),
         "ste_beta_path_reg": float(best_ste["beta_path_reg"]) if best_ste["beta_path_reg"] is not None else None,
         "ste_lr": float(best_ste["lr"]) if best_ste["lr"] is not None else None,
         "cvx_train_score_history": best_cvx.get("train_curve", []),
@@ -2561,10 +2646,13 @@ def save_metrics_report(
             ste_best = d.get("ste_best", {})
             f.write(
                 f"[seed {seed}] -> cvx best beta={cvx_best.get('beta_l1')} lr={cvx_best.get('lr')} "
+                f"solver={cvx_best.get('solver_name')} iters={cvx_best.get('solver_num_iters')} "
+                f"=> train_score={cvx_best.get('train_score')} "
                 f"=> train_loss_history={cvx_best.get('train_loss_history')} "
                 f", train_acc_history={cvx_best.get('train_score_history')} "
                 f", val_score={cvx_best.get('val_score')} "
-                f"|| snn => train_loss_history={ste_best.get('train_loss_history')} "
+                f"|| snn => train_score={ste_best.get('train_score')} "
+                f", train_loss_history={ste_best.get('train_loss_history')} "
                 f", train_acc_history={ste_best.get('train_score_history')}\n"
             )
             f.write(
@@ -2919,11 +3007,15 @@ def main():
                 "beta_l1": out.get("cvx_beta_l1"),
                 "lr": out.get("cvx_lr"),
                 "val_score": out.get("cvx_val"),
+                "train_score": out.get("cvx_train"),
+                "solver_name": out.get("cvx_solver_name"),
+                "solver_num_iters": out.get("cvx_solver_num_iters"),
                 "train_score_history": out.get("cvx_train_score_history", []),
                 "train_loss_history": out.get("cvx_train_loss_history", []),
             },
             "ste_best": {
                 "val_score": out.get("ste_val"),
+                "train_score": out.get("ste_train"),
                 "beta_path_reg": out.get("ste_beta_path_reg"),
                 "lr": out.get("ste_lr"),
                 "train_score_history": out.get("ste_train_score_history", []),

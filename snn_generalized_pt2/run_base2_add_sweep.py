@@ -30,9 +30,9 @@ def main() -> None:
             "--L",
             "3",
             "--n_digits",
-            "8",
+            "5",
             "--P_last",
-            "256",
+            str(TRAINS[i]//2),
             "--P_rec",
             "128",
             "--n_train",
@@ -44,7 +44,7 @@ def main() -> None:
             "--results_csv",
             str(RESULTS_CSV),
         ]
-        print(f"\n[step {i}/5] n_train={TRAINS[i]} n_val={n_val} n_test={TESTS[0]}")
+        print(f"\n[step {i + 1}/5] n_train={TRAINS[i]} n_val={n_val} n_test={TESTS[0]}")
         print(" ".join(cmd))
         subprocess.run(cmd, check=True)
 
