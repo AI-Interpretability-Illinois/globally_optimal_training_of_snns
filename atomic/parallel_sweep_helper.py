@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import contextlib
 import csv
 import json
 import multiprocessing as mp
@@ -65,6 +66,35 @@ class SweepResult:
 _WORKER_DATA: Dict[str, Any] | None = None
 _WORKER_ARGS: argparse.Namespace | None = None
 _WORKER_DEVICE: torch.device | None = None
+
+
+def _log_run_start(task: SweepTask) -> None:
+    print(
+        "[run-start] "
+        f"run_id={task.run_id} pair_id={task.pair_id} task_type={task.task_type} "
+        f"pipeline_mode={task.pipeline_mode} seed={int(task.seed)} "
+        f"beta={float(task.beta):.8g} lr={float(task.lr):.8g} bias={float(task.bias):.8g}",
+        flush=True,
+    )
+
+
+def _log_run_finish(task: SweepTask, result: SweepResult) -> None:
+    print(
+        "[run-finish] "
+        f"run_id={task.run_id} pair_id={task.pair_id} task_type={task.task_type} "
+        f"score={float(result.score):.6f} test_acc={float(result.test_last_step_acc):.6f}",
+        flush=True,
+    )
+
+
+@contextlib.contextmanager
+def _mute_output(enabled: bool):
+    if not enabled:
+        yield
+        return
+    with open(os.devnull, "w") as devnull:
+        with contextlib.redirect_stdout(devnull), contextlib.redirect_stderr(devnull):
+            yield
 
 
 def _parse_int_env(name: str) -> int | None:
@@ -213,6 +243,8 @@ def _run_one_task(task: SweepTask) -> SweepResult:
 
     # Keep deterministic behavior per-task.
     _set_seed(int(task.seed))
+    suppress_task_logs = not bool(_WORKER_ARGS.verbose_runs)
+    _log_run_start(task)
 
     if task.task_type == "fine_tune":
         cfg = FineTuneConfig(
@@ -236,17 +268,18 @@ def _run_one_task(task: SweepTask) -> SweepResult:
             ste_beta_grid=tuple(float(x) for x in _WORKER_ARGS.beta_grid),
             ste_lr_grid=tuple(float(x) for x in _WORKER_ARGS.lr_grid),
         )
-        out = run_fine_tune_pipeline(
-            x_train=x_train,
-            y_train=y_train,
-            x_val=x_val,
-            y_val=y_val,
-            x_test=x_test,
-            y_test=y_test,
-            num_classes=num_classes,
-            seed=int(task.seed),
-            cfg=cfg,
-        )
+        with _mute_output(suppress_task_logs):
+            out = run_fine_tune_pipeline(
+                x_train=x_train,
+                y_train=y_train,
+                x_val=x_val,
+                y_val=y_val,
+                x_test=x_test,
+                y_test=y_test,
+                num_classes=num_classes,
+                seed=int(task.seed),
+                cfg=cfg,
+            )
         selected_readout = str(out["selected_readout"])
         selected = out["by_readout"][selected_readout]
         ste_post = selected["ste_post"]
@@ -289,7 +322,7 @@ def _run_one_task(task: SweepTask) -> SweepResult:
                 ),
             )
         )
-        return SweepResult(
+        result = SweepResult(
             task_type="fine_tune",
             pipeline_mode=task.pipeline_mode,
             run_id=task.run_id,
@@ -377,6 +410,8 @@ def _run_one_task(task: SweepTask) -> SweepResult:
                 "ste_post_test_seq_loss": float(ste_post.best_losses.get("test_seq_loss", float("nan"))),
             },
         )
+        _log_run_finish(task, result)
+        return result
 
     if task.task_type == "layer_wise":
         lw_cfg = LayerWiseConfig(
@@ -395,16 +430,17 @@ def _run_one_task(task: SweepTask) -> SweepResult:
             ste_beta_grid=tuple(float(x) for x in _WORKER_ARGS.beta_grid),
             ste_lr_grid=tuple(float(x) for x in _WORKER_ARGS.lr_grid),
         )
-        rows = run_layer_wise_stacking_test_bench(
-            x_train=x_train,
-            y_train=y_train,
-            x_val=x_val,
-            y_val=y_val,
-            x_test=x_test,
-            y_test=y_test,
-            num_classes=num_classes,
-            cfg=lw_cfg,
-        )
+        with _mute_output(suppress_task_logs):
+            rows = run_layer_wise_stacking_test_bench(
+                x_train=x_train,
+                y_train=y_train,
+                x_val=x_val,
+                y_val=y_val,
+                x_test=x_test,
+                y_test=y_test,
+                num_classes=num_classes,
+                cfg=lw_cfg,
+            )
         if len(rows) == 0:
             raise RuntimeError("Layer-wise pipeline returned zero blocks.")
         final_block = rows[-1]
@@ -423,7 +459,7 @@ def _run_one_task(task: SweepTask) -> SweepResult:
             bias=float(final_block["cvx_selected_params"]["bias"]),
             pretrained_weights=_extract_weights_from_snn(ste_pre.model),
         )
-        return SweepResult(
+        result = SweepResult(
             task_type="layer_wise",
             pipeline_mode=task.pipeline_mode,
             run_id=task.run_id,
@@ -500,37 +536,40 @@ def _run_one_task(task: SweepTask) -> SweepResult:
                 "ste_finetune_test_seq_loss": float(ste_ft.best_losses.get("test_seq_loss", float("nan"))),
             },
         )
+        _log_run_finish(task, result)
+        return result
 
     if task.task_type == "ste":
-        ste_out = ste_solve(
-            x_train=x_train,
-            y_train=y_train,
-            x_val=x_val,
-            y_val=y_val,
-            x_test=x_test,
-            y_test=y_test,
-            model_cfg=SteModelConfig(
-                d_in=d_in,
-                num_classes=num_classes,
-                L=int(_WORKER_ARGS.L),
-                P_rec=int(_WORKER_ARGS.P_rec),
-                P_last=int(_WORKER_ARGS.P_last),
-                last_layer_readout=str(_WORKER_ARGS.last_layer_readout),
-            ),
-            solve_cfg=SteSolveConfig(
-                loss_name=str(_WORKER_ARGS.loss_type),
-                optimizer_name=str(_WORKER_ARGS.optimizer_name),
-                lr=float(task.lr),
-                epochs=int(_WORKER_ARGS.ste_epochs),
-                batch_size=None if int(_WORKER_ARGS.batch_size) == -1 else int(_WORKER_ARGS.batch_size),
-                weight_decay=0.0,
-                beta_path_reg=float(task.beta),
-            ),
-            device=_WORKER_DEVICE,
-        )
+        with _mute_output(suppress_task_logs):
+            ste_out = ste_solve(
+                x_train=x_train,
+                y_train=y_train,
+                x_val=x_val,
+                y_val=y_val,
+                x_test=x_test,
+                y_test=y_test,
+                model_cfg=SteModelConfig(
+                    d_in=d_in,
+                    num_classes=num_classes,
+                    L=int(_WORKER_ARGS.L),
+                    P_rec=int(_WORKER_ARGS.P_rec),
+                    P_last=int(_WORKER_ARGS.P_last),
+                    last_layer_readout=str(_WORKER_ARGS.last_layer_readout),
+                ),
+                solve_cfg=SteSolveConfig(
+                    loss_name=str(_WORKER_ARGS.loss_type),
+                    optimizer_name=str(_WORKER_ARGS.optimizer_name),
+                    lr=float(task.lr),
+                    epochs=int(_WORKER_ARGS.ste_epochs),
+                    batch_size=None if int(_WORKER_ARGS.batch_size) == -1 else int(_WORKER_ARGS.batch_size),
+                    weight_decay=0.0,
+                    beta_path_reg=float(task.beta),
+                ),
+                device=_WORKER_DEVICE,
+            )
         val_loss = float(ste_out.best_losses["val_loss"])
         score = float(val_loss + task.beta)
-        return SweepResult(
+        result = SweepResult(
             task_type="ste",
             pipeline_mode=task.pipeline_mode,
             run_id=task.run_id,
@@ -563,6 +602,8 @@ def _run_one_task(task: SweepTask) -> SweepResult:
                 "test_seq_loss": float(ste_out.best_losses.get("test_seq_loss", float("nan"))),
             },
         )
+        _log_run_finish(task, result)
+        return result
 
     init_cfg = InitializationConfig(
         mode="gaussian",
@@ -575,28 +616,29 @@ def _run_one_task(task: SweepTask) -> SweepResult:
         bias=float(task.bias),
     )
     run_device = torch.device("cpu") if str(_WORKER_ARGS.cvx_method) == "cvx" else _WORKER_DEVICE
-    cvx_out = cvx_solve(
-        x_train=x_train,
-        y_train=y_train,
-        x_val=x_val,
-        y_val=y_val,
-        x_test=x_test,
-        y_test=y_test,
-        init_cfg=init_cfg,
-        solve_cfg=SolveConfig(
-            method=str(_WORKER_ARGS.cvx_method),
-            loss_name=str(_WORKER_ARGS.loss_type),
-            beta=float(task.beta),
-            lr=float(task.lr),
-            optimizer_name=str(_WORKER_ARGS.optimizer_name),
-            epochs=int(_WORKER_ARGS.cvx_epochs),
-            batch_size=None if int(_WORKER_ARGS.batch_size) == -1 else int(_WORKER_ARGS.batch_size),
-        ),
-        device=run_device,
-    )
+    with _mute_output(suppress_task_logs):
+        cvx_out = cvx_solve(
+            x_train=x_train,
+            y_train=y_train,
+            x_val=x_val,
+            y_val=y_val,
+            x_test=x_test,
+            y_test=y_test,
+            init_cfg=init_cfg,
+            solve_cfg=SolveConfig(
+                method=str(_WORKER_ARGS.cvx_method),
+                loss_name=str(_WORKER_ARGS.loss_type),
+                beta=float(task.beta),
+                lr=float(task.lr),
+                optimizer_name=str(_WORKER_ARGS.optimizer_name),
+                epochs=int(_WORKER_ARGS.cvx_epochs),
+                batch_size=None if int(_WORKER_ARGS.batch_size) == -1 else int(_WORKER_ARGS.batch_size),
+            ),
+            device=run_device,
+        )
     val_loss = float(cvx_out.final_losses["val_loss"])
     score = float(cvx_out.final_losses.get("val_objective", val_loss))
-    return SweepResult(
+    result = SweepResult(
         task_type="cvx",
         pipeline_mode=task.pipeline_mode,
         run_id=task.run_id,
@@ -659,6 +701,8 @@ def _run_one_task(task: SweepTask) -> SweepResult:
             "test_seq_loss": float(cvx_out.final_losses.get("test_seq_loss", float("nan"))),
         },
     )
+    _log_run_finish(task, result)
+    return result
 
 
 def _gpu_worker_loop(
@@ -907,6 +951,16 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--bias_grid", type=float, nargs="+", default=list(BIAS_GRID_DEFAULT))
     parser.add_argument("--output_json", type=str, default="")
     parser.add_argument(
+        "--verbose_runs",
+        action="store_true",
+        help="If set, stream every STE/CVX run log. Default prints only final best summary.",
+    )
+    parser.add_argument(
+        "--include_all_results_json",
+        action="store_true",
+        help="If set, include all per-task rows in printed/final JSON output.",
+    )
+    parser.add_argument(
         "--output_dir",
         type=str,
         default="atomic/sweep_results",
@@ -1012,15 +1066,54 @@ def main() -> None:
 
     results: List[Dict[str, Any]] = []
     csv_headers: Dict[Path, List[str]] = {}
-    for _ in range(expected):
-        row = queue_result.get()
-        results.append(row)
-        csv_row = _flatten_result_row(row=row, args=args, gpu_workers=gpu_workers, cpu_workers=cpu_workers)
-        row_type = str(row["task_type"])
-        if row_type not in csv_paths:
-            raise ValueError(f"Unknown task_type in result row: {row_type}")
-        out_path = csv_paths[row_type]
-        _append_csv_row(path=out_path, row=csv_row, header_cache=csv_headers)
+    stall_polls = 0
+    poll_timeout_s = 5.0
+    max_stall_polls = 72  # ~6 minutes with 5s polling.
+    while len(results) < expected:
+        try:
+            row = queue_result.get(timeout=poll_timeout_s)
+            stall_polls = 0
+            results.append(row)
+            csv_row = _flatten_result_row(row=row, args=args, gpu_workers=gpu_workers, cpu_workers=cpu_workers)
+            row_type = str(row["task_type"])
+            if row_type not in csv_paths:
+                raise ValueError(f"Unknown task_type in result row: {row_type}")
+            out_path = csv_paths[row_type]
+            _append_csv_row(path=out_path, row=csv_row, header_cache=csv_headers)
+            continue
+        except Empty:
+            stall_polls += 1
+
+        failed = [(idx, p.pid, p.exitcode) for idx, p in enumerate(workers) if p.exitcode not in (None, 0)]
+        alive_count = sum(1 for p in workers if p.is_alive())
+        pending = expected - len(results)
+        if len(failed) > 0:
+            for p in workers:
+                if p.is_alive():
+                    p.terminate()
+            for p in workers:
+                p.join(timeout=2)
+            failed_str = ", ".join(
+                f"worker[{idx}] pid={pid} exitcode={exitcode}" for idx, pid, exitcode in failed
+            )
+            raise RuntimeError(
+                "Parallel sweep aborted: one or more workers crashed before returning all results. "
+                f"received={len(results)} expected={expected} pending={pending}. Failed: {failed_str}"
+            )
+
+        if alive_count == 0 and queue_result.empty():
+            raise RuntimeError(
+                "Parallel sweep stalled: all workers exited but result queue is incomplete. "
+                f"received={len(results)} expected={expected} pending={pending}."
+            )
+
+        if stall_polls >= max_stall_polls:
+            raise RuntimeError(
+                "Parallel sweep timeout while waiting for worker results. "
+                f"received={len(results)} expected={expected} pending={pending}. "
+                "No progress was observed for ~6 minutes."
+            )
+
     for p in workers:
         p.join()
 
@@ -1068,8 +1161,39 @@ def main() -> None:
             "csv_paths": {k: str(v) for k, v in csv_paths.items()},
         },
         "best": best,
-        "all_results": results,
     }
+    if bool(args.include_all_results_json):
+        out["all_results"] = results
+
+    # Human-readable summary: only best combos, printed once at end.
+    if str(args.pipeline_mode) == "simple":
+        if "ste" in best:
+            bste = best["ste"]
+            print(
+                "[best-ste] "
+                f"seed={int(bste['seed'])} beta={float(bste['beta']):.8g} lr={float(bste['lr']):.8g} "
+                f"val_score={float(bste['score']):.6f} test_acc={float(bste['test_last_step_acc']):.6f}"
+            )
+        if "cvx" in best:
+            bcvx = best["cvx"]
+            print(
+                "[best-cvx] "
+                f"seed={int(bcvx['seed'])} beta={float(bcvx['beta']):.8g} lr={float(bcvx['lr']):.8g} bias={float(bcvx['bias']):.8g} "
+                f"val_score={float(bcvx['score']):.6f} test_acc={float(bcvx['test_last_step_acc']):.6f}"
+            )
+    elif str(args.pipeline_mode) == "fine_tune" and "fine_tune" in best:
+        bft = best["fine_tune"]
+        print(
+            "[best-fine_tune] "
+            f"seed={int(bft['seed'])} val_score={float(bft['score']):.6f} test_acc={float(bft['test_last_step_acc']):.6f}"
+        )
+    elif str(args.pipeline_mode) == "layer_wise" and "layer_wise" in best:
+        blw = best["layer_wise"]
+        print(
+            "[best-layer_wise] "
+            f"seed={int(blw['seed'])} val_score={float(blw['score']):.6f} test_acc={float(blw['test_last_step_acc']):.6f}"
+        )
+
     text = json.dumps(out, indent=2, default=str)
     print(text)
     if args.output_json:
