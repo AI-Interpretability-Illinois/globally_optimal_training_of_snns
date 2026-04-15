@@ -215,105 +215,114 @@ def _run_simple_mode(args: argparse.Namespace, data: Dict[str, Any]) -> Dict[str
     num_classes = data["num_classes"]
     d_in = data["d_in"]
 
-    best_ste = None
-    best_ste_score = float("inf")
-    best_ste_params = None
-    for ste_lr in LR_GRID_DEFAULT:
-        for ste_beta in BETA_GRID_DEFAULT:
-            _set_seed(args.seed)
-            out = ste_solve(
-                x_train=x_train,
-                y_train=y_train,
-                x_val=x_val,
-                y_val=y_val,
-                x_test=x_test,
-                y_test=y_test,
-                model_cfg=SteModelConfig(
-                    d_in=d_in,
-                    num_classes=num_classes,
-                    L=args.L,
-                    P_rec=args.P_rec,
-                    P_last=args.P_last,
-                    last_layer_readout=args.last_layer_readout,
-                ),
-                solve_cfg=SteSolveConfig(
-                    loss_name=args.loss_type,
-                    optimizer_name=args.optimizer_name,
-                    lr=float(ste_lr),
-                    epochs=args.ste_epochs,
-                    batch_size=None if args.batch_size == -1 else int(args.batch_size),
-                    weight_decay=0.0,
-                    beta_path_reg=float(ste_beta),
-                ),
-            )
-            score = float(out.best_losses["val_loss"]) + float(ste_beta)
-            if score < best_ste_score:
-                best_ste_score = score
-                best_ste = out
-                best_ste_params = {"lr": float(ste_lr), "beta": float(ste_beta)}
-    if best_ste is None or best_ste_params is None:
-        raise RuntimeError("Simple mode failed to find STE candidate.")
-    if not isinstance(best_ste.model, SNNBaselineSeq):
-        raise TypeError("Expected SNNBaselineSeq from ste_solve.")
+    run_ste = args.simple_side in ("both", "ste_only")
+    run_cvx = args.simple_side in ("both", "cvx_only")
 
-    best_cvx = None
-    best_cvx_score = float("inf")
-    best_cvx_params = None
-    best_init = None
-    for cvx_beta in BETA_GRID_DEFAULT:
-        for cvx_lr in LR_GRID_DEFAULT:
-            for cvx_bias in BIAS_GRID_DEFAULT:
-                init_cfg = InitializationConfig(
-                    mode="gaussian",
-                    seed=args.seed,
-                    L=args.L,
-                    P_rec=args.P_rec,
-                    P_last=args.P_last,
-                    feature_count=args.P_last,
-                    last_layer_readout=args.last_layer_readout,
-                    bias=float(cvx_bias),
-                )
-                out = cvx_solve(
+    best_ste = None
+    best_ste_params = None
+    if run_ste:
+        best_ste_score = float("inf")
+        for ste_lr in LR_GRID_DEFAULT:
+            for ste_beta in BETA_GRID_DEFAULT:
+                _set_seed(args.seed)
+                out = ste_solve(
                     x_train=x_train,
                     y_train=y_train,
                     x_val=x_val,
                     y_val=y_val,
                     x_test=x_test,
                     y_test=y_test,
-                    init_cfg=init_cfg,
-                    solve_cfg=SolveConfig(
-                        method=args.cvx_method,
+                    model_cfg=SteModelConfig(
+                        d_in=d_in,
+                        num_classes=num_classes,
+                        L=args.L,
+                        P_rec=args.P_rec,
+                        P_last=args.P_last,
+                        last_layer_readout=args.last_layer_readout,
+                    ),
+                    solve_cfg=SteSolveConfig(
                         loss_name=args.loss_type,
-                        beta=float(cvx_beta),
-                        lr=float(cvx_lr),
                         optimizer_name=args.optimizer_name,
-                        epochs=args.cvx_epochs,
+                        lr=float(ste_lr),
+                        epochs=args.ste_epochs,
                         batch_size=None if args.batch_size == -1 else int(args.batch_size),
+                        weight_decay=0.0,
+                        beta_path_reg=float(ste_beta),
                     ),
                 )
-                score = float(out.final_losses.get("val_objective", out.final_losses["val_loss"]))
-                if score < best_cvx_score:
-                    best_cvx_score = score
-                    best_cvx = out
-                    best_cvx_params = {"lr": float(cvx_lr), "beta": float(cvx_beta), "bias": float(cvx_bias)}
-                    best_init = init_cfg
-    if best_cvx is None or best_cvx_params is None or best_init is None:
-        raise RuntimeError("Simple mode failed to find CVX candidate.")
+                score = float(out.best_losses["val_loss"]) + float(ste_beta)
+                if score < best_ste_score:
+                    best_ste_score = score
+                    best_ste = out
+                    best_ste_params = {"lr": float(ste_lr), "beta": float(ste_beta)}
+        if best_ste is None or best_ste_params is None:
+            raise RuntimeError("Simple mode failed to find STE candidate.")
+        if not isinstance(best_ste.model, SNNBaselineSeq):
+            raise TypeError("Expected SNNBaselineSeq from ste_solve.")
 
-    return {
+    best_cvx = None
+    best_cvx_params = None
+    best_init = None
+    if run_cvx:
+        best_cvx_score = float("inf")
+        for cvx_beta in BETA_GRID_DEFAULT:
+            for cvx_lr in LR_GRID_DEFAULT:
+                for cvx_bias in BIAS_GRID_DEFAULT:
+                    init_cfg = InitializationConfig(
+                        mode="gaussian",
+                        seed=args.seed,
+                        L=args.L,
+                        P_rec=args.P_rec,
+                        P_last=args.P_last,
+                        feature_count=args.P_last,
+                        last_layer_readout=args.last_layer_readout,
+                        bias=float(cvx_bias),
+                    )
+                    out = cvx_solve(
+                        x_train=x_train,
+                        y_train=y_train,
+                        x_val=x_val,
+                        y_val=y_val,
+                        x_test=x_test,
+                        y_test=y_test,
+                        init_cfg=init_cfg,
+                        solve_cfg=SolveConfig(
+                            method=args.cvx_method,
+                            loss_name=args.loss_type,
+                            beta=float(cvx_beta),
+                            lr=float(cvx_lr),
+                            optimizer_name=args.optimizer_name,
+                            epochs=args.cvx_epochs,
+                            batch_size=None if args.batch_size == -1 else int(args.batch_size),
+                        ),
+                    )
+                    score = float(out.final_losses.get("val_objective", out.final_losses["val_loss"]))
+                    if score < best_cvx_score:
+                        best_cvx_score = score
+                        best_cvx = out
+                        best_cvx_params = {"lr": float(cvx_lr), "beta": float(cvx_beta), "bias": float(cvx_bias)}
+                        best_init = init_cfg
+        if best_cvx is None or best_cvx_params is None or best_init is None:
+            raise RuntimeError("Simple mode failed to find CVX candidate.")
+
+    result: Dict[str, Any] = {
         "mode": "simple",
+        "simple_side": args.simple_side,
         "dataset": args.dataset,
         "fixed_grids": {
             "beta_grid": list(BETA_GRID_DEFAULT),
             "lr_grid": list(LR_GRID_DEFAULT),
             "bias_grid": list(BIAS_GRID_DEFAULT),
         },
-        "ste": {
+    }
+    if run_ste and best_ste is not None and best_ste_params is not None:
+        result["ste"] = {
             "selected_params": best_ste_params,
             "best_losses": best_ste.best_losses,
             "test_last_step_acc": _ste_last_step_acc(best_ste.model, x_test, y_test),
-        },
-        "cvx_gaussian": {
+        }
+    if run_cvx and best_cvx is not None and best_cvx_params is not None and best_init is not None:
+        result["cvx_gaussian"] = {
             "selected_params": best_cvx_params,
             "final_losses": best_cvx.final_losses,
             "diagnostics": asdict(best_cvx.diagnostics),
@@ -325,8 +334,8 @@ def _run_simple_mode(args: argparse.Namespace, data: Dict[str, Any]) -> Dict[str
                 y_test=y_test,
                 init_cfg=best_init,
             ),
-        },
-    }
+        }
+    return result
 
 
 def _run_fine_tune_mode(args: argparse.Namespace, data: Dict[str, Any]) -> Dict[str, Any]:
@@ -420,6 +429,12 @@ def parse_args() -> argparse.Namespace:
         description="Simple atomic test runner: fine_tune, layer_wise, or gaussian-cvx-vs-ste baseline.",
     )
     parser.add_argument("--mode", choices=("fine_tune", "layer_wise", "simple"), default="simple")
+    parser.add_argument(
+        "--simple_side",
+        choices=("both", "cvx_only", "ste_only"),
+        default="both",
+        help="Used only with --mode simple. Choose whether to run both baselines, only CVX, or only STE.",
+    )
     parser.add_argument(
         "--dataset",
         choices=("mnist_seq", "mnist_perm_seq", "cifar_seq", "arithmetic_seq", "dfa", "uci"),
