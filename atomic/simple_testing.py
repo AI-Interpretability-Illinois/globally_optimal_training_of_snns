@@ -49,6 +49,22 @@ def _set_seed(seed: int) -> None:
         torch.cuda.manual_seed_all(seed)
 
 
+def _resolve_cvx_device(device_name: str) -> torch.device | None:
+    if device_name == "auto":
+        return None
+    if device_name == "cpu":
+        return torch.device("cpu")
+    if device_name == "cuda":
+        if not torch.cuda.is_available():
+            raise ValueError("Requested --cvx_device cuda, but CUDA is not available.")
+        return torch.device("cuda")
+    if device_name == "mps":
+        if not (hasattr(torch.backends, "mps") and torch.backends.mps.is_available()):
+            raise ValueError("Requested --cvx_device mps, but MPS is not available.")
+        return torch.device("mps")
+    raise ValueError(f"Unknown cvx device option: {device_name}")
+
+
 def _as_seq_from_uci(ds: UciDataset) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray, int, int]:
     x_train = ds.X_train[:, None, :].astype(np.float32, copy=False)
     x_val = ds.X_val[:, None, :].astype(np.float32, copy=False)
@@ -214,6 +230,7 @@ def _run_simple_mode(args: argparse.Namespace, data: Dict[str, Any]) -> Dict[str
     y_test = data["y_test"]
     num_classes = data["num_classes"]
     d_in = data["d_in"]
+    cvx_device = _resolve_cvx_device(args.cvx_device)
 
     run_ste = args.simple_side in ("both", "ste_only")
     run_cvx = args.simple_side in ("both", "cvx_only")
@@ -295,6 +312,7 @@ def _run_simple_mode(args: argparse.Namespace, data: Dict[str, Any]) -> Dict[str
                             epochs=args.cvx_epochs,
                             batch_size=None if args.batch_size == -1 else int(args.batch_size),
                         ),
+                        device=cvx_device,
                     )
                     score = float(out.final_losses.get("val_objective", out.final_losses["val_loss"]))
                     if score < best_cvx_score:
@@ -436,6 +454,11 @@ def parse_args() -> argparse.Namespace:
         help="Used only with --mode simple. Choose whether to run both baselines, only CVX, or only STE.",
     )
     parser.add_argument(
+        "--snn_only",
+        action="store_true",
+        help="Shortcut for --mode simple --simple_side ste_only.",
+    )
+    parser.add_argument(
         "--dataset",
         choices=("mnist_seq", "mnist_perm_seq", "cifar_seq", "arithmetic_seq", "dfa", "uci"),
         default="mnist_seq",
@@ -451,6 +474,12 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--loss_type", choices=("ce", "hinge", "hinge_ovr", "squared"), default="hinge_ovr")
     parser.add_argument("--optimizer_name", choices=("adam", "sgd"), default="adam")
     parser.add_argument("--cvx_method", choices=("cvx", "sgd"), default="cvx")
+    parser.add_argument(
+        "--cvx_device",
+        choices=("auto", "cpu", "cuda", "mps"),
+        default="auto",
+        help="Device for CVX-SGD optimizer path in simple mode. Use cpu to avoid GPU memory pressure.",
+    )
     parser.add_argument("--batch_size", type=int, default=-1)
     parser.add_argument("--cvx_epochs", type=int, default=150)
     parser.add_argument("--ste_pretrain_epochs", type=int, default=80)
@@ -474,7 +503,12 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--uci_no_standardize", action="store_true")
 
     parser.add_argument("--output_json", type=str, default="")
-    return parser.parse_args()
+    args = parser.parse_args()
+    if args.snn_only:
+        if args.mode != "simple":
+            raise ValueError("--snn_only is only valid with --mode simple.")
+        args.simple_side = "ste_only"
+    return args
 
 
 def main() -> None:
