@@ -13,13 +13,13 @@ RESULTS_CSV = Path("/Users/hima_3114/Desktop/Paper_1/experiments/cvx_snn_vs_ste_
 # 5-step sweep:
 # - n_train grows from default (512) to 15x (7680)
 # - n_test grows from default (256) to 5x (1280)
-TRAINS = [512, 2304, 4096, 5888, 7680]
+TRAINS = [1152, 2304, 4608, 9216, 13824]
 TESTS = [1024]
 
 
 def main() -> None:
     for i in range(len(TRAINS)):
-        n_val = 512  # 20%
+        n_val = 256  # 20%
         cmd = [
             str(PYTHON_BIN),
             str(TARGET_SCRIPT),
@@ -30,21 +30,23 @@ def main() -> None:
             "--L",
             "3",
             "--n_digits",
-            "5",
+            "8",
             "--P_last",
-            str(TRAINS[i]//2),
-            "--P_rec",
-            "128",
-            "--n_train",
             str(TRAINS[i]),
+            "--P_rec",
+            str(TRAINS[i]//2),
+            "--n_train",
+            str(2304),
             "--n_val",
             str(n_val),
             "--n_test",
             str(TESTS[0]),
+            "--num_runs",
+            "1",
             "--results_csv",
             str(RESULTS_CSV),
         ]
-        print(f"\n[step {i + 1}/5] n_train={TRAINS[i]} n_val={n_val} n_test={TESTS[0]}")
+        print(f"\n[step {i + 1}/5] n_train={2304} n_val={256} n_test={TESTS[0]} P_rec={TRAINS[i]//2} P_last={TRAINS[i]}")
         print(" ".join(cmd))
         subprocess.run(cmd, check=True)
 

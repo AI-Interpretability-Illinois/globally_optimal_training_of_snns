@@ -8,21 +8,38 @@ from typing import Any, Dict, Tuple
 import numpy as np
 import torch
 
-from .data_loaders.arithmetic_data_loader import ArithmeticDataset, load_arithmetic_dataset
-from .data_loaders.dfa_data_loader import make_dfa_dataset
-from .data_loaders.image_data_loader import ImageSequenceDataset, load_cifar_seq_dataset, load_mnist_seq_dataset
-from .data_loaders.uci_data_loader import UciDataset, load_uci_dataset
-from .fine_tune import FineTuneConfig, run_fine_tune_pipeline
-from .layer_wise_stacking_test_bench import LayerWiseConfig, run_layer_wise_stacking_test_bench
-from .solver_grids import BETA_GRID_DEFAULT, BIAS_GRID_DEFAULT, LR_GRID_DEFAULT
-from .solvers.cvx_solve import (
-    InitializationConfig,
-    SolveConfig,
-    _build_feature_map,
-    _prepare_sequence_targets,
-    cvx_solve,
-)
-from .solvers.ste_solve import SNNBaselineSeq, SteModelConfig, SteSolveConfig, ste_solve
+if __package__ in (None, ""):
+    from data_loaders.arithmetic_data_loader import ArithmeticDataset, load_arithmetic_dataset
+    from data_loaders.dfa_data_loader import make_dfa_dataset
+    from data_loaders.image_data_loader import ImageSequenceDataset, load_cifar_seq_dataset, load_mnist_seq_dataset
+    from data_loaders.uci_data_loader import UciDataset, load_uci_dataset
+    from fine_tune import FineTuneConfig, run_fine_tune_pipeline
+    from layer_wise_stacking_test_bench import LayerWiseConfig, run_layer_wise_stacking_test_bench
+    from solver_grids import BETA_GRID_DEFAULT, BIAS_GRID_DEFAULT, LR_GRID_DEFAULT
+    from solvers.cvx_solve import (
+        InitializationConfig,
+        SolveConfig,
+        _build_feature_map,
+        _prepare_sequence_targets,
+        cvx_solve,
+    )
+    from solvers.ste_solve import SNNBaselineSeq, SteModelConfig, SteSolveConfig, ste_solve
+else:
+    from .data_loaders.arithmetic_data_loader import ArithmeticDataset, load_arithmetic_dataset
+    from .data_loaders.dfa_data_loader import make_dfa_dataset
+    from .data_loaders.image_data_loader import ImageSequenceDataset, load_cifar_seq_dataset, load_mnist_seq_dataset
+    from .data_loaders.uci_data_loader import UciDataset, load_uci_dataset
+    from .fine_tune import FineTuneConfig, run_fine_tune_pipeline
+    from .layer_wise_stacking_test_bench import LayerWiseConfig, run_layer_wise_stacking_test_bench
+    from .solver_grids import BETA_GRID_DEFAULT, BIAS_GRID_DEFAULT, LR_GRID_DEFAULT
+    from .solvers.cvx_solve import (
+        InitializationConfig,
+        SolveConfig,
+        _build_feature_map,
+        _prepare_sequence_targets,
+        cvx_solve,
+    )
+    from .solvers.ste_solve import SNNBaselineSeq, SteModelConfig, SteSolveConfig, ste_solve
 
 
 def _set_seed(seed: int) -> None:

@@ -14,12 +14,20 @@ from typing import Any, Dict, List, Literal, Sequence, Tuple
 import numpy as np
 import torch
 
-from .fine_tune import FineTuneConfig, run_fine_tune_pipeline
-from .layer_wise_stacking_test_bench import LayerWiseConfig, run_layer_wise_stacking_test_bench
-from .simple_testing import _cvx_last_step_acc, _load_dataset_from_args, _set_seed, _ste_last_step_acc
-from .solver_grids import BETA_GRID_DEFAULT, BIAS_GRID_DEFAULT, LR_GRID_DEFAULT
-from .solvers.cvx_solve import InitializationConfig, SolveConfig, cvx_solve
-from .solvers.ste_solve import SNNBaselineSeq, SteModelConfig, SteSolveConfig, ste_solve
+if __package__ in (None, ""):
+    from fine_tune import FineTuneConfig, run_fine_tune_pipeline
+    from layer_wise_stacking_test_bench import LayerWiseConfig, run_layer_wise_stacking_test_bench
+    from simple_testing import _cvx_last_step_acc, _load_dataset_from_args, _set_seed, _ste_last_step_acc
+    from solver_grids import BETA_GRID_DEFAULT, BIAS_GRID_DEFAULT, LR_GRID_DEFAULT
+    from solvers.cvx_solve import InitializationConfig, SolveConfig, cvx_solve
+    from solvers.ste_solve import SNNBaselineSeq, SteModelConfig, SteSolveConfig, ste_solve
+else:
+    from .fine_tune import FineTuneConfig, run_fine_tune_pipeline
+    from .layer_wise_stacking_test_bench import LayerWiseConfig, run_layer_wise_stacking_test_bench
+    from .simple_testing import _cvx_last_step_acc, _load_dataset_from_args, _set_seed, _ste_last_step_acc
+    from .solver_grids import BETA_GRID_DEFAULT, BIAS_GRID_DEFAULT, LR_GRID_DEFAULT
+    from .solvers.cvx_solve import InitializationConfig, SolveConfig, cvx_solve
+    from .solvers.ste_solve import SNNBaselineSeq, SteModelConfig, SteSolveConfig, ste_solve
 
 
 @dataclass

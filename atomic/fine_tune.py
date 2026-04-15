@@ -6,9 +6,14 @@ from typing import Dict, List, Sequence
 import numpy as np
 import torch
 
-from .solvers.cvx_solve import InitializationConfig, SolveConfig, cvx_solve
-from .solver_grids import BETA_GRID_DEFAULT, BIAS_GRID_DEFAULT, LR_GRID_DEFAULT
-from .solvers.ste_solve import SNNBaselineSeq, SteModelConfig, SteSolveConfig, ste_solve
+if __package__ in (None, ""):
+    from solver_grids import BETA_GRID_DEFAULT, BIAS_GRID_DEFAULT, LR_GRID_DEFAULT
+    from solvers.cvx_solve import InitializationConfig, SolveConfig, cvx_solve
+    from solvers.ste_solve import SNNBaselineSeq, SteModelConfig, SteSolveConfig, ste_solve
+else:
+    from .solver_grids import BETA_GRID_DEFAULT, BIAS_GRID_DEFAULT, LR_GRID_DEFAULT
+    from .solvers.cvx_solve import InitializationConfig, SolveConfig, cvx_solve
+    from .solvers.ste_solve import SNNBaselineSeq, SteModelConfig, SteSolveConfig, ste_solve
 
 
 @dataclass
