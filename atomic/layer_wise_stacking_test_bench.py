@@ -7,7 +7,7 @@ import numpy as np
 import torch
 
 from .solvers.cvx_solve import InitializationConfig, SolveConfig, cvx_solve
-from .solver_grids import BETA_GRID_DEFAULT, LR_GRID_DEFAULT
+from .solver_grids import BETA_GRID_DEFAULT, BIAS_GRID_DEFAULT, LR_GRID_DEFAULT
 from .solvers.ste_solve import SNNBaselineSeq, SteModelConfig, SteSolveConfig, ste_solve
 
 
@@ -24,6 +24,7 @@ class LayerWiseConfig:
     cvx_method: str = "cvx"  # cvx | sgd
     cvx_beta_grid: Sequence[float] = BETA_GRID_DEFAULT
     cvx_lr_grid: Sequence[float] = LR_GRID_DEFAULT
+    cvx_bias_grid: Sequence[float] = BIAS_GRID_DEFAULT
     ste_beta_grid: Sequence[float] = BETA_GRID_DEFAULT
     ste_lr_grid: Sequence[float] = LR_GRID_DEFAULT
 
@@ -107,7 +108,8 @@ def run_layer_wise_stacking_test_bench(
                         optimizer_name=cfg.optimizer_name,
                         lr=float(ste_lr),
                         epochs=cfg.ste_pretrain_epochs,
-                        weight_decay=float(ste_beta),
+                        weight_decay=0.0,
+                        beta_path_reg=float(ste_beta),
                     ),
                 )
                 val_loss = out.best_losses["val_loss"] + float(ste_beta)
@@ -126,38 +128,42 @@ def run_layer_wise_stacking_test_bench(
         best_cvx_val = float("inf")
         best_cvx_beta = None
         best_cvx_lr = None
+        best_cvx_bias = None
         for cvx_beta in cfg.cvx_beta_grid:
             for cvx_lr in cfg.cvx_lr_grid:
-                out = cvx_solve(
-                    x_train=current_x_train,
-                    y_train=y_train,
-                    x_val=current_x_val,
-                    y_val=y_val,
-                    x_test=current_x_test,
-                    y_test=y_test,
-                    init_cfg=InitializationConfig(
-                        mode="pretraining",
-                        pretrained_weights=transferred_weights,
-                        L=cfg.L,
-                        P_rec=cfg.P_rec,
-                        P_last=cfg.P_last,
-                        feature_count=cfg.P_last,
-                    ),
-                    solve_cfg=SolveConfig(
-                        method=cfg.cvx_method,
-                        loss_name=cfg.loss_name,
-                        beta=float(cvx_beta),
-                        lr=float(cvx_lr),
-                        optimizer_name=cfg.optimizer_name,
-                    ),
-                )
-                val_obj = out.final_losses.get("val_objective", out.final_losses["val_loss"])
-                if float(val_obj) < best_cvx_val:
-                    best_cvx_val = float(val_obj)
-                    best_cvx = out
-                    best_cvx_beta = float(cvx_beta)
-                    best_cvx_lr = float(cvx_lr)
-        if best_cvx is None or best_cvx_beta is None or best_cvx_lr is None:
+                for cvx_bias in cfg.cvx_bias_grid:
+                    out = cvx_solve(
+                        x_train=current_x_train,
+                        y_train=y_train,
+                        x_val=current_x_val,
+                        y_val=y_val,
+                        x_test=current_x_test,
+                        y_test=y_test,
+                        init_cfg=InitializationConfig(
+                            mode="pretraining",
+                            pretrained_weights=transferred_weights,
+                            L=cfg.L,
+                            P_rec=cfg.P_rec,
+                            P_last=cfg.P_last,
+                            feature_count=cfg.P_last,
+                            bias=float(cvx_bias),
+                        ),
+                        solve_cfg=SolveConfig(
+                            method=cfg.cvx_method,
+                            loss_name=cfg.loss_name,
+                            beta=float(cvx_beta),
+                            lr=float(cvx_lr),
+                            optimizer_name=cfg.optimizer_name,
+                        ),
+                    )
+                    val_obj = out.final_losses.get("val_objective", out.final_losses["val_loss"])
+                    if float(val_obj) < best_cvx_val:
+                        best_cvx_val = float(val_obj)
+                        best_cvx = out
+                        best_cvx_beta = float(cvx_beta)
+                        best_cvx_lr = float(cvx_lr)
+                        best_cvx_bias = float(cvx_bias)
+        if best_cvx is None or best_cvx_beta is None or best_cvx_lr is None or best_cvx_bias is None:
             raise RuntimeError("Layer-wise CVX sweep failed.")
 
         best_ste_ft = None
@@ -185,7 +191,8 @@ def run_layer_wise_stacking_test_bench(
                         optimizer_name=cfg.optimizer_name,
                         lr=float(ste_lr),
                         epochs=cfg.ste_finetune_epochs,
-                        weight_decay=float(ste_beta),
+                        weight_decay=0.0,
+                        beta_path_reg=float(ste_beta),
                     ),
                     pretrained_weights=transferred_weights,
                 )
@@ -208,7 +215,7 @@ def run_layer_wise_stacking_test_bench(
                 "ste_finetune": best_ste_ft,
                 "cvx_init_source": "pretraining",
                 "ste_pre_selected_params": {"lr": best_ste_pre_lr, "beta": best_ste_pre_beta},
-                "cvx_selected_params": {"lr": best_cvx_lr, "beta": best_cvx_beta},
+                "cvx_selected_params": {"lr": best_cvx_lr, "beta": best_cvx_beta, "bias": best_cvx_bias},
                 "ste_finetune_selected_params": {"lr": best_ste_ft_lr, "beta": best_ste_ft_beta},
             }
         )

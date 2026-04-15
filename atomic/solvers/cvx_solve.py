@@ -377,6 +377,18 @@ def _compute_split_loss(loss_name: str, scores: np.ndarray, y: np.ndarray) -> fl
     raise ValueError(f"Unsupported loss_name={loss_name}.")
 
 
+def _multiclass_accuracy(logits: torch.Tensor, y: torch.Tensor) -> float:
+    if logits.ndim != 2:
+        raise ValueError(f"Expected rank-2 logits (N,C), got shape={tuple(logits.shape)}.")
+    if y.ndim != 1:
+        raise ValueError(f"Expected rank-1 labels (N,), got shape={tuple(y.shape)}.")
+    if logits.shape[1] == 1:
+        preds = (logits[:, 0] >= 0.0).long()
+    else:
+        preds = torch.argmax(logits, dim=1)
+    return float((preds == y.long()).float().mean().item())
+
+
 def _run_cvx_method(
     d_train: np.ndarray,
     y_train: np.ndarray,
@@ -385,9 +397,18 @@ def _run_cvx_method(
     d_test: np.ndarray,
     y_test: np.ndarray,
     solve_cfg: SolveConfig,
+    init_bias: float,
 ) -> CvxSolveResult:
     num_classes = int(np.max(y_train) + 1)
     rho = float(solve_cfg.beta / math.sqrt(max(d_train.shape[1], 1)))
+    print(
+        (
+            f"[cvx-run] method=cvx beta={float(solve_cfg.beta):.6g} lr={float(solve_cfg.lr):.6g} "
+            f"bias={float(init_bias):.6g} "
+            "batch_size=full"
+        ),
+        flush=True,
+    )
     w = np.zeros((d_train.shape[1], num_classes), dtype=np.float64)
     primal_sum = 0.0
     dual_sum = 0.0
@@ -444,6 +465,7 @@ def _run_sgd_method(
     y_test: np.ndarray,
     solve_cfg: SolveConfig,
     device: torch.device,
+    init_bias: float,
 ) -> CvxSolveResult:
     num_classes = int(np.max(y_train) + 1)
     model = LinearFeatureClassifier(d_in=d_train.shape[1], num_classes=num_classes).to(device)
@@ -462,9 +484,22 @@ def _run_sgd_method(
     xte = torch.tensor(d_test, dtype=torch.float32, device=device)
     yte = torch.tensor(y_test, dtype=torch.long, device=device)
 
-    batch_size = xtr.shape[0] if solve_cfg.batch_size is None else solve_cfg.batch_size
+    n_train = int(xtr.shape[0])
+    if solve_cfg.batch_size is not None and int(solve_cfg.batch_size) != n_train:
+        raise ValueError(
+            f"CVX-SGD enforces full-batch training: expected batch_size={n_train}, got {int(solve_cfg.batch_size)}."
+        )
+    batch_size = n_train
+    print(
+        (
+            f"[cvx-run] method=sgd beta={float(solve_cfg.beta):.6g} lr={float(solve_cfg.lr):.6g} "
+            f"bias={float(init_bias):.6g} "
+            f"batch_size=full({batch_size}) n_train={n_train}"
+        ),
+        flush=True,
+    )
     loss_history: List[float] = []
-    best_val = float("inf")
+    best_val_objective = float("inf")
     best_state = None
     for epoch in range(1, solve_cfg.epochs + 1):
         model.train()
@@ -482,14 +517,29 @@ def _run_sgd_method(
         with torch.no_grad():
             val_logits = model(xva)
             val_loss = float(LossFunction.compute(name=solve_cfg.loss_name, y=yva, f_x=val_logits).value.item())
-        scheduler.step(val_loss)
-        if val_loss < best_val:
-            best_val = val_loss
+            l1_penalty = float(model.linear.weight.abs().sum().item())
+            val_objective = val_loss + rho * l1_penalty
+        scheduler.step(val_objective)
+        if val_objective < best_val_objective:
+            best_val_objective = val_objective
             best_state = {k: v.detach().cpu().clone() for k, v in model.state_dict().items()}
-        if epoch % solve_cfg.log_every == 0:
+        if solve_cfg.log_every > 0 and epoch % solve_cfg.log_every == 0:
             with torch.no_grad():
-                train_loss = float(LossFunction.compute(name=solve_cfg.loss_name, y=ytr, f_x=model(xtr)).value.item())
+                train_logits = model(xtr)
+                train_loss = float(LossFunction.compute(name=solve_cfg.loss_name, y=ytr, f_x=train_logits).value.item())
+                train_acc = _multiclass_accuracy(train_logits, ytr)
+                val_acc = _multiclass_accuracy(val_logits, yva)
+                train_objective = train_loss + rho * l1_penalty
             loss_history.append(train_loss)
+            print(
+                (
+                    f"[cvx-sgd] epoch={epoch}/{solve_cfg.epochs} "
+                    f"train_loss={train_loss:.6f} val_loss={val_loss:.6f} "
+                    f"train_obj={train_objective:.6f} val_obj={val_objective:.6f} "
+                    f"train_acc={train_acc:.4f} val_acc={val_acc:.4f}"
+                ),
+                flush=True,
+            )
 
     if best_state is None:
         raise RuntimeError("SGD did not capture a best state.")
@@ -542,7 +592,16 @@ def cvx_solve(
     yte = _prepare_sequence_targets(y_test)
     d_train, d_val, d_test, _ = _build_feature_map(x_train=x_train, x_val=x_val, x_test=x_test, init_cfg=init_cfg)
     if solve_cfg.method == "cvx":
-        return _run_cvx_method(d_train=d_train, y_train=ytr, d_val=d_val, y_val=yva, d_test=d_test, y_test=yte, solve_cfg=solve_cfg)
+        return _run_cvx_method(
+            d_train=d_train,
+            y_train=ytr,
+            d_val=d_val,
+            y_val=yva,
+            d_test=d_test,
+            y_test=yte,
+            solve_cfg=solve_cfg,
+            init_bias=float(init_cfg.bias),
+        )
     if solve_cfg.method == "sgd":
         run_device = choose_device() if device is None else device
         return _run_sgd_method(
@@ -554,5 +613,6 @@ def cvx_solve(
             y_test=yte,
             solve_cfg=solve_cfg,
             device=run_device,
+            init_bias=float(init_cfg.bias),
         )
     raise ValueError(f"Unknown solve method={solve_cfg.method}.")

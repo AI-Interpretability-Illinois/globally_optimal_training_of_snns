@@ -120,6 +120,34 @@ def _compute_eval_loss(
         return float(loss.item())
 
 
+def _sequence_accuracy_from_logits(logits: torch.Tensor, y: torch.Tensor) -> float:
+    if logits.ndim != 3:
+        raise ValueError(f"Expected sequence logits with shape (N,T,C), got {tuple(logits.shape)}.")
+    if y.ndim == 1:
+        last_logits = logits[:, -1, :]
+        if last_logits.shape[1] == 1:
+            preds = (last_logits[:, 0] >= 0.0).long()
+        else:
+            preds = torch.argmax(last_logits, dim=1)
+        return float((preds == y.long()).float().mean().item())
+    if y.ndim == 2:
+        if tuple(logits.shape[:2]) != tuple(y.shape):
+            raise ValueError(f"Sequence label shape mismatch: logits={tuple(logits.shape)}, y={tuple(y.shape)}.")
+        if logits.shape[2] == 1:
+            preds = (logits[:, :, 0] >= 0.0).long()
+        else:
+            preds = torch.argmax(logits, dim=2)
+        return float((preds == y.long()).float().mean().item())
+    raise ValueError(f"Expected labels with rank 1 or 2, got rank {y.ndim}.")
+
+
+def _compute_eval_accuracy(model: SNNBaselineSeq, x: torch.Tensor, y: torch.Tensor) -> float:
+    model.eval()
+    with torch.no_grad():
+        logits = model(x)
+        return _sequence_accuracy_from_logits(logits, y)
+
+
 def ste_solve(
     *,
     x_train: np.ndarray,
@@ -164,14 +192,25 @@ def ste_solve(
     else:
         raise ValueError(f"Unknown optimizer_name={solve_cfg.optimizer_name}.")
     scheduler = ReduceLROnPlateau(optimizer, mode="min", factor=0.5, patience=10)
-    batch_size = train_x.shape[0] if solve_cfg.batch_size is None else solve_cfg.batch_size
-    if batch_size <= 0:
-        raise ValueError("batch_size must be positive.")
+    n_train = int(train_x.shape[0])
+    if solve_cfg.batch_size is not None and int(solve_cfg.batch_size) != n_train:
+        raise ValueError(
+            f"STE enforces full-batch training: expected batch_size={n_train}, got {int(solve_cfg.batch_size)}."
+        )
+    batch_size = n_train
+    print(
+        (
+            f"[ste-run] beta={float(solve_cfg.beta_path_reg):.6g} lr={float(solve_cfg.lr):.6g} "
+            f"weight_decay={float(solve_cfg.weight_decay):.6g} "
+            f"batch_size=full({batch_size}) n_train={n_train}"
+        ),
+        flush=True,
+    )
 
     loss_history: List[float] = []
     best_val = float("inf")
     best_state = None
-    n_samples = train_x.shape[0]
+    n_samples = n_train
     for epoch in range(1, solve_cfg.epochs + 1):
         model.train()
         permutation = torch.randperm(n_samples, device=run_device)
@@ -180,6 +219,8 @@ def ste_solve(
             idx = permutation[start : start + batch_size]
             logits = model(train_x[idx])
             loss = LossFunction.compute(name=solve_cfg.loss_name, y=train_y[idx], f_x=logits).value
+            if solve_cfg.beta_path_reg > 0.0:
+                loss = loss + float(solve_cfg.beta_path_reg) * snn_path_reg(model)
             optimizer.zero_grad()
             loss.backward()
             optimizer.step()
@@ -196,8 +237,18 @@ def ste_solve(
         if val_loss < best_val:
             best_val = val_loss
             best_state = {k: v.detach().cpu().clone() for k, v in model.state_dict().items()}
-        if epoch % solve_cfg.log_every == 0:
+        if solve_cfg.log_every > 0 and epoch % solve_cfg.log_every == 0:
+            train_acc = _compute_eval_accuracy(model, train_x, train_y)
+            val_acc = _compute_eval_accuracy(model, val_x, val_y)
             loss_history.append(epoch_loss)
+            print(
+                (
+                    f"[ste] epoch={epoch}/{solve_cfg.epochs} "
+                    f"train_loss={epoch_loss:.6f} val_loss={val_loss:.6f} "
+                    f"train_acc={train_acc:.4f} val_acc={val_acc:.4f}"
+                ),
+                flush=True,
+            )
 
     if best_state is None:
         raise RuntimeError("Training did not produce any best_state.")

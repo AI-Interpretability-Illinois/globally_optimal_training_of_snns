@@ -7,7 +7,7 @@ import numpy as np
 import torch
 
 from .solvers.cvx_solve import InitializationConfig, SolveConfig, cvx_solve
-from .solver_grids import BETA_GRID_DEFAULT, LR_GRID_DEFAULT
+from .solver_grids import BETA_GRID_DEFAULT, BIAS_GRID_DEFAULT, LR_GRID_DEFAULT
 from .solvers.ste_solve import SNNBaselineSeq, SteModelConfig, SteSolveConfig, ste_solve
 
 
@@ -30,6 +30,7 @@ class FineTuneConfig:
     cvx_gamma: float = 0.5
     beta_grid: Sequence[float] = BETA_GRID_DEFAULT
     lr_grid: Sequence[float] = LR_GRID_DEFAULT
+    bias_grid: Sequence[float] = BIAS_GRID_DEFAULT
     pretrain_lr: float = 1e-3
     pretrain_beta_path_reg: float = 0.0
     ste_lr_grid: Sequence[float] = LR_GRID_DEFAULT
@@ -120,7 +121,8 @@ def run_fine_tune_pipeline(
                         lr=float(ste_lr),
                         epochs=cfg.ste_pretrain_epochs,
                         batch_size=None if cfg.batch_size == -1 else int(cfg.batch_size),
-                        weight_decay=float(ste_beta),
+                        weight_decay=0.0,
+                        beta_path_reg=float(ste_beta),
                     ),
                 )
                 val_loss = out.best_losses["val_loss"] + float(ste_beta)
@@ -164,36 +166,53 @@ def run_fine_tune_pipeline(
             best_cvx_val = float("inf")
             best_beta = None
             best_lr = None
+            best_bias = None
             for cvx_beta in cfg.beta_grid:
                 for cvx_lr in cfg.lr_grid:
-                    out = cvx_solve(
-                        x_train=x_train,
-                        y_train=y_train,
-                        x_val=x_val,
-                        y_val=y_val,
-                        x_test=x_test,
-                        y_test=y_test,
-                        init_cfg=init_cfg,
-                        solve_cfg=SolveConfig(
-                            method=cfg.cvx_method,
-                            loss_name=cfg.loss_type,
-                            beta=float(cvx_beta),
-                            lr=float(cvx_lr),
-                            optimizer_name=cfg.cvx_optimizer,
-                            epochs=cfg.epochs,
-                            batch_size=None if cfg.batch_size == -1 else int(cfg.batch_size),
-                        ),
-                    )
-                    val_obj = out.final_losses.get("val_objective", out.final_losses["val_loss"])
-                    if float(val_obj) < best_cvx_val:
-                        best_cvx_val = float(val_obj)
-                        best_cvx = out
-                        best_beta = float(cvx_beta)
-                        best_lr = float(cvx_lr)
-            if best_cvx is None or best_beta is None or best_lr is None:
+                    for cvx_bias in cfg.bias_grid:
+                        init_cfg_trial = InitializationConfig(
+                            mode=init_cfg.mode,
+                            variant=init_cfg.variant,
+                            seed=init_cfg.seed,
+                            feature_count=init_cfg.feature_count,
+                            bias=float(cvx_bias),
+                            pretrained_weights=init_cfg.pretrained_weights,
+                            L=init_cfg.L,
+                            P_rec=init_cfg.P_rec,
+                            P_last=init_cfg.P_last,
+                            beta_leak=init_cfg.beta_leak,
+                            threshold=init_cfg.threshold,
+                            last_layer_readout=init_cfg.last_layer_readout,
+                        )
+                        out = cvx_solve(
+                            x_train=x_train,
+                            y_train=y_train,
+                            x_val=x_val,
+                            y_val=y_val,
+                            x_test=x_test,
+                            y_test=y_test,
+                            init_cfg=init_cfg_trial,
+                            solve_cfg=SolveConfig(
+                                method=cfg.cvx_method,
+                                loss_name=cfg.loss_type,
+                                beta=float(cvx_beta),
+                                lr=float(cvx_lr),
+                                optimizer_name=cfg.cvx_optimizer,
+                                epochs=cfg.epochs,
+                                batch_size=None if cfg.batch_size == -1 else int(cfg.batch_size),
+                            ),
+                        )
+                        val_obj = out.final_losses.get("val_objective", out.final_losses["val_loss"])
+                        if float(val_obj) < best_cvx_val:
+                            best_cvx_val = float(val_obj)
+                            best_cvx = out
+                            best_beta = float(cvx_beta)
+                            best_lr = float(cvx_lr)
+                            best_bias = float(cvx_bias)
+            if best_cvx is None or best_beta is None or best_lr is None or best_bias is None:
                 raise RuntimeError(f"CVX sweep failed for source={source}.")
             cvx_results[source] = best_cvx
-            cvx_selected_params[source] = {"beta": best_beta, "lr": best_lr}
+            cvx_selected_params[source] = {"beta": best_beta, "lr": best_lr, "bias": best_bias}
 
         best_post = None
         best_post_val = float("inf")
@@ -223,7 +242,8 @@ def run_fine_tune_pipeline(
                         lr=float(ste_lr),
                         epochs=cfg.ste_post_epochs,
                         batch_size=None if cfg.batch_size == -1 else int(cfg.batch_size),
-                        weight_decay=float(ste_beta),
+                        weight_decay=0.0,
+                        beta_path_reg=float(ste_beta),
                     ),
                     pretrained_weights=transferred_weights,
                 )

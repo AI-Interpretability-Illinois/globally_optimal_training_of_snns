@@ -11,7 +11,7 @@ import numpy as np
 from .fine_tune import FineTuneConfig, run_fine_tune_pipeline
 from .data_loaders.image_data_loader import load_cifar_seq_dataset, load_mnist_seq_dataset
 from .layer_wise_stacking_test_bench import LayerWiseConfig, run_layer_wise_stacking_test_bench
-from .solver_grids import BETA_GRID_DEFAULT, LR_GRID_DEFAULT
+from .solver_grids import BETA_GRID_DEFAULT, BIAS_GRID_DEFAULT, LR_GRID_DEFAULT
 
 
 @dataclass
@@ -32,6 +32,7 @@ class NoisySweepConfig:
     cvx_method: str = "cvx"  # cvx | sgd
     cvx_beta_grid: Sequence[float] = BETA_GRID_DEFAULT
     cvx_lr_grid: Sequence[float] = LR_GRID_DEFAULT
+    cvx_bias_grid: Sequence[float] = BIAS_GRID_DEFAULT
     ste_beta_grid: Sequence[float] = BETA_GRID_DEFAULT
     ste_lr_grid: Sequence[float] = LR_GRID_DEFAULT
 
@@ -107,6 +108,7 @@ def _extract_noisy_result_rows(base: Dict[str, Any]) -> List[Dict[str, Any]]:
                     "block_idx": "",
                     "selected_lr": chosen["lr"],
                     "selected_beta": chosen["beta"],
+                    "selected_bias": chosen.get("bias", ""),
                     "train_loss": cvx_res.final_losses.get("train_loss"),
                     "val_loss": cvx_res.final_losses.get("val_loss"),
                     "test_loss": cvx_res.final_losses.get("test_loss"),
@@ -176,6 +178,7 @@ def _extract_noisy_result_rows(base: Dict[str, Any]) -> List[Dict[str, Any]]:
                     "block_idx": bidx,
                     "selected_lr": block["cvx_selected_params"]["lr"],
                     "selected_beta": block["cvx_selected_params"]["beta"],
+                    "selected_bias": block["cvx_selected_params"].get("bias", ""),
                     "train_loss": cvx_out.final_losses.get("train_loss"),
                     "val_loss": cvx_out.final_losses.get("val_loss"),
                     "test_loss": cvx_out.final_losses.get("test_loss"),
@@ -268,6 +271,7 @@ def run_noisy_test_bench(
                                         cvx_method=sweepCfg.cvx_method,
                                         beta_grid=sweepCfg.cvx_beta_grid,
                                         lr_grid=sweepCfg.cvx_lr_grid,
+                                        bias_grid=sweepCfg.cvx_bias_grid,
                                         ste_beta_grid=sweepCfg.ste_beta_grid,
                                         ste_lr_grid=sweepCfg.ste_lr_grid,
                                     ),
@@ -291,6 +295,7 @@ def run_noisy_test_bench(
                                         cvx_method=sweepCfg.cvx_method,
                                         cvx_beta_grid=sweepCfg.cvx_beta_grid,
                                         cvx_lr_grid=sweepCfg.cvx_lr_grid,
+                                        cvx_bias_grid=sweepCfg.cvx_bias_grid,
                                         ste_beta_grid=sweepCfg.ste_beta_grid,
                                         ste_lr_grid=sweepCfg.ste_lr_grid,
                                     ),
@@ -312,6 +317,7 @@ def run_noisy_test_bench(
                                     "P_last": P_last,
                                     "cvx_beta_grid": tuple(float(x) for x in sweepCfg.cvx_beta_grid),
                                     "cvx_lr_grid": tuple(float(x) for x in sweepCfg.cvx_lr_grid),
+                                    "cvx_bias_grid": tuple(float(x) for x in sweepCfg.cvx_bias_grid),
                                     "ste_beta_grid": tuple(float(x) for x in sweepCfg.ste_beta_grid),
                                     "ste_lr_grid": tuple(float(x) for x in sweepCfg.ste_lr_grid),
                                     "result": run,

@@ -11,7 +11,7 @@ import numpy as np
 from .data_loaders.arithmetic_data_loader import load_arithmetic_dataset
 from .data_loaders.dfa_data_loader import make_dfa_dataset
 from .layer_wise_stacking_test_bench import LayerWiseConfig, run_layer_wise_stacking_test_bench
-from .solver_grids import BETA_GRID_DEFAULT, LR_GRID_DEFAULT
+from .solver_grids import BETA_GRID_DEFAULT, BIAS_GRID_DEFAULT, LR_GRID_DEFAULT
 from .solvers.cvx_solve import InitializationConfig, SolveConfig, cvx_solve
 from .solvers.ste_solve import SNNBaselineSeq, SteModelConfig, SteSolveConfig, ste_solve
 
@@ -38,6 +38,7 @@ class DeterministicBenchConfig:
     cvx_method: str = "cvx"  # cvx | sgd
     cvx_beta_grid: Sequence[float] = BETA_GRID_DEFAULT
     cvx_lr_grid: Sequence[float] = LR_GRID_DEFAULT
+    cvx_bias_grid: Sequence[float] = BIAS_GRID_DEFAULT
     ste_beta_grid: Sequence[float] = BETA_GRID_DEFAULT
     ste_lr_grid: Sequence[float] = LR_GRID_DEFAULT
 
@@ -115,6 +116,7 @@ def _extract_det_result_rows(base: Dict[str, Any], out: Dict[str, Any]) -> List[
                     "block_idx": "",
                     "selected_lr": chosen["lr"],
                     "selected_beta": chosen["beta"],
+                    "selected_bias": chosen.get("bias", ""),
                     "train_loss": cvx_res.final_losses.get("train_loss"),
                     "val_loss": cvx_res.final_losses.get("val_loss"),
                     "test_loss": cvx_res.final_losses.get("test_loss"),
@@ -162,6 +164,7 @@ def _extract_det_result_rows(base: Dict[str, Any], out: Dict[str, Any]) -> List[
                     "block_idx": bidx,
                     "selected_lr": block["cvx_selected_params"]["lr"],
                     "selected_beta": block["cvx_selected_params"]["beta"],
+                    "selected_bias": block["cvx_selected_params"].get("bias", ""),
                     "train_loss": cvx_out.final_losses.get("train_loss"),
                     "val_loss": cvx_out.final_losses.get("val_loss"),
                     "test_loss": cvx_out.final_losses.get("test_loss"),
@@ -354,7 +357,8 @@ def run_deterministic_bench(cfg: DeterministicBenchConfig) -> dict:
                         optimizer_name=cfg.optimizer_name,
                         lr=float(ste_lr),
                         epochs=100,
-                        weight_decay=float(ste_beta),
+                        weight_decay=0.0,
+                        beta_path_reg=float(ste_beta),
                     ),
                 )
                 val_loss = out.best_losses["val_loss"] + float(ste_beta)
@@ -377,80 +381,88 @@ def run_deterministic_bench(cfg: DeterministicBenchConfig) -> dict:
             best_cvx_val = float("inf")
             best_beta = None
             best_lr = None
+            best_bias = None
             for cvx_beta in cfg.cvx_beta_grid:
                 for cvx_lr in cfg.cvx_lr_grid:
-                    out = cvx_solve(
-                        x_train=x_train,
-                        y_train=y_train,
-                        x_val=x_val,
-                        y_val=y_val,
-                        x_test=x_test,
-                        y_test=y_test,
-                        init_cfg=InitializationConfig(
-                            mode="gaussian",
-                            L=cfg.L,
-                            P_rec=cfg.P_rec,
-                            P_last=cfg.P_last,
-                            feature_count=cfg.P_last,
-                        ),
-                        solve_cfg=SolveConfig(
-                            method=cfg.cvx_method,
-                            loss_name="hinge_ovr",
-                            beta=float(cvx_beta),
-                            lr=float(cvx_lr),
-                            optimizer_name=cfg.optimizer_name,
-                        ),
-                    )
-                    val_obj = out.final_losses.get("val_objective", out.final_losses["val_loss"])
-                    if float(val_obj) < best_cvx_val:
-                        best_cvx_val = float(val_obj)
-                        best_cvx = out
-                        best_beta = float(cvx_beta)
-                        best_lr = float(cvx_lr)
-            if best_cvx is None or best_beta is None or best_lr is None:
+                    for cvx_bias in cfg.cvx_bias_grid:
+                        out = cvx_solve(
+                            x_train=x_train,
+                            y_train=y_train,
+                            x_val=x_val,
+                            y_val=y_val,
+                            x_test=x_test,
+                            y_test=y_test,
+                            init_cfg=InitializationConfig(
+                                mode="gaussian",
+                                L=cfg.L,
+                                P_rec=cfg.P_rec,
+                                P_last=cfg.P_last,
+                                feature_count=cfg.P_last,
+                                bias=float(cvx_bias),
+                            ),
+                            solve_cfg=SolveConfig(
+                                method=cfg.cvx_method,
+                                loss_name="hinge_ovr",
+                                beta=float(cvx_beta),
+                                lr=float(cvx_lr),
+                                optimizer_name=cfg.optimizer_name,
+                            ),
+                        )
+                        val_obj = out.final_losses.get("val_objective", out.final_losses["val_loss"])
+                        if float(val_obj) < best_cvx_val:
+                            best_cvx_val = float(val_obj)
+                            best_cvx = out
+                            best_beta = float(cvx_beta)
+                            best_lr = float(cvx_lr)
+                            best_bias = float(cvx_bias)
+            if best_cvx is None or best_beta is None or best_lr is None or best_bias is None:
                 raise RuntimeError("Deterministic CVX (gaussian) sweep failed.")
             cvx_by_init["gaussian"] = best_cvx
-            cvx_selected_params["gaussian"] = {"beta": best_beta, "lr": best_lr}
+            cvx_selected_params["gaussian"] = {"beta": best_beta, "lr": best_lr, "bias": best_bias}
         if cfg.init_mode in ("fine_tune", "both"):
             best_cvx = None
             best_cvx_val = float("inf")
             best_beta = None
             best_lr = None
+            best_bias = None
             for cvx_beta in cfg.cvx_beta_grid:
                 for cvx_lr in cfg.cvx_lr_grid:
-                    out = cvx_solve(
-                        x_train=x_train,
-                        y_train=y_train,
-                        x_val=x_val,
-                        y_val=y_val,
-                        x_test=x_test,
-                        y_test=y_test,
-                        init_cfg=InitializationConfig(
-                            mode="pretraining",
-                            pretrained_weights=transferred_weights,
-                            L=cfg.L,
-                            P_rec=cfg.P_rec,
-                            P_last=cfg.P_last,
-                            feature_count=cfg.P_last,
-                        ),
-                        solve_cfg=SolveConfig(
-                            method=cfg.cvx_method,
-                            loss_name="hinge_ovr",
-                            beta=float(cvx_beta),
-                            lr=float(cvx_lr),
-                            optimizer_name=cfg.optimizer_name,
-                        ),
-                    )
-                    val_obj = out.final_losses.get("val_objective", out.final_losses["val_loss"])
-                    if float(val_obj) < best_cvx_val:
-                        best_cvx_val = float(val_obj)
-                        best_cvx = out
-                        best_beta = float(cvx_beta)
-                        best_lr = float(cvx_lr)
-            if best_cvx is None or best_beta is None or best_lr is None:
+                    for cvx_bias in cfg.cvx_bias_grid:
+                        out = cvx_solve(
+                            x_train=x_train,
+                            y_train=y_train,
+                            x_val=x_val,
+                            y_val=y_val,
+                            x_test=x_test,
+                            y_test=y_test,
+                            init_cfg=InitializationConfig(
+                                mode="pretraining",
+                                pretrained_weights=transferred_weights,
+                                L=cfg.L,
+                                P_rec=cfg.P_rec,
+                                P_last=cfg.P_last,
+                                feature_count=cfg.P_last,
+                                bias=float(cvx_bias),
+                            ),
+                            solve_cfg=SolveConfig(
+                                method=cfg.cvx_method,
+                                loss_name="hinge_ovr",
+                                beta=float(cvx_beta),
+                                lr=float(cvx_lr),
+                                optimizer_name=cfg.optimizer_name,
+                            ),
+                        )
+                        val_obj = out.final_losses.get("val_objective", out.final_losses["val_loss"])
+                        if float(val_obj) < best_cvx_val:
+                            best_cvx_val = float(val_obj)
+                            best_cvx = out
+                            best_beta = float(cvx_beta)
+                            best_lr = float(cvx_lr)
+                            best_bias = float(cvx_bias)
+            if best_cvx is None or best_beta is None or best_lr is None or best_bias is None:
                 raise RuntimeError("Deterministic CVX (fine_tune) sweep failed.")
             cvx_by_init["fine_tune"] = best_cvx
-            cvx_selected_params["fine_tune"] = {"beta": best_beta, "lr": best_lr}
+            cvx_selected_params["fine_tune"] = {"beta": best_beta, "lr": best_lr, "bias": best_bias}
 
         if cfg.init_mode == "gaussian":
             cvx_out = cvx_by_init["gaussian"]
@@ -486,6 +498,7 @@ def run_deterministic_bench(cfg: DeterministicBenchConfig) -> dict:
                 cvx_method=cfg.cvx_method,
                 cvx_beta_grid=cfg.cvx_beta_grid,
                 cvx_lr_grid=cfg.cvx_lr_grid,
+                cvx_bias_grid=cfg.cvx_bias_grid,
                 ste_beta_grid=cfg.ste_beta_grid,
                 ste_lr_grid=cfg.ste_lr_grid,
             ),

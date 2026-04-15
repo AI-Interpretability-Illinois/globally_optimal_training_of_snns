@@ -168,8 +168,8 @@ def build_arithmetic_seq_dataset(*, op: str, base: int, n_digits: int, n_train: 
 # Model / objectives (aligned with current fine-tune style)
 # ============================================================
 
-class ThreeLayerBlock(nn.Module):
-    """A 3-layer block: two LIF hidden stages + P_last projection + per-timestep classifier."""
+class FiveLayerBlock(nn.Module):
+    """A 5-layer block: four LIF hidden stages + P_last projection + per-timestep classifier."""
 
     def __init__(
         self,
@@ -188,9 +188,13 @@ class ThreeLayerBlock(nn.Module):
         self.last_layer_readout = last_layer_readout
         self.fc1 = nn.Linear(d_in, hidden_dim, bias=False)
         self.fc2 = nn.Linear(hidden_dim, hidden_dim, bias=False)
+        self.fc3 = nn.Linear(hidden_dim, hidden_dim, bias=False)
+        self.fc4 = nn.Linear(hidden_dim, hidden_dim, bias=False)
         self.proj = nn.Linear(hidden_dim, p_last, bias=False)
         self.lif1 = snn.Leaky(beta=beta_leak, threshold=threshold, learn_beta=learn_beta, learn_threshold=learn_threshold)
         self.lif2 = snn.Leaky(beta=beta_leak, threshold=threshold, learn_beta=learn_beta, learn_threshold=learn_threshold)
+        self.lif3 = snn.Leaky(beta=beta_leak, threshold=threshold, learn_beta=learn_beta, learn_threshold=learn_threshold)
+        self.lif4 = snn.Leaky(beta=beta_leak, threshold=threshold, learn_beta=learn_beta, learn_threshold=learn_threshold)
         self.classifier = nn.Linear(p_last, num_classes, bias=False)
 
     def forward_features(self, x_seq: torch.Tensor) -> torch.Tensor:
@@ -198,12 +202,16 @@ class ThreeLayerBlock(nn.Module):
         device = x_seq.device
         mem1 = self.lif1.init_leaky().to(device)
         mem2 = self.lif2.init_leaky().to(device)
+        mem3 = self.lif3.init_leaky().to(device)
+        mem4 = self.lif4.init_leaky().to(device)
         feat_list = []
         for t in range(T):
             x_t = x_seq[:, t, :]
             spk1, mem1 = self.lif1(self.fc1(x_t), mem1)
             spk2, mem2 = self.lif2(self.fc2(spk1), mem2)
-            readout = mem2 if self.last_layer_readout == "membrane" else spk2
+            spk3, mem3 = self.lif3(self.fc3(spk2), mem3)
+            spk4, mem4 = self.lif4(self.fc4(spk3), mem4)
+            readout = mem4 if self.last_layer_readout == "membrane" else spk4
             feat_list.append(self.proj(readout))
         return torch.stack(feat_list, dim=1)
 
@@ -233,18 +241,18 @@ def sequence_hinge_ovr_loss(logits: torch.Tensor, y: torch.Tensor) -> torch.Tens
     return torch.clamp(1.0 - y_pm1 * scores, min=0.0).mean()
 
 
-def block_path_reg(model: ThreeLayerBlock) -> torch.Tensor:
+def block_path_reg(model: FiveLayerBlock) -> torch.Tensor:
     device = next(model.parameters()).device
     dtype = next(model.parameters()).dtype
     v = torch.ones(model.fc1.in_features, device=device, dtype=dtype)
-    for layer in (model.fc1, model.fc2, model.proj):
+    for layer in (model.fc1, model.fc2, model.fc3, model.fc4, model.proj):
         v = (layer.weight ** 2) @ v
     reg_sq = ((model.classifier.weight ** 2) * v.unsqueeze(0)).sum()
     return torch.sqrt(reg_sq + 1e-12)
 
 
 @torch.no_grad()
-def evaluate_block(model: ThreeLayerBlock, X: torch.Tensor, y: torch.Tensor, device: torch.device) -> Tuple[float, float, torch.Tensor]:
+def evaluate_block(model: FiveLayerBlock, X: torch.Tensor, y: torch.Tensor, device: torch.device) -> Tuple[float, float, torch.Tensor]:
     model.eval()
     X = X.to(device)
     y = y.to(device)
@@ -263,7 +271,7 @@ def evaluate_block(model: ThreeLayerBlock, X: torch.Tensor, y: torch.Tensor, dev
 
 @torch.no_grad()
 def evaluate_stacked_blocks(
-    models: List[ThreeLayerBlock],
+    models: List[FiveLayerBlock],
     X: np.ndarray,
     y: np.ndarray,
     device: torch.device,
@@ -458,7 +466,7 @@ class BlockMetrics:
 
 @dataclass
 class TrainResult:
-    model: ThreeLayerBlock
+    model: FiveLayerBlock
     lr: float
     beta_path: float
     tr_tok: float
@@ -475,36 +483,46 @@ class TrainResult:
     Z_test: np.ndarray
 
 
-def _extract_transfer_hidden_from_block(model: ThreeLayerBlock) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
+def _extract_transfer_hidden_from_block(model: FiveLayerBlock) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
     return (
         model.fc1.weight.detach().cpu().numpy().astype(np.float32, copy=True),
         model.fc2.weight.detach().cpu().numpy().astype(np.float32, copy=True),
+        model.fc3.weight.detach().cpu().numpy().astype(np.float32, copy=True),
+        model.fc4.weight.detach().cpu().numpy().astype(np.float32, copy=True),
         model.proj.weight.detach().cpu().numpy().astype(np.float32, copy=True),
     )
 
 
 def _initialize_hidden_from_transfer(
-    model: ThreeLayerBlock,
-    transfer_hidden: Tuple[np.ndarray, np.ndarray, np.ndarray],
+    model: FiveLayerBlock,
+    transfer_hidden: Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray],
 ) -> None:
-    w1, w2, wp = transfer_hidden
+    w1, w2, w3, w4, wp = transfer_hidden
     with torch.no_grad():
         t1 = torch.from_numpy(w1).to(model.fc1.weight.device, dtype=model.fc1.weight.dtype)
         t2 = torch.from_numpy(w2).to(model.fc2.weight.device, dtype=model.fc2.weight.dtype)
+        t3 = torch.from_numpy(w3).to(model.fc3.weight.device, dtype=model.fc3.weight.dtype)
+        t4 = torch.from_numpy(w4).to(model.fc4.weight.device, dtype=model.fc4.weight.dtype)
         tp = torch.from_numpy(wp).to(model.proj.weight.device, dtype=model.proj.weight.dtype)
         if tuple(t1.shape) != tuple(model.fc1.weight.shape):
             raise ValueError(f"fc1 transfer shape mismatch: {tuple(t1.shape)} vs {tuple(model.fc1.weight.shape)}")
         if tuple(t2.shape) != tuple(model.fc2.weight.shape):
             raise ValueError(f"fc2 transfer shape mismatch: {tuple(t2.shape)} vs {tuple(model.fc2.weight.shape)}")
+        if tuple(t3.shape) != tuple(model.fc3.weight.shape):
+            raise ValueError(f"fc3 transfer shape mismatch: {tuple(t3.shape)} vs {tuple(model.fc3.weight.shape)}")
+        if tuple(t4.shape) != tuple(model.fc4.weight.shape):
+            raise ValueError(f"fc4 transfer shape mismatch: {tuple(t4.shape)} vs {tuple(model.fc4.weight.shape)}")
         if tuple(tp.shape) != tuple(model.proj.weight.shape):
             raise ValueError(f"proj transfer shape mismatch: {tuple(tp.shape)} vs {tuple(model.proj.weight.shape)}")
         model.fc1.weight.copy_(t1)
         model.fc2.weight.copy_(t2)
+        model.fc3.weight.copy_(t3)
+        model.fc4.weight.copy_(t4)
         model.proj.weight.copy_(tp)
 
 
 def _fit_block_once(
-    model: ThreeLayerBlock,
+    model: FiveLayerBlock,
     *,
     X_train_t: torch.Tensor,
     y_train_t: torch.Tensor,
@@ -567,14 +585,14 @@ def train_block_with_sweep(
     X_test_t = torch.tensor(X_test, dtype=torch.float32)
     y_test_t = torch.tensor(y_test, dtype=torch.long)
 
-    transfer_hidden: Optional[Tuple[np.ndarray, np.ndarray, np.ndarray]] = None
+    transfer_hidden: Optional[Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray]] = None
     feat_tr_cvx: Optional[torch.Tensor] = None
     feat_va_cvx: Optional[torch.Tensor] = None
     feat_te_cvx: Optional[torch.Tensor] = None
-    if init_mode == "pretrain":
+    if init_mode in ("pretrain", "fine_tune"):
         # Pretrain once, then transfer-initialize STE sweep candidates (fine-tune style).
         set_seed(seed)
-        pre_model = ThreeLayerBlock(
+        pre_model = FiveLayerBlock(
             d_in=int(X_train.shape[2]), hidden_dim=hidden_dim, p_last=p_last, num_classes=num_classes,
             beta_leak=beta_leak, threshold=threshold, learn_beta=False, learn_threshold=False,
             last_layer_readout=last_layer_readout,
@@ -595,7 +613,7 @@ def train_block_with_sweep(
         _, _, feat_te_cvx = evaluate_block(pre_model, X_test_t, y_test_t, device)
         transfer_hidden = _extract_transfer_hidden_from_block(pre_model)
     elif init_mode != "gaussian":
-        raise ValueError(f"Unknown init_mode={init_mode!r}. Choose from: pretrain, gaussian.")
+        raise ValueError(f"Unknown init_mode={init_mode!r}. Choose from: fine_tune, pretrain, gaussian.")
 
     best_key = -1.0
     best_result: Optional[TrainResult] = None
@@ -603,7 +621,7 @@ def train_block_with_sweep(
     for beta_path in ste_beta_grid:
         for lr in ste_lr_grid:
             set_seed(seed)
-            model = ThreeLayerBlock(
+            model = FiveLayerBlock(
                 d_in=int(X_train.shape[2]), hidden_dim=hidden_dim, p_last=p_last, num_classes=num_classes,
                 beta_leak=beta_leak, threshold=threshold, learn_beta=False, learn_threshold=False,
                 last_layer_readout=last_layer_readout,
@@ -675,7 +693,7 @@ def run_layerwise(
     X_val_np = X_val_raw.copy()
     X_test_np = X_test_raw.copy()
     metrics: List[BlockMetrics] = []
-    stacked_models: List[ThreeLayerBlock] = []
+    stacked_models: List[FiveLayerBlock] = []
 
     for b in range(num_blocks):
         # Intermediate blocks feed subsequent blocks, so keep transfer width at P_rec.
@@ -720,7 +738,7 @@ def run_layerwise(
 # ============================================================
 
 def main() -> None:
-    ap = argparse.ArgumentParser(description="Layer-wise 3-layer stacking benchmark with swept STE blocks and CVX heads.")
+    ap = argparse.ArgumentParser(description="Layer-wise 5-layer stacking benchmark with swept STE blocks and CVX heads.")
     ap.add_argument("--task", type=str, default="mnist_seq", choices=["mnist_seq", "mnist_perm_seq", "arithmetic_seq"])
     ap.add_argument("--T", type=int, default=28)
     ap.add_argument("--n_train_total", type=int, default=1024)
@@ -742,7 +760,7 @@ def main() -> None:
     ap.add_argument("--beta_leak", type=float, default=0.99)
     ap.add_argument("--threshold", type=float, default=1.0)
     ap.add_argument("--last_layer_readout", type=str, default="membrane", choices=["membrane", "spike"])
-    ap.add_argument("--init_mode", type=str, default="pretrain", choices=["pretrain", "gaussian"])
+    ap.add_argument("--init_mode", type=str, default="fine_tune", choices=["fine_tune", "pretrain", "gaussian"])
     ap.add_argument("--num_runs", type=int, default=1)
     ap.add_argument("--seed", type=int, default=0)
     ap.add_argument("--results_csv", type=str, default="cvx_layer_wise_results.csv")

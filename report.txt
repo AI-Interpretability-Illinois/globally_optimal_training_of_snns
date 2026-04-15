@@ -330,3 +330,92 @@
   L8,t=0: rows=1/4000, cols=1/128, act=0.0, NMI=-0.0, purity=0.1168, clusters=1 (avg_sz=4000.0, med_sz=4000.0, singletons=0), nonsing_samples=4000 (1.0), margin_ns=0.1168, k_90=1/1 (1.0)
   L8,t=27: rows=3969/4000, cols=128/128, act=0.0949, NMI=0.4327, purity=0.9948, clusters=3969 (avg_sz=1.01, med_sz=1.0, singletons=3954), nonsing_samples=46 (0.0115), margin_ns=0.5435, k_90=3569/3969 (0.8992)
 [final test results] cvx=0.494280±0.060311 , snn=0.783040±0.016936 , delta=-0.288760±0.062644
+
+--- 20260414_074607 mnist_seq L=8 T=2 ---
+[info] mnist_seq, L=8, T=2, P_in=2000, P_rec=5000, P_last=8000, n_train_total=8000, n_test=5000
+[seed 0] -> cvx best beta=1e-06 lr=0.001 => train_loss_history=[] , train_acc_history=[] , val_score=0.3641474078700812 || snn => train_loss_history=[] , train_acc_history=[]
+[seed 0] -> cvx test_acc=0.3306 , snn test_acc=0.8872
+[seed 0] layer diagnostics:
+  L1,t=0: rows=6399/6399, cols=5000/5000, act=0.4761, NMI=0.4158, purity=1.0, clusters=6399 (avg_sz=1.0, med_sz=1.0, singletons=6399), nonsing_samples=0 (0.0), margin_ns=0.0, k_90=5760/6399 (0.9001)
+  L1,t=1: rows=6399/6399, cols=5000/5000, act=0.4615, NMI=0.4158, purity=1.0, clusters=6399 (avg_sz=1.0, med_sz=1.0, singletons=6399), nonsing_samples=0 (0.0), margin_ns=0.0, k_90=5760/6399 (0.9001)
+  L2,t=0: rows=6399/6399, cols=4986/5000, act=0.4967, NMI=0.4158, purity=1.0, clusters=6399 (avg_sz=1.0, med_sz=1.0, singletons=6399), nonsing_samples=0 (0.0), margin_ns=0.0, k_90=5760/6399 (0.9001)
+  L2,t=1: rows=6399/6399, cols=4952/5000, act=0.4933, NMI=0.4158, purity=1.0, clusters=6399 (avg_sz=1.0, med_sz=1.0, singletons=6399), nonsing_samples=0 (0.0), margin_ns=0.0, k_90=5760/6399 (0.9001)
+  L3,t=0: rows=6399/6399, cols=4934/5000, act=0.4956, NMI=0.4158, purity=1.0, clusters=6399 (avg_sz=1.0, med_sz=1.0, singletons=6399), nonsing_samples=0 (0.0), margin_ns=0.0, k_90=5760/6399 (0.9001)
+  L3,t=1: rows=6399/6399, cols=4829/5000, act=0.4928, NMI=0.4158, purity=1.0, clusters=6399 (avg_sz=1.0, med_sz=1.0, singletons=6399), nonsing_samples=0 (0.0), margin_ns=0.0, k_90=5760/6399 (0.9001)
+  L4,t=0: rows=6399/6399, cols=4832/5000, act=0.4877, NMI=0.4158, purity=1.0, clusters=6399 (avg_sz=1.0, med_sz=1.0, singletons=6399), nonsing_samples=0 (0.0), margin_ns=0.0, k_90=5760/6399 (0.9001)
+  L4,t=1: rows=6399/6399, cols=4668/5000, act=0.485, NMI=0.4158, purity=1.0, clusters=6399 (avg_sz=1.0, med_sz=1.0, singletons=6399), nonsing_samples=0 (0.0), margin_ns=0.0, k_90=5760/6399 (0.9001)
+  L5,t=0: rows=6399/6399, cols=4799/5000, act=0.4978, NMI=0.4158, purity=1.0, clusters=6399 (avg_sz=1.0, med_sz=1.0, singletons=6399), nonsing_samples=0 (0.0), margin_ns=0.0, k_90=5760/6399 (0.9001)
+  L5,t=1: rows=6399/6399, cols=4692/5000, act=0.4959, NMI=0.4158, purity=1.0, clusters=6399 (avg_sz=1.0, med_sz=1.0, singletons=6399), nonsing_samples=0 (0.0), margin_ns=0.0, k_90=5760/6399 (0.9001)
+  L6,t=0: rows=6399/6399, cols=4764/5000, act=0.5, NMI=0.4158, purity=1.0, clusters=6399 (avg_sz=1.0, med_sz=1.0, singletons=6399), nonsing_samples=0 (0.0), margin_ns=0.0, k_90=5760/6399 (0.9001)
+  L6,t=1: rows=6399/6399, cols=4621/5000, act=0.4981, NMI=0.4158, purity=1.0, clusters=6399 (avg_sz=1.0, med_sz=1.0, singletons=6399), nonsing_samples=0 (0.0), margin_ns=0.0, k_90=5760/6399 (0.9001)
+  L7,t=0: rows=6399/6399, cols=7548/8000, act=0.4874, NMI=0.4158, purity=1.0, clusters=6399 (avg_sz=1.0, med_sz=1.0, singletons=6399), nonsing_samples=0 (0.0), margin_ns=0.0, k_90=5760/6399 (0.9001)
+  L7,t=1: rows=6399/6399, cols=7313/8000, act=0.4852, NMI=0.4158, purity=1.0, clusters=6399 (avg_sz=1.0, med_sz=1.0, singletons=6399), nonsing_samples=0 (0.0), margin_ns=0.0, k_90=5760/6399 (0.9001)
+[seed 1] -> cvx best beta=1e-06 lr=0.001 => train_loss_history=[] , train_acc_history=[] , val_score=0.38038725796377265 || snn => train_loss_history=[] , train_acc_history=[]
+[seed 1] -> cvx test_acc=0.3514 , snn test_acc=0.8786
+[seed 1] layer diagnostics:
+  L1,t=0: rows=6399/6399, cols=5000/5000, act=0.4831, NMI=0.4158, purity=1.0, clusters=6399 (avg_sz=1.0, med_sz=1.0, singletons=6399), nonsing_samples=0 (0.0), margin_ns=0.0, k_90=5760/6399 (0.9001)
+  L1,t=1: rows=6399/6399, cols=5000/5000, act=0.4649, NMI=0.4158, purity=1.0, clusters=6399 (avg_sz=1.0, med_sz=1.0, singletons=6399), nonsing_samples=0 (0.0), margin_ns=0.0, k_90=5760/6399 (0.9001)
+  L2,t=0: rows=6399/6399, cols=4995/5000, act=0.4941, NMI=0.4158, purity=1.0, clusters=6399 (avg_sz=1.0, med_sz=1.0, singletons=6399), nonsing_samples=0 (0.0), margin_ns=0.0, k_90=5760/6399 (0.9001)
+  L2,t=1: rows=6399/6399, cols=4961/5000, act=0.4909, NMI=0.4158, purity=1.0, clusters=6399 (avg_sz=1.0, med_sz=1.0, singletons=6399), nonsing_samples=0 (0.0), margin_ns=0.0, k_90=5760/6399 (0.9001)
+  L3,t=0: rows=6399/6399, cols=4921/5000, act=0.4861, NMI=0.4158, purity=1.0, clusters=6399 (avg_sz=1.0, med_sz=1.0, singletons=6399), nonsing_samples=0 (0.0), margin_ns=0.0, k_90=5760/6399 (0.9001)
+  L3,t=1: rows=6399/6399, cols=4806/5000, act=0.483, NMI=0.4158, purity=1.0, clusters=6399 (avg_sz=1.0, med_sz=1.0, singletons=6399), nonsing_samples=0 (0.0), margin_ns=0.0, k_90=5760/6399 (0.9001)
+  L4,t=0: rows=6399/6399, cols=4872/5000, act=0.496, NMI=0.4158, purity=1.0, clusters=6399 (avg_sz=1.0, med_sz=1.0, singletons=6399), nonsing_samples=0 (0.0), margin_ns=0.0, k_90=5760/6399 (0.9001)
+  L4,t=1: rows=6399/6399, cols=4763/5000, act=0.4936, NMI=0.4158, purity=1.0, clusters=6399 (avg_sz=1.0, med_sz=1.0, singletons=6399), nonsing_samples=0 (0.0), margin_ns=0.0, k_90=5760/6399 (0.9001)
+  L5,t=0: rows=6399/6399, cols=4799/5000, act=0.4977, NMI=0.4158, purity=1.0, clusters=6399 (avg_sz=1.0, med_sz=1.0, singletons=6399), nonsing_samples=0 (0.0), margin_ns=0.0, k_90=5760/6399 (0.9001)
+  L5,t=1: rows=6399/6399, cols=4699/5000, act=0.4959, NMI=0.4158, purity=1.0, clusters=6399 (avg_sz=1.0, med_sz=1.0, singletons=6399), nonsing_samples=0 (0.0), margin_ns=0.0, k_90=5760/6399 (0.9001)
+  L6,t=0: rows=6399/6399, cols=4795/5000, act=0.4944, NMI=0.4158, purity=1.0, clusters=6399 (avg_sz=1.0, med_sz=1.0, singletons=6399), nonsing_samples=0 (0.0), margin_ns=0.0, k_90=5760/6399 (0.9001)
+  L6,t=1: rows=6399/6399, cols=4662/5000, act=0.4921, NMI=0.4158, purity=1.0, clusters=6399 (avg_sz=1.0, med_sz=1.0, singletons=6399), nonsing_samples=0 (0.0), margin_ns=0.0, k_90=5760/6399 (0.9001)
+  L7,t=0: rows=6399/6399, cols=7651/8000, act=0.4921, NMI=0.4158, purity=1.0, clusters=6399 (avg_sz=1.0, med_sz=1.0, singletons=6399), nonsing_samples=0 (0.0), margin_ns=0.0, k_90=5760/6399 (0.9001)
+  L7,t=1: rows=6399/6399, cols=7445/8000, act=0.4893, NMI=0.4158, purity=1.0, clusters=6399 (avg_sz=1.0, med_sz=1.0, singletons=6399), nonsing_samples=0 (0.0), margin_ns=0.0, k_90=5760/6399 (0.9001)
+[seed 2] -> cvx best beta=0.001 lr=0.005 => train_loss_history=[] , train_acc_history=[] , val_score=0.4091193004372267 || snn => train_loss_history=[] , train_acc_history=[]
+[seed 2] -> cvx test_acc=0.392 , snn test_acc=0.092
+[seed 2] layer diagnostics:
+  L1,t=0: rows=6399/6399, cols=5000/5000, act=0.483, NMI=0.4158, purity=1.0, clusters=6399 (avg_sz=1.0, med_sz=1.0, singletons=6399), nonsing_samples=0 (0.0), margin_ns=0.0, k_90=5760/6399 (0.9001)
+  L1,t=1: rows=6399/6399, cols=5000/5000, act=0.4693, NMI=0.4158, purity=1.0, clusters=6399 (avg_sz=1.0, med_sz=1.0, singletons=6399), nonsing_samples=0 (0.0), margin_ns=0.0, k_90=5760/6399 (0.9001)
+  L2,t=0: rows=6399/6399, cols=4987/5000, act=0.4986, NMI=0.4158, purity=1.0, clusters=6399 (avg_sz=1.0, med_sz=1.0, singletons=6399), nonsing_samples=0 (0.0), margin_ns=0.0, k_90=5760/6399 (0.9001)
+  L2,t=1: rows=6399/6399, cols=4949/5000, act=0.4958, NMI=0.4158, purity=1.0, clusters=6399 (avg_sz=1.0, med_sz=1.0, singletons=6399), nonsing_samples=0 (0.0), margin_ns=0.0, k_90=5760/6399 (0.9001)
+  L3,t=0: rows=6399/6399, cols=4920/5000, act=0.4897, NMI=0.4158, purity=1.0, clusters=6399 (avg_sz=1.0, med_sz=1.0, singletons=6399), nonsing_samples=0 (0.0), margin_ns=0.0, k_90=5760/6399 (0.9001)
+  L3,t=1: rows=6399/6399, cols=4793/5000, act=0.4871, NMI=0.4158, purity=1.0, clusters=6399 (avg_sz=1.0, med_sz=1.0, singletons=6399), nonsing_samples=0 (0.0), margin_ns=0.0, k_90=5760/6399 (0.9001)
+  L4,t=0: rows=6399/6399, cols=4856/5000, act=0.4899, NMI=0.4158, purity=1.0, clusters=6399 (avg_sz=1.0, med_sz=1.0, singletons=6399), nonsing_samples=0 (0.0), margin_ns=0.0, k_90=5760/6399 (0.9001)
+  L4,t=1: rows=6399/6399, cols=4723/5000, act=0.4877, NMI=0.4158, purity=1.0, clusters=6399 (avg_sz=1.0, med_sz=1.0, singletons=6399), nonsing_samples=0 (0.0), margin_ns=0.0, k_90=5760/6399 (0.9001)
+  L5,t=0: rows=6399/6399, cols=4811/5000, act=0.4923, NMI=0.4158, purity=1.0, clusters=6399 (avg_sz=1.0, med_sz=1.0, singletons=6399), nonsing_samples=0 (0.0), margin_ns=0.0, k_90=5760/6399 (0.9001)
+  L5,t=1: rows=6399/6399, cols=4676/5000, act=0.49, NMI=0.4158, purity=1.0, clusters=6399 (avg_sz=1.0, med_sz=1.0, singletons=6399), nonsing_samples=0 (0.0), margin_ns=0.0, k_90=5760/6399 (0.9001)
+  L6,t=0: rows=6399/6399, cols=4791/5000, act=0.4912, NMI=0.4158, purity=1.0, clusters=6399 (avg_sz=1.0, med_sz=1.0, singletons=6399), nonsing_samples=0 (0.0), margin_ns=0.0, k_90=5760/6399 (0.9001)
+  L6,t=1: rows=6399/6399, cols=4655/5000, act=0.4889, NMI=0.4158, purity=1.0, clusters=6399 (avg_sz=1.0, med_sz=1.0, singletons=6399), nonsing_samples=0 (0.0), margin_ns=0.0, k_90=5760/6399 (0.9001)
+  L7,t=0: rows=6399/6399, cols=7636/8000, act=0.4909, NMI=0.4158, purity=1.0, clusters=6399 (avg_sz=1.0, med_sz=1.0, singletons=6399), nonsing_samples=0 (0.0), margin_ns=0.0, k_90=5760/6399 (0.9001)
+  L7,t=1: rows=6399/6399, cols=7446/8000, act=0.4887, NMI=0.4158, purity=1.0, clusters=6399 (avg_sz=1.0, med_sz=1.0, singletons=6399), nonsing_samples=0 (0.0), margin_ns=0.0, k_90=5760/6399 (0.9001)
+[seed 3] -> cvx best beta=1e-06 lr=0.001 => train_loss_history=[] , train_acc_history=[] , val_score=0.3985009369144285 || snn => train_loss_history=[] , train_acc_history=[]
+[seed 3] -> cvx test_acc=0.3578 , snn test_acc=0.8956
+[seed 3] layer diagnostics:
+  L1,t=0: rows=6399/6399, cols=5000/5000, act=0.473, NMI=0.4158, purity=1.0, clusters=6399 (avg_sz=1.0, med_sz=1.0, singletons=6399), nonsing_samples=0 (0.0), margin_ns=0.0, k_90=5760/6399 (0.9001)
+  L1,t=1: rows=6399/6399, cols=5000/5000, act=0.4608, NMI=0.4158, purity=1.0, clusters=6399 (avg_sz=1.0, med_sz=1.0, singletons=6399), nonsing_samples=0 (0.0), margin_ns=0.0, k_90=5760/6399 (0.9001)
+  L2,t=0: rows=6399/6399, cols=4988/5000, act=0.4988, NMI=0.4158, purity=1.0, clusters=6399 (avg_sz=1.0, med_sz=1.0, singletons=6399), nonsing_samples=0 (0.0), margin_ns=0.0, k_90=5760/6399 (0.9001)
+  L2,t=1: rows=6399/6399, cols=4956/5000, act=0.4981, NMI=0.4158, purity=1.0, clusters=6399 (avg_sz=1.0, med_sz=1.0, singletons=6399), nonsing_samples=0 (0.0), margin_ns=0.0, k_90=5760/6399 (0.9001)
+  L3,t=0: rows=6399/6399, cols=4919/5000, act=0.5009, NMI=0.4158, purity=1.0, clusters=6399 (avg_sz=1.0, med_sz=1.0, singletons=6399), nonsing_samples=0 (0.0), margin_ns=0.0, k_90=5760/6399 (0.9001)
+  L3,t=1: rows=6399/6399, cols=4797/5000, act=0.4991, NMI=0.4158, purity=1.0, clusters=6399 (avg_sz=1.0, med_sz=1.0, singletons=6399), nonsing_samples=0 (0.0), margin_ns=0.0, k_90=5760/6399 (0.9001)
+  L4,t=0: rows=6399/6399, cols=4832/5000, act=0.4969, NMI=0.4158, purity=1.0, clusters=6399 (avg_sz=1.0, med_sz=1.0, singletons=6399), nonsing_samples=0 (0.0), margin_ns=0.0, k_90=5760/6399 (0.9001)
+  L4,t=1: rows=6399/6399, cols=4706/5000, act=0.4949, NMI=0.4158, purity=1.0, clusters=6399 (avg_sz=1.0, med_sz=1.0, singletons=6399), nonsing_samples=0 (0.0), margin_ns=0.0, k_90=5760/6399 (0.9001)
+  L5,t=0: rows=6399/6399, cols=4773/5000, act=0.4922, NMI=0.4158, purity=1.0, clusters=6399 (avg_sz=1.0, med_sz=1.0, singletons=6399), nonsing_samples=0 (0.0), margin_ns=0.0, k_90=5760/6399 (0.9001)
+  L5,t=1: rows=6399/6399, cols=4633/5000, act=0.4898, NMI=0.4158, purity=1.0, clusters=6399 (avg_sz=1.0, med_sz=1.0, singletons=6399), nonsing_samples=0 (0.0), margin_ns=0.0, k_90=5760/6399 (0.9001)
+  L6,t=0: rows=6399/6399, cols=4765/5000, act=0.4916, NMI=0.4158, purity=1.0, clusters=6399 (avg_sz=1.0, med_sz=1.0, singletons=6399), nonsing_samples=0 (0.0), margin_ns=0.0, k_90=5760/6399 (0.9001)
+  L6,t=1: rows=6399/6399, cols=4626/5000, act=0.4896, NMI=0.4158, purity=1.0, clusters=6399 (avg_sz=1.0, med_sz=1.0, singletons=6399), nonsing_samples=0 (0.0), margin_ns=0.0, k_90=5760/6399 (0.9001)
+  L7,t=0: rows=6399/6399, cols=7623/8000, act=0.4915, NMI=0.4158, purity=1.0, clusters=6399 (avg_sz=1.0, med_sz=1.0, singletons=6399), nonsing_samples=0 (0.0), margin_ns=0.0, k_90=5760/6399 (0.9001)
+  L7,t=1: rows=6399/6399, cols=7452/8000, act=0.4894, NMI=0.4158, purity=1.0, clusters=6399 (avg_sz=1.0, med_sz=1.0, singletons=6399), nonsing_samples=0 (0.0), margin_ns=0.0, k_90=5760/6399 (0.9001)
+[seed 4] -> cvx best beta=0.001 lr=0.005 => train_loss_history=[] , train_acc_history=[] , val_score=0.3422860712054966 || snn => train_loss_history=[] , train_acc_history=[]
+[seed 4] -> cvx test_acc=0.3316 , snn test_acc=0.092
+[seed 4] layer diagnostics:
+  L1,t=0: rows=6399/6399, cols=5000/5000, act=0.4785, NMI=0.4158, purity=1.0, clusters=6399 (avg_sz=1.0, med_sz=1.0, singletons=6399), nonsing_samples=0 (0.0), margin_ns=0.0, k_90=5760/6399 (0.9001)
+  L1,t=1: rows=6399/6399, cols=5000/5000, act=0.4615, NMI=0.4158, purity=1.0, clusters=6399 (avg_sz=1.0, med_sz=1.0, singletons=6399), nonsing_samples=0 (0.0), margin_ns=0.0, k_90=5760/6399 (0.9001)
+  L2,t=0: rows=6399/6399, cols=4987/5000, act=0.4861, NMI=0.4158, purity=1.0, clusters=6399 (avg_sz=1.0, med_sz=1.0, singletons=6399), nonsing_samples=0 (0.0), margin_ns=0.0, k_90=5760/6399 (0.9001)
+  L2,t=1: rows=6399/6399, cols=4946/5000, act=0.482, NMI=0.4158, purity=1.0, clusters=6399 (avg_sz=1.0, med_sz=1.0, singletons=6399), nonsing_samples=0 (0.0), margin_ns=0.0, k_90=5760/6399 (0.9001)
+  L3,t=0: rows=6399/6399, cols=4913/5000, act=0.493, NMI=0.4158, purity=1.0, clusters=6399 (avg_sz=1.0, med_sz=1.0, singletons=6399), nonsing_samples=0 (0.0), margin_ns=0.0, k_90=5760/6399 (0.9001)
+  L3,t=1: rows=6399/6399, cols=4811/5000, act=0.4907, NMI=0.4158, purity=1.0, clusters=6399 (avg_sz=1.0, med_sz=1.0, singletons=6399), nonsing_samples=0 (0.0), margin_ns=0.0, k_90=5760/6399 (0.9001)
+  L4,t=0: rows=6399/6399, cols=4849/5000, act=0.4962, NMI=0.4158, purity=1.0, clusters=6399 (avg_sz=1.0, med_sz=1.0, singletons=6399), nonsing_samples=0 (0.0), margin_ns=0.0, k_90=5760/6399 (0.9001)
+  L4,t=1: rows=6399/6399, cols=4718/5000, act=0.494, NMI=0.4158, purity=1.0, clusters=6399 (avg_sz=1.0, med_sz=1.0, singletons=6399), nonsing_samples=0 (0.0), margin_ns=0.0, k_90=5760/6399 (0.9001)
+  L5,t=0: rows=6399/6399, cols=4790/5000, act=0.4998, NMI=0.4158, purity=1.0, clusters=6399 (avg_sz=1.0, med_sz=1.0, singletons=6399), nonsing_samples=0 (0.0), margin_ns=0.0, k_90=5760/6399 (0.9001)
+  L5,t=1: rows=6399/6399, cols=4660/5000, act=0.4978, NMI=0.4158, purity=1.0, clusters=6399 (avg_sz=1.0, med_sz=1.0, singletons=6399), nonsing_samples=0 (0.0), margin_ns=0.0, k_90=5760/6399 (0.9001)
+  L6,t=0: rows=6399/6399, cols=4732/5000, act=0.4898, NMI=0.4158, purity=1.0, clusters=6399 (avg_sz=1.0, med_sz=1.0, singletons=6399), nonsing_samples=0 (0.0), margin_ns=0.0, k_90=5760/6399 (0.9001)
+  L6,t=1: rows=6399/6399, cols=4595/5000, act=0.4875, NMI=0.4158, purity=1.0, clusters=6399 (avg_sz=1.0, med_sz=1.0, singletons=6399), nonsing_samples=0 (0.0), margin_ns=0.0, k_90=5760/6399 (0.9001)
+  L7,t=0: rows=6399/6399, cols=7594/8000, act=0.4913, NMI=0.4158, purity=1.0, clusters=6399 (avg_sz=1.0, med_sz=1.0, singletons=6399), nonsing_samples=0 (0.0), margin_ns=0.0, k_90=5760/6399 (0.9001)
+  L7,t=1: rows=6399/6399, cols=7377/8000, act=0.489, NMI=0.4158, purity=1.0, clusters=6399 (avg_sz=1.0, med_sz=1.0, singletons=6399), nonsing_samples=0 (0.0), margin_ns=0.0, k_90=5760/6399 (0.9001)
+[final test results] cvx=0.352680±0.022387 , snn=0.569080±0.389571 , delta=-0.216400±0.390214
