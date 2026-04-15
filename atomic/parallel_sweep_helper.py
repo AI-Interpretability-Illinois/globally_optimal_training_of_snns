@@ -68,6 +68,22 @@ _WORKER_ARGS: argparse.Namespace | None = None
 _WORKER_DEVICE: torch.device | None = None
 
 
+def _is_finite_number(x: Any) -> bool:
+    try:
+        v = float(x)
+    except (TypeError, ValueError):
+        return False
+    return bool(np.isfinite(v))
+
+
+def _arithmetic_acc_suffix(extra: Dict[str, Any]) -> str:
+    token = extra.get("test_token_acc")
+    seq = extra.get("test_seq_acc")
+    if _is_finite_number(token) and _is_finite_number(seq):
+        return f" test_token_acc={float(token):.6f} test_seq_acc={float(seq):.6f}"
+    return ""
+
+
 def _log_run_start(task: SweepTask) -> None:
     print(
         "[run-start] "
@@ -79,10 +95,16 @@ def _log_run_start(task: SweepTask) -> None:
 
 
 def _log_run_finish(task: SweepTask, result: SweepResult) -> None:
+    extra = result.extra if isinstance(result.extra, dict) else {}
+    arithmetic_suffix = _arithmetic_acc_suffix(extra)
+    if arithmetic_suffix:
+        acc_part = arithmetic_suffix
+    else:
+        acc_part = f" test_acc={float(result.test_last_step_acc):.6f}"
     print(
         "[run-finish] "
         f"run_id={task.run_id} pair_id={task.pair_id} task_type={task.task_type} "
-        f"score={float(result.score):.6f} test_acc={float(result.test_last_step_acc):.6f}",
+        f"score={float(result.score):.6f}{acc_part}",
         flush=True,
     )
 
@@ -1169,17 +1191,29 @@ def main() -> None:
     if str(args.pipeline_mode) == "simple":
         if "ste" in best:
             bste = best["ste"]
+            ste_extra = bste.get("extra", {}) if isinstance(bste, dict) else {}
+            ste_arith_suffix = _arithmetic_acc_suffix(ste_extra if isinstance(ste_extra, dict) else {})
+            if ste_arith_suffix:
+                ste_acc_part = ste_arith_suffix
+            else:
+                ste_acc_part = f" test_acc={float(bste['test_last_step_acc']):.6f}"
             print(
                 "[best-ste] "
                 f"seed={int(bste['seed'])} beta={float(bste['beta']):.8g} lr={float(bste['lr']):.8g} "
-                f"val_score={float(bste['score']):.6f} test_acc={float(bste['test_last_step_acc']):.6f}"
+                f"val_score={float(bste['score']):.6f}{ste_acc_part}"
             )
         if "cvx" in best:
             bcvx = best["cvx"]
+            cvx_extra = bcvx.get("extra", {}) if isinstance(bcvx, dict) else {}
+            cvx_arith_suffix = _arithmetic_acc_suffix(cvx_extra if isinstance(cvx_extra, dict) else {})
+            if cvx_arith_suffix:
+                cvx_acc_part = cvx_arith_suffix
+            else:
+                cvx_acc_part = f" test_acc={float(bcvx['test_last_step_acc']):.6f}"
             print(
                 "[best-cvx] "
                 f"seed={int(bcvx['seed'])} beta={float(bcvx['beta']):.8g} lr={float(bcvx['lr']):.8g} bias={float(bcvx['bias']):.8g} "
-                f"val_score={float(bcvx['score']):.6f} test_acc={float(bcvx['test_last_step_acc']):.6f}"
+                f"val_score={float(bcvx['score']):.6f}{cvx_acc_part}"
             )
     elif str(args.pipeline_mode) == "fine_tune" and "fine_tune" in best:
         bft = best["fine_tune"]
