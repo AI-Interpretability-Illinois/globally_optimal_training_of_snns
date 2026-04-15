@@ -176,11 +176,59 @@ def _run_lif_stack_readout(
     raise ValueError(f"Unsupported last_layer_readout={last_layer_readout}. Expected membrane|spike.")
 
 
+def _run_lif_stack_readout_all_timesteps(
+    x_seq: np.ndarray,
+    u_in_list: Sequence[np.ndarray],
+    beta_list: Sequence[np.ndarray],
+    threshold_list: Sequence[np.ndarray],
+    *,
+    last_layer_readout: str,
+) -> np.ndarray:
+    """
+    Return the final hidden readout at every timestep, shape (N, T, H_last).
+    """
+    if x_seq.ndim != 3:
+        raise ValueError(f"Expected x_seq shape (N,T,d_in), got {x_seq.shape}.")
+    n, steps, _ = x_seq.shape
+    if len(u_in_list) == 0:
+        raise ValueError("u_in_list must be non-empty.")
+    h_prev: List[np.ndarray] = [np.zeros((n, u.shape[1]), dtype=np.float64) for u in u_in_list]
+    mem_prev: List[np.ndarray] = [np.zeros((n, u.shape[1]), dtype=np.float64) for u in u_in_list]
+    readouts: List[np.ndarray] = []
+    for t in range(steps):
+        h_t = x_seq[:, t, :].astype(np.float64, copy=False)
+        final_mem = None
+        final_spk = None
+        for l, u_in in enumerate(u_in_list):
+            h_dim = u_in.shape[1]
+            x_in = h_t @ u_in
+            beta_l = beta_list[l]
+            th_l = threshold_list[l]
+            mem = beta_l.reshape(1, h_dim) * mem_prev[l] + x_in
+            spk = (mem >= th_l.reshape(1, h_dim)).astype(np.float64)
+            mem_prev[l] = mem
+            h_prev[l] = spk
+            h_t = spk
+            final_mem = mem
+            final_spk = spk
+        if final_mem is None or final_spk is None:
+            raise RuntimeError("No hidden layers were executed for LIF sequence readout.")
+        if last_layer_readout == "membrane":
+            readouts.append(final_mem)
+        elif last_layer_readout == "spike":
+            readouts.append(final_spk)
+        else:
+            raise ValueError(f"Unsupported last_layer_readout={last_layer_readout}. Expected membrane|spike.")
+    return np.stack(readouts, axis=1)
+
+
 def _build_feature_map(
     x_train: np.ndarray,
     x_val: np.ndarray,
     x_test: np.ndarray,
     init_cfg: InitializationConfig,
+    *,
+    all_timesteps: bool = False,
 ) -> Tuple[np.ndarray, np.ndarray, np.ndarray, Dict[str, np.ndarray]]:
     rng = np.random.default_rng(init_cfg.seed)
     if x_train.ndim != 3 or x_val.ndim != 3 or x_test.ndim != 3:
@@ -196,21 +244,40 @@ def _build_feature_map(
         for h in hidden_dims:
             U_in_list.append(_sample_weight_matrix(rng, in_dim=in_dim_l, out_dim=h, variant=init_cfg.variant))
             in_dim_l = h
-        readout_tr = _run_lif_stack_readout(
-            x_train, U_in_list, beta_list, threshold_list, last_layer_readout=init_cfg.last_layer_readout
-        )
-        readout_va = _run_lif_stack_readout(
-            x_val, U_in_list, beta_list, threshold_list, last_layer_readout=init_cfg.last_layer_readout
-        )
-        readout_te = _run_lif_stack_readout(
-            x_test, U_in_list, beta_list, threshold_list, last_layer_readout=init_cfg.last_layer_readout
-        )
+        if all_timesteps:
+            readout_tr = _run_lif_stack_readout_all_timesteps(
+                x_train, U_in_list, beta_list, threshold_list, last_layer_readout=init_cfg.last_layer_readout
+            )
+            readout_va = _run_lif_stack_readout_all_timesteps(
+                x_val, U_in_list, beta_list, threshold_list, last_layer_readout=init_cfg.last_layer_readout
+            )
+            readout_te = _run_lif_stack_readout_all_timesteps(
+                x_test, U_in_list, beta_list, threshold_list, last_layer_readout=init_cfg.last_layer_readout
+            )
+        else:
+            readout_tr = _run_lif_stack_readout(
+                x_train, U_in_list, beta_list, threshold_list, last_layer_readout=init_cfg.last_layer_readout
+            )
+            readout_va = _run_lif_stack_readout(
+                x_val, U_in_list, beta_list, threshold_list, last_layer_readout=init_cfg.last_layer_readout
+            )
+            readout_te = _run_lif_stack_readout(
+                x_test, U_in_list, beta_list, threshold_list, last_layer_readout=init_cfg.last_layer_readout
+            )
         U_last = _sample_weight_matrix(
             rng, in_dim=hidden_dims[-1], out_dim=int(init_cfg.feature_count), variant=init_cfg.variant
         )
-        d_train = (readout_tr @ U_last - init_cfg.bias >= 0.0).astype(np.float64)
-        d_val = (readout_va @ U_last - init_cfg.bias >= 0.0).astype(np.float64)
-        d_test = (readout_te @ U_last - init_cfg.bias >= 0.0).astype(np.float64)
+        if all_timesteps:
+            d_train_seq = (readout_tr @ U_last - init_cfg.bias >= 0.0).astype(np.float64)
+            d_val_seq = (readout_va @ U_last - init_cfg.bias >= 0.0).astype(np.float64)
+            d_test_seq = (readout_te @ U_last - init_cfg.bias >= 0.0).astype(np.float64)
+            d_train = d_train_seq.reshape(d_train_seq.shape[0] * d_train_seq.shape[1], d_train_seq.shape[2])
+            d_val = d_val_seq.reshape(d_val_seq.shape[0] * d_val_seq.shape[1], d_val_seq.shape[2])
+            d_test = d_test_seq.reshape(d_test_seq.shape[0] * d_test_seq.shape[1], d_test_seq.shape[2])
+        else:
+            d_train = (readout_tr @ U_last - init_cfg.bias >= 0.0).astype(np.float64)
+            d_val = (readout_va @ U_last - init_cfg.bias >= 0.0).astype(np.float64)
+            d_test = (readout_te @ U_last - init_cfg.bias >= 0.0).astype(np.float64)
         return d_train, d_val, d_test, {"U_in_list": np.array([], dtype=np.float64), "U_last": U_last}
 
     if init_cfg.mode == "pretraining":
@@ -227,15 +294,26 @@ def _build_feature_map(
         for l, h in enumerate(hidden_dims):
             U_in_list.append(_coerce_hidden_weight(weights[l], in_dim=in_dim_l, out_dim=h))
             in_dim_l = h
-        readout_tr = _run_lif_stack_readout(
-            x_train, U_in_list, beta_list, threshold_list, last_layer_readout=init_cfg.last_layer_readout
-        )
-        readout_va = _run_lif_stack_readout(
-            x_val, U_in_list, beta_list, threshold_list, last_layer_readout=init_cfg.last_layer_readout
-        )
-        readout_te = _run_lif_stack_readout(
-            x_test, U_in_list, beta_list, threshold_list, last_layer_readout=init_cfg.last_layer_readout
-        )
+        if all_timesteps:
+            readout_tr = _run_lif_stack_readout_all_timesteps(
+                x_train, U_in_list, beta_list, threshold_list, last_layer_readout=init_cfg.last_layer_readout
+            )
+            readout_va = _run_lif_stack_readout_all_timesteps(
+                x_val, U_in_list, beta_list, threshold_list, last_layer_readout=init_cfg.last_layer_readout
+            )
+            readout_te = _run_lif_stack_readout_all_timesteps(
+                x_test, U_in_list, beta_list, threshold_list, last_layer_readout=init_cfg.last_layer_readout
+            )
+        else:
+            readout_tr = _run_lif_stack_readout(
+                x_train, U_in_list, beta_list, threshold_list, last_layer_readout=init_cfg.last_layer_readout
+            )
+            readout_va = _run_lif_stack_readout(
+                x_val, U_in_list, beta_list, threshold_list, last_layer_readout=init_cfg.last_layer_readout
+            )
+            readout_te = _run_lif_stack_readout(
+                x_test, U_in_list, beta_list, threshold_list, last_layer_readout=init_cfg.last_layer_readout
+            )
         cls_w = weights[n_hidden]
         if cls_w.ndim != 2:
             raise ValueError(f"Classifier weight must be rank-2, got shape {cls_w.shape}.")
@@ -255,9 +333,17 @@ def _build_feature_map(
             U_last = np.concatenate([U_last_base, extra], axis=1)
         else:
             U_last = U_last_base[:, :target_p]
-        d_train = (readout_tr @ U_last - init_cfg.bias >= 0.0).astype(np.float64)
-        d_val = (readout_va @ U_last - init_cfg.bias >= 0.0).astype(np.float64)
-        d_test = (readout_te @ U_last - init_cfg.bias >= 0.0).astype(np.float64)
+        if all_timesteps:
+            d_train_seq = (readout_tr @ U_last - init_cfg.bias >= 0.0).astype(np.float64)
+            d_val_seq = (readout_va @ U_last - init_cfg.bias >= 0.0).astype(np.float64)
+            d_test_seq = (readout_te @ U_last - init_cfg.bias >= 0.0).astype(np.float64)
+            d_train = d_train_seq.reshape(d_train_seq.shape[0] * d_train_seq.shape[1], d_train_seq.shape[2])
+            d_val = d_val_seq.reshape(d_val_seq.shape[0] * d_val_seq.shape[1], d_val_seq.shape[2])
+            d_test = d_test_seq.reshape(d_test_seq.shape[0] * d_test_seq.shape[1], d_test_seq.shape[2])
+        else:
+            d_train = (readout_tr @ U_last - init_cfg.bias >= 0.0).astype(np.float64)
+            d_val = (readout_va @ U_last - init_cfg.bias >= 0.0).astype(np.float64)
+            d_test = (readout_te @ U_last - init_cfg.bias >= 0.0).astype(np.float64)
         return d_train, d_val, d_test, {"pretrained_weights": np.array([], dtype=np.float64), "U_last": U_last}
 
     raise ValueError(f"Unknown initialization mode={init_cfg.mode}.")
@@ -387,6 +473,25 @@ def _multiclass_accuracy(logits: torch.Tensor, y: torch.Tensor) -> float:
     else:
         preds = torch.argmax(logits, dim=1)
     return float((preds == y.long()).float().mean().item())
+
+
+def _token_seq_stats_from_flat_predictions(
+    preds_flat: np.ndarray,
+    y_flat: np.ndarray,
+    n_samples: int,
+    steps: int,
+) -> Dict[str, float]:
+    preds_2d = preds_flat.reshape(n_samples, steps)
+    y_2d = y_flat.reshape(n_samples, steps)
+    match = preds_2d == y_2d
+    token_acc = float(np.mean(match))
+    seq_acc = float(np.mean(np.all(match, axis=1)))
+    return {
+        "token_acc": token_acc,
+        "seq_acc": seq_acc,
+        "token_loss": float(1.0 - token_acc),
+        "seq_loss": float(1.0 - seq_acc),
+    }
 
 
 def _run_cvx_method(
@@ -587,12 +692,28 @@ def cvx_solve(
     solve_cfg: SolveConfig,
     device: Optional[torch.device] = None,
 ) -> CvxSolveResult:
-    ytr = _prepare_sequence_targets(y_train)
-    yva = _prepare_sequence_targets(y_val)
-    yte = _prepare_sequence_targets(y_test)
-    d_train, d_val, d_test, _ = _build_feature_map(x_train=x_train, x_val=x_val, x_test=x_test, init_cfg=init_cfg)
+    supervise_all_timesteps = y_train.ndim == 2
+    if supervise_all_timesteps and (y_val.ndim != 2 or y_test.ndim != 2):
+        raise ValueError(
+            "Arithmetic-style all-timestep supervision requires y_train/y_val/y_test to all be rank-2."
+        )
+    if supervise_all_timesteps:
+        ytr = y_train.reshape(-1).astype(np.int64)
+        yva = y_val.reshape(-1).astype(np.int64)
+        yte = y_test.reshape(-1).astype(np.int64)
+    else:
+        ytr = _prepare_sequence_targets(y_train)
+        yva = _prepare_sequence_targets(y_val)
+        yte = _prepare_sequence_targets(y_test)
+    d_train, d_val, d_test, _ = _build_feature_map(
+        x_train=x_train,
+        x_val=x_val,
+        x_test=x_test,
+        init_cfg=init_cfg,
+        all_timesteps=supervise_all_timesteps,
+    )
     if solve_cfg.method == "cvx":
-        return _run_cvx_method(
+        out = _run_cvx_method(
             d_train=d_train,
             y_train=ytr,
             d_val=d_val,
@@ -602,9 +723,9 @@ def cvx_solve(
             solve_cfg=solve_cfg,
             init_bias=float(init_cfg.bias),
         )
-    if solve_cfg.method == "sgd":
+    elif solve_cfg.method == "sgd":
         run_device = choose_device() if device is None else device
-        return _run_sgd_method(
+        out = _run_sgd_method(
             d_train=d_train,
             y_train=ytr,
             d_val=d_val,
@@ -615,4 +736,52 @@ def cvx_solve(
             device=run_device,
             init_bias=float(init_cfg.bias),
         )
-    raise ValueError(f"Unknown solve method={solve_cfg.method}.")
+    else:
+        raise ValueError(f"Unknown solve method={solve_cfg.method}.")
+
+    if supervise_all_timesteps:
+        n_train, steps = y_train.shape
+        n_val = y_val.shape[0]
+        n_test = y_test.shape[0]
+        if isinstance(out.trained_model, dict) and "weights" in out.trained_model:
+            w = out.trained_model["weights"]
+            pred_train = np.argmax(d_train @ w, axis=1)
+            pred_val = np.argmax(d_val @ w, axis=1)
+            pred_test = np.argmax(d_test @ w, axis=1)
+        else:
+            model = out.trained_model
+            model.eval()
+            with torch.no_grad():
+                pred_train = torch.argmax(model(torch.tensor(d_train, dtype=torch.float32)), dim=1).cpu().numpy()
+                pred_val = torch.argmax(model(torch.tensor(d_val, dtype=torch.float32)), dim=1).cpu().numpy()
+                pred_test = torch.argmax(model(torch.tensor(d_test, dtype=torch.float32)), dim=1).cpu().numpy()
+        tr_stats = _token_seq_stats_from_flat_predictions(pred_train, ytr, n_train, steps)
+        va_stats = _token_seq_stats_from_flat_predictions(pred_val, yva, n_val, steps)
+        te_stats = _token_seq_stats_from_flat_predictions(pred_test, yte, n_test, steps)
+        out.final_losses.update(
+            {
+                "train_token_acc": tr_stats["token_acc"],
+                "val_token_acc": va_stats["token_acc"],
+                "test_token_acc": te_stats["token_acc"],
+                "train_seq_acc": tr_stats["seq_acc"],
+                "val_seq_acc": va_stats["seq_acc"],
+                "test_seq_acc": te_stats["seq_acc"],
+                "train_token_loss": tr_stats["token_loss"],
+                "val_token_loss": va_stats["token_loss"],
+                "test_token_loss": te_stats["token_loss"],
+                "train_seq_loss": tr_stats["seq_loss"],
+                "val_seq_loss": va_stats["seq_loss"],
+                "test_seq_loss": te_stats["seq_loss"],
+            }
+        )
+        print(
+            (
+                "[cvx-arithmetic] "
+                f"token_acc train={tr_stats['token_acc']:.4f} val={va_stats['token_acc']:.4f} test={te_stats['token_acc']:.4f} "
+                f"seq_acc train={tr_stats['seq_acc']:.4f} val={va_stats['seq_acc']:.4f} test={te_stats['seq_acc']:.4f} "
+                f"token_loss train={tr_stats['token_loss']:.4f} val={va_stats['token_loss']:.4f} test={te_stats['token_loss']:.4f} "
+                f"seq_loss train={tr_stats['seq_loss']:.4f} val={va_stats['seq_loss']:.4f} test={te_stats['seq_loss']:.4f}"
+            ),
+            flush=True,
+        )
+    return out

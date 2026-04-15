@@ -148,6 +148,33 @@ def _compute_eval_accuracy(model: SNNBaselineSeq, x: torch.Tensor, y: torch.Tens
         return _sequence_accuracy_from_logits(logits, y)
 
 
+def _token_seq_stats_from_logits(logits: torch.Tensor, y: torch.Tensor) -> Dict[str, float]:
+    if logits.ndim != 3 or y.ndim != 2:
+        raise ValueError(f"Expected logits rank-3 and y rank-2, got {tuple(logits.shape)} and {tuple(y.shape)}.")
+    if tuple(logits.shape[:2]) != tuple(y.shape):
+        raise ValueError(f"Token/seq stat shape mismatch: logits={tuple(logits.shape)}, y={tuple(y.shape)}.")
+    if logits.shape[2] == 1:
+        preds = (logits[:, :, 0] >= 0.0).long()
+    else:
+        preds = torch.argmax(logits, dim=2)
+    match = preds == y.long()
+    token_acc = float(match.float().mean().item())
+    seq_acc = float(match.all(dim=1).float().mean().item())
+    return {
+        "token_acc": token_acc,
+        "seq_acc": seq_acc,
+        "token_loss": float(1.0 - token_acc),
+        "seq_loss": float(1.0 - seq_acc),
+    }
+
+
+def _compute_eval_token_seq_stats(model: SNNBaselineSeq, x: torch.Tensor, y: torch.Tensor) -> Dict[str, float]:
+    model.eval()
+    with torch.no_grad():
+        logits = model(x)
+    return _token_seq_stats_from_logits(logits, y)
+
+
 def ste_solve(
     *,
     x_train: np.ndarray,
@@ -267,6 +294,36 @@ def ste_solve(
             model, test_x, test_y, solve_cfg.loss_name, beta_path_reg=solve_cfg.beta_path_reg
         ),
     }
+    if train_y.ndim == 2 and val_y.ndim == 2 and test_y.ndim == 2:
+        tr_stats = _compute_eval_token_seq_stats(model, train_x, train_y)
+        va_stats = _compute_eval_token_seq_stats(model, val_x, val_y)
+        te_stats = _compute_eval_token_seq_stats(model, test_x, test_y)
+        best_losses.update(
+            {
+                "train_token_acc": tr_stats["token_acc"],
+                "val_token_acc": va_stats["token_acc"],
+                "test_token_acc": te_stats["token_acc"],
+                "train_seq_acc": tr_stats["seq_acc"],
+                "val_seq_acc": va_stats["seq_acc"],
+                "test_seq_acc": te_stats["seq_acc"],
+                "train_token_loss": tr_stats["token_loss"],
+                "val_token_loss": va_stats["token_loss"],
+                "test_token_loss": te_stats["token_loss"],
+                "train_seq_loss": tr_stats["seq_loss"],
+                "val_seq_loss": va_stats["seq_loss"],
+                "test_seq_loss": te_stats["seq_loss"],
+            }
+        )
+        print(
+            (
+                "[ste-arithmetic] "
+                f"token_acc train={tr_stats['token_acc']:.4f} val={va_stats['token_acc']:.4f} test={te_stats['token_acc']:.4f} "
+                f"seq_acc train={tr_stats['seq_acc']:.4f} val={va_stats['seq_acc']:.4f} test={te_stats['seq_acc']:.4f} "
+                f"token_loss train={tr_stats['token_loss']:.4f} val={va_stats['token_loss']:.4f} test={te_stats['token_loss']:.4f} "
+                f"seq_loss train={tr_stats['seq_loss']:.4f} val={va_stats['seq_loss']:.4f} test={te_stats['seq_loss']:.4f}"
+            ),
+            flush=True,
+        )
     return SteSolveResult(
         model=model,
         loss_history=loss_history,
