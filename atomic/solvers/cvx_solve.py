@@ -44,7 +44,7 @@ class SolveConfig:
     beta: float = 1e-2
     lr: float = 1e-3
     optimizer_name: str = "adam"
-    epochs: int = 150
+    epochs: int = 100
     batch_size: Optional[int] = None
     log_every: int = 10
 

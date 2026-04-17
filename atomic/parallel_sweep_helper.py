@@ -771,36 +771,41 @@ def _build_tasks(args: argparse.Namespace) -> Tuple[List[SweepTask], List[SweepT
 
     seeds = [int(s) for s in args.seeds]
     if str(args.pipeline_mode) == "simple":
+        simple_side = str(args.simple_side)
+        run_ste = simple_side in ("both", "ste_only")
+        run_cvx = simple_side in ("both", "cvx_only")
         for seed in seeds:
             for lr in args.lr_grid:
                 for beta in args.beta_grid:
                     pair_id = f"{args.dataset}|seed={seed}|beta={float(beta):.8g}|lr={float(lr):.8g}"
                     ste_run_id = f"ste|{pair_id}"
-                    ste_tasks.append(
-                        SweepTask(
-                            task_type="ste",
-                            pipeline_mode="simple",
-                            run_id=ste_run_id,
-                            pair_id=pair_id,
-                            seed=seed,
-                            beta=float(beta),
-                            lr=float(lr),
-                            bias=0.0,
-                        )
-                    )
-                    for bias in args.bias_grid:
-                        cvx_tasks.append(
+                    if run_ste:
+                        ste_tasks.append(
                             SweepTask(
-                                task_type="cvx",
+                                task_type="ste",
                                 pipeline_mode="simple",
-                                run_id=f"cvx|{pair_id}|bias={float(bias):.8g}",
+                                run_id=ste_run_id,
                                 pair_id=pair_id,
                                 seed=seed,
                                 beta=float(beta),
                                 lr=float(lr),
-                                bias=float(bias),
+                                bias=0.0,
                             )
                         )
+                    if run_cvx:
+                        for bias in args.bias_grid:
+                            cvx_tasks.append(
+                                SweepTask(
+                                    task_type="cvx",
+                                    pipeline_mode="simple",
+                                    run_id=f"cvx|{pair_id}|bias={float(bias):.8g}",
+                                    pair_id=pair_id,
+                                    seed=seed,
+                                    beta=float(beta),
+                                    lr=float(lr),
+                                    bias=float(bias),
+                                )
+                            )
     else:
         task_type = "fine_tune" if str(args.pipeline_mode) == "fine_tune" else "layer_wise"
         for seed in seeds:
@@ -936,6 +941,12 @@ def parse_args() -> argparse.Namespace:
         description="Queue each beta-lr(-bias) combo as an independent run and schedule over GPUs/CPUs."
     )
     parser.add_argument("--pipeline_mode", choices=("simple", "fine_tune", "layer_wise"), default="simple")
+    parser.add_argument(
+        "--simple_side",
+        choices=("both", "cvx_only", "ste_only"),
+        default="both",
+        help="Used only when --pipeline_mode simple. Run both sides or only one side.",
+    )
     parser.add_argument("--dataset", choices=("mnist_seq", "mnist_perm_seq", "cifar_seq", "arithmetic_seq", "dfa", "uci"), required=True)
     parser.add_argument("--seed", type=int, default=0)
     parser.add_argument("--seeds", type=int, nargs="+", default=None, help="Optional list of seeds to run in parallel.")
@@ -950,7 +961,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--optimizer_name", choices=("adam", "sgd"), default="adam")
     parser.add_argument("--cvx_method", choices=("cvx", "sgd"), default="sgd")
     parser.add_argument("--batch_size", type=int, default=-1)
-    parser.add_argument("--cvx_epochs", type=int, default=150)
+    parser.add_argument("--cvx_epochs", type=int, default=100)
     parser.add_argument("--ste_epochs", type=int, default=100)
     parser.add_argument("--ste_pretrain_epochs", type=int, default=80)
     parser.add_argument("--ste_post_epochs", type=int, default=100)
