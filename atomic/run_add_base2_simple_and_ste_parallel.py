@@ -7,7 +7,7 @@ from pathlib import Path
 
 
 N_TRAIN_LIST = [2304, 4096, 8192, 16384]
-SEEDS = [0, 1, 2]
+SEEDS = [0]
 
 # Shared config requested by user.
 COMMON = {
@@ -60,6 +60,8 @@ def main() -> None:
                     "cvx_only",
                     "--dataset",
                     COMMON["dataset"],
+                    "--loss_type",
+                    "hinge_ovr",
                     "--cvx_method",
                     "cvx",
                     "--seed",
@@ -100,6 +102,8 @@ def main() -> None:
                 "ste_only",
                 "--dataset",
                 COMMON["dataset"],
+                "--loss_type",
+                "hinge_ovr",
                 "--cvx_method",
                 "cvx",
                 "--seeds",
