@@ -31,7 +31,9 @@ def run_cmd(cmd: list[str], cwd: Path) -> None:
 
 
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Run arithmetic add base2 sweeps for CVX/SNN.")
+    parser = argparse.ArgumentParser(
+        description="Run arithmetic add base2 sweeps: CVX and/or STE via simple_testing (sequential; no parallel_sweep_helper).",
+    )
     parser.add_argument(
         "--side",
         choices=("both", "cvx_only", "ste_only"),
@@ -89,47 +91,48 @@ def main() -> None:
                 ]
                 run_cmd(cmd, cwd=atomic_dir)
 
-    # 2) SNN-only sweep via parallel helper (parallel over seeds for each n_train).
+    # 2) STE-only runs via simple_testing (grid over lr/beta inside _run_simple_mode; one process per seed/n_train).
     if args.side in ("both", "ste_only"):
         for n_train in N_TRAIN_LIST:
-            cmd = [
-                python_exe,
-                "-m",
-                "parallel_sweep_helper",
-                "--pipeline_mode",
-                "simple",
-                "--simple_side",
-                "ste_only",
-                "--dataset",
-                COMMON["dataset"],
-                "--loss_type",
-                "hinge_ovr",
-                "--cvx_method",
-                "cvx",
-                "--seeds",
-                *[str(s) for s in SEEDS],
-                "--n_train",
-                str(n_train),
-                "--n_val",
-                str(COMMON["n_val"]),
-                "--n_test",
-                str(COMMON["n_test"]),
-                "--L",
-                str(COMMON["L"]),
-                "--P_last",
-                str(COMMON["P_last"]),
-                "--P_rec",
-                str(COMMON["P_rec"]),
-                "--arith_op",
-                COMMON["arith_op"],
-                "--arith_base",
-                str(COMMON["arith_base"]),
-                "--n_digits",
-                str(COMMON["n_digits"]),
-                "--ste_epochs",
-                "200",
-            ]
-            run_cmd(cmd, cwd=atomic_dir)
+            for seed in SEEDS:
+                cmd = [
+                    python_exe,
+                    "-m",
+                    "simple_testing",
+                    "--mode",
+                    "simple",
+                    "--simple_side",
+                    "ste_only",
+                    "--dataset",
+                    COMMON["dataset"],
+                    "--loss_type",
+                    "hinge_ovr",
+                    "--cvx_method",
+                    "cvx",
+                    "--seed",
+                    str(seed),
+                    "--n_train",
+                    str(n_train),
+                    "--n_val",
+                    str(COMMON["n_val"]),
+                    "--n_test",
+                    str(COMMON["n_test"]),
+                    "--L",
+                    str(COMMON["L"]),
+                    "--P_last",
+                    str(COMMON["P_last"]),
+                    "--P_rec",
+                    str(COMMON["P_rec"]),
+                    "--arith_op",
+                    COMMON["arith_op"],
+                    "--arith_base",
+                    str(COMMON["arith_base"]),
+                    "--n_digits",
+                    str(COMMON["n_digits"]),
+                    "--ste_epochs",
+                    "200",
+                ]
+                run_cmd(cmd, cwd=atomic_dir)
 
 
 if __name__ == "__main__":
