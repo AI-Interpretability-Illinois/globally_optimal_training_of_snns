@@ -177,6 +177,52 @@ def _total_system_memory_gb() -> float | None:
     return None
 
 
+def _cgroup_memory_limit_gb() -> float | None:
+    """Return cgroup RAM cap for this process when finite (Linux jobs/containers)."""
+    v2 = Path("/sys/fs/cgroup/memory.max")
+    if v2.is_file():
+        raw = v2.read_text().strip()
+        if raw == "max":
+            return None
+        try:
+            limit_b = int(raw)
+        except ValueError:
+            return None
+        if limit_b <= 0 or limit_b >= (1 << 60):
+            return None
+        return float(limit_b) / float(1024**3)
+
+    v1 = Path("/sys/fs/cgroup/memory/memory.limit_in_bytes")
+    if v1.is_file():
+        try:
+            limit_b = int(v1.read_text().strip())
+        except ValueError:
+            return None
+        if limit_b <= 0 or limit_b >= (1 << 60):
+            return None
+        return float(limit_b) / float(1024**3)
+    return None
+
+
+def _slurm_job_memory_gb() -> float | None:
+    """Slurm sets total job RAM on the allocation (megabytes)."""
+    raw = os.environ.get("SLURM_MEM_PER_NODE", "").strip()
+    if raw.isdigit():
+        return float(raw) / 1024.0
+    return None
+
+
+def _effective_job_memory_budget_gb() -> float | None:
+    """Prefer cgroup/Slurm limits over host total RAM (avoids overspawn on batch nodes)."""
+    cg = _cgroup_memory_limit_gb()
+    if cg is not None:
+        return cg
+    sl = _slurm_job_memory_gb()
+    if sl is not None:
+        return sl
+    return _total_system_memory_gb()
+
+
 def _detected_gpu_slots() -> int:
     alloc_gpu = _allocated_gpu_slots()
     if alloc_gpu is not None:
@@ -197,17 +243,22 @@ def _auto_worker_counts(
     gpu_jobs: int,
     cpu_jobs: int,
     cvx_method: str,
+    gpu_mem_budget_gb_per_worker: float,
 ) -> Tuple[int, int, Dict[str, Any]]:
     gpu_slots = _detected_gpu_slots()
     alloc_cores = _allocated_cpu_cores()
     cores = int(alloc_cores if alloc_cores is not None else (os.cpu_count() or 2))
-    mem_gb = _total_system_memory_gb()
+    host_mem_gb = _total_system_memory_gb()
+    mem_gb = _effective_job_memory_budget_gb()
 
-    # One heavy job per GPU slot by default.
+    # One heavy job per GPU slot by default; cap by RAM (each worker loads torch + dataset in spawn).
     gpu_workers = min(gpu_slots, gpu_jobs)
     if gpu_workers == 0 and gpu_jobs > 0:
         # CPU fallback for "GPU" queue when no accelerators exist.
         gpu_workers = 1
+    if mem_gb is not None and gpu_jobs > 0 and float(gpu_mem_budget_gb_per_worker) > 0:
+        max_gpu_by_mem = max(1, int(float(mem_gb) // float(gpu_mem_budget_gb_per_worker)))
+        gpu_workers = min(gpu_workers, max_gpu_by_mem)
 
     if cpu_jobs <= 0:
         cpu_workers = 0
@@ -225,7 +276,11 @@ def _auto_worker_counts(
         "slurm_allocated_cpu_cores": alloc_cores,
         "slurm_allocated_gpu_slots": _allocated_gpu_slots(),
         "cuda_visible_devices_count": _visible_cuda_count(),
-        "detected_mem_gb": mem_gb,
+        "host_total_mem_gb": host_mem_gb,
+        "cgroup_mem_limit_gb": _cgroup_memory_limit_gb(),
+        "slurm_mem_per_node_gb": _slurm_job_memory_gb(),
+        "effective_mem_budget_gb": mem_gb,
+        "mem_budget_per_gpu_worker_gb": float(gpu_mem_budget_gb_per_worker),
         "mem_budget_per_cpu_worker_gb": 8.0 if cvx_method == "cvx" else 4.0,
     }
     return gpu_workers, cpu_workers, stats
@@ -979,6 +1034,16 @@ def parse_args() -> argparse.Namespace:
         default=-1,
         help="CPU workers for cvx_method=cvx tasks. -1 => auto from cores/RAM.",
     )
+    parser.add_argument(
+        "--gpu_mem_budget_gb_per_worker",
+        type=float,
+        default=8.0,
+        help=(
+            "Assumed RAM (GiB) per STE GPU worker when --num_gpus=-1. Each worker loads PyTorch + the full "
+            "dataset; reduce this or set --num_gpus 1 if workers are SIGKILLed (exit -9, often OOM). "
+            "Env PARALLEL_SWEEP_GPU_MEM_PER_WORKER_GB overrides this after parse."
+        ),
+    )
     parser.add_argument("--beta_grid", type=float, nargs="+", default=list(BETA_GRID_DEFAULT))
     parser.add_argument("--lr_grid", type=float, nargs="+", default=list(LR_GRID_DEFAULT))
     parser.add_argument("--bias_grid", type=float, nargs="+", default=list(BIAS_GRID_DEFAULT))
@@ -1014,6 +1079,9 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--uci_val_size", type=float, default=0.2)
     parser.add_argument("--uci_no_standardize", action="store_true")
     parsed = parser.parse_args()
+    env_gpu_mem = os.environ.get("PARALLEL_SWEEP_GPU_MEM_PER_WORKER_GB", "").strip()
+    if env_gpu_mem != "":
+        parsed.gpu_mem_budget_gb_per_worker = float(env_gpu_mem)
     if parsed.seeds is None:
         parsed.seeds = [int(parsed.seed)]
     if len(parsed.seeds) == 0:
@@ -1051,12 +1119,17 @@ def main() -> None:
             gpu_jobs=len(gpu_tasks),
             cpu_jobs=len(cpu_tasks),
             cvx_method=str(args.cvx_method),
+            gpu_mem_budget_gb_per_worker=float(args.gpu_mem_budget_gb_per_worker),
         )
     else:
         auto_gpu_workers, auto_cpu_workers, hw_stats = 0, 0, {
             "detected_gpu_slots": _detected_gpu_slots(),
             "detected_cpu_cores": int(os.cpu_count() or 2),
-            "detected_mem_gb": _total_system_memory_gb(),
+            "host_total_mem_gb": _total_system_memory_gb(),
+            "cgroup_mem_limit_gb": _cgroup_memory_limit_gb(),
+            "slurm_mem_per_node_gb": _slurm_job_memory_gb(),
+            "effective_mem_budget_gb": _effective_job_memory_budget_gb(),
+            "mem_budget_per_gpu_worker_gb": float(args.gpu_mem_budget_gb_per_worker),
             "mem_budget_per_cpu_worker_gb": 8.0 if str(args.cvx_method) == "cvx" else 4.0,
         }
 
@@ -1129,9 +1202,16 @@ def main() -> None:
             failed_str = ", ".join(
                 f"worker[{idx}] pid={pid} exitcode={exitcode}" for idx, pid, exitcode in failed
             )
+            oom_hint = ""
+            if any(int(ex) == -9 for _, _, ex in failed if ex is not None):
+                oom_hint = (
+                    " Exitcode -9 is SIGKILL (often Linux OOM killer or cgroup limit). "
+                    "Retry with --num_gpus 1, a larger Slurm/cgroup memory request, or "
+                    "raise --gpu_mem_budget_gb_per_worker only if each worker truly needs more RAM."
+                )
             raise RuntimeError(
                 "Parallel sweep aborted: one or more workers crashed before returning all results. "
-                f"received={len(results)} expected={expected} pending={pending}. Failed: {failed_str}"
+                f"received={len(results)} expected={expected} pending={pending}. Failed: {failed_str}.{oom_hint}"
             )
 
         if alive_count == 0 and queue_result.empty():
