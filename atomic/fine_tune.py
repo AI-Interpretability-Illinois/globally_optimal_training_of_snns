@@ -56,7 +56,7 @@ class FineTuneConfig:
     cvx_sources: Sequence[str] = ("pretraining",)
     ste_pretrain_epochs: int = 80
     ste_post_epochs: int = 100
-    # If set, save full NumPy/Torch weight artifacts under this directory (per readout subfolder).
+    # If set, save STE pretrain SNN weights under this directory (per readout subfolder) right after pretrain.
     weights_save_dir: str | None = None
     # If set, load SNN weights from a prior export (directory containing finetune_manifest.json).
     init_weights_dir: str | None = None
@@ -164,7 +164,7 @@ def _last_step_acc(model: SNNBaselineSeq, x: np.ndarray, y: np.ndarray) -> float
     return float(np.mean(preds == y_last))
 
 
-def _save_finetune_weight_artifacts(
+def _save_finetune_pretrain_artifacts(
     save_root: Path,
     *,
     readout_mode: str,
@@ -172,13 +172,9 @@ def _save_finetune_weight_artifacts(
     cfg: FineTuneConfig,
     num_classes: int,
     transferred_weights: List[np.ndarray],
-    cvx_result: Any,
-    ste_post_model: SNNBaselineSeq,
     pretrain_selected: Mapping[str, float],
-    cvx_selected: Mapping[str, float | None],
-    ste_post_selected: Mapping[str, float],
 ) -> Dict[str, str]:
-    """Save weights for later initialization (npz for STE layers; npz or pt for CVX readout)."""
+    """Save SNN weights right after pretrain (before CVX and STE post). No CVX readout or post-STE files."""
     root = save_root.expanduser().resolve()
     root.mkdir(parents=True, exist_ok=True)
     sub = root / readout_mode
@@ -188,21 +184,10 @@ def _save_finetune_weight_artifacts(
 
     snn_weight_shapes = [[int(x) for x in w.shape] for w in transferred_weights]
 
-    tm = cvx_result.trained_model
-    if isinstance(tm, dict) and "weights" in tm:
-        np.savez_compressed(sub / "cvx_readout_weights.npz", weights=tm["weights"])
-        cvx_readout_file = "cvx_readout_weights.npz"
-    else:
-        torch.save(tm.state_dict(), sub / "cvx_linear_head.pt")
-        cvx_readout_file = "cvx_linear_head.pt"
-
-    post_w = _extract_weight_list(ste_post_model)
-    np.savez_compressed(sub / "ste_post_snn_weights.npz", **{f"w{i}": w for i, w in enumerate(post_w)})
-    torch.save(ste_post_model.state_dict(), sub / "ste_post_state_dict.pt")
-
     manifest: Dict[str, Any] = {
         "readout_mode": readout_mode,
         "last_layer_readout": readout_mode,
+        "checkpoint_stage": "pretrain_only",
         "seed": seed,
         "T": cfg.T,
         "L": cfg.L,
@@ -214,13 +199,10 @@ def _save_finetune_weight_artifacts(
         "loss_type": cfg.loss_type,
         "cvx_method": cfg.cvx_method,
         "pretrain_ste_selected": dict(pretrain_selected),
-        "cvx_selected": dict(cvx_selected),
-        "ste_post_selected": dict(ste_post_selected),
         "reload": {
             "pretrain_for_ste_solve": "pretrain_snn_weights.npz keys w0..w{L} last is classifier",
             "pretrain_for_cvx_init": "same arrays as list for InitializationConfig.pretrained_weights",
-            "ste_post": "ste_post_snn_weights.npz or ste_post_state_dict.pt",
-            "cvx_readout": cvx_readout_file,
+            "note": "Export is written immediately after STE pretrain; CVX readout and ste_post weights are not stored.",
         },
     }
     (sub / "finetune_manifest.json").write_text(json.dumps(manifest, indent=2, default=str) + "\n")
@@ -228,9 +210,6 @@ def _save_finetune_weight_artifacts(
         "dir": str(sub),
         "manifest": str(sub / "finetune_manifest.json"),
         "pretrain_snn_weights": str(sub / "pretrain_snn_weights.npz"),
-        "cvx_readout": str(sub / cvx_readout_file),
-        "ste_post_snn_weights": str(sub / "ste_post_snn_weights.npz"),
-        "ste_post_state_dict": str(sub / "ste_post_state_dict.pt"),
     }
 
 
@@ -389,6 +368,25 @@ def run_fine_tune_pipeline(
                     f"val={pre_acc['val_last_step_acc']:.4f} "
                     f"test={pre_acc['test_last_step_acc']:.4f}"
                 ),
+                flush=True,
+            )
+
+        if cfg.weights_save_dir:
+            pre_m = best_pre.model
+            if not isinstance(pre_m, SNNBaselineSeq):
+                raise TypeError("Expected SNNBaselineSeq for weight export.")
+            tw_save = _extract_weight_list(pre_m)
+            weight_paths_root[readout_mode] = _save_finetune_pretrain_artifacts(
+                Path(cfg.weights_save_dir),
+                readout_mode=readout_mode,
+                seed=seed,
+                cfg=cfg,
+                num_classes=num_classes,
+                transferred_weights=tw_save,
+                pretrain_selected={"lr": float(best_pre_lr), "beta": float(best_pre_beta)},
+            )
+            print(
+                f"[fine-tune][{readout_mode}] saved pretrain weights to {weight_paths_root[readout_mode]['dir']}",
                 flush=True,
             )
 
@@ -586,26 +584,6 @@ def run_fine_tune_pipeline(
             "ste_post_loss_curve": [float(v) for v in best_post.loss_history],
             "cvx_loss_curves": {name: [float(v) for v in cvx_out.loss_history] for name, cvx_out in cvx_results.items()},
         }
-        if cfg.weights_save_dir:
-            pre_m = best_pre.model
-            post_m = best_post.model
-            if not isinstance(pre_m, SNNBaselineSeq) or not isinstance(post_m, SNNBaselineSeq):
-                raise TypeError("Expected SNNBaselineSeq for weight export.")
-            tw = _extract_weight_list(pre_m)
-            cvx0 = cvx_results["pretraining"]
-            weight_paths_root[readout_mode] = _save_finetune_weight_artifacts(
-                Path(cfg.weights_save_dir),
-                readout_mode=readout_mode,
-                seed=seed,
-                cfg=cfg,
-                num_classes=num_classes,
-                transferred_weights=tw,
-                cvx_result=cvx0,
-                ste_post_model=post_m,
-                pretrain_selected={"lr": best_pre_lr, "beta": best_pre_beta},
-                cvx_selected=cvx_selected_params["pretraining"],
-                ste_post_selected={"lr": best_post_lr, "beta": best_post_beta},
-            )
 
     selected_mode = cfg.last_layer_readout if cfg.last_layer_readout in by_readout else readout_modes[0]
     selected = by_readout[selected_mode]

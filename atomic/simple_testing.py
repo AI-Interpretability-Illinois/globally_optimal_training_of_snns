@@ -863,9 +863,9 @@ def parse_args() -> argparse.Namespace:
         type=str,
         default="finetune_weights",
         help=(
-            "With --mode fine_tune, save weights under this directory (per readout subfolder). "
-            "Relative paths are resolved under atomic/ (default: finetune_weights -> atomic/finetune_weights). "
-            "Pass empty to disable saving."
+            "With --mode fine_tune, save STE pretrain SNN weights under this directory (per readout subfolder) "
+            "immediately after pretrain (before CVX and STE post). "
+            "Relative paths are resolved under atomic/ (default: finetune_weights). Pass empty to disable."
         ),
     )
     parser.add_argument(
