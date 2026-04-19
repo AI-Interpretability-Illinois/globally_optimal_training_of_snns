@@ -191,13 +191,13 @@ def build_softmax_ce_l1_primal_problem(
     if num_classes < 2 or int(y_i.min()) < 0 or int(y_i.max()) >= num_classes:
         raise ValueError(f"Invalid labels or num_classes={num_classes}.")
 
+    E = np.zeros((n, num_classes), dtype=np.float64)
+    E[np.arange(n), y_i] = 1.0
     W = cp.Variable((p, num_classes))
     scores = Df @ W
-    row_losses = []
-    for i in range(n):
-        yi = int(y_i[i])
-        row_losses.append(cp.log_sum_exp(scores[i, :]) - scores[i, yi])
-    primal_obj = (1.0 / n) * cp.sum(row_losses) + rho * cp.sum(cp.abs(W))
+    row_lse = cp.log_sum_exp(scores, axis=1, keepdims=False)
+    logits_y = cp.sum(cp.multiply(scores, E), axis=1)
+    primal_obj = (1.0 / n) * cp.sum(row_lse - logits_y) + rho * cp.sum(cp.abs(W))
     prob = cp.Problem(cp.Minimize(primal_obj))
     return prob, W
 
