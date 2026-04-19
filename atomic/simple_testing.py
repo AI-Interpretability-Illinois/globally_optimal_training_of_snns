@@ -218,23 +218,39 @@ def _cvx_last_step_acc(
     y_test: np.ndarray,
     init_cfg: InitializationConfig,
 ) -> float:
+    supervise_all = y_test.ndim == 2
     _, _, d_test, _ = _build_feature_map(
         x_train=x_train,
         x_val=x_val,
         x_test=x_test,
         init_cfg=init_cfg,
+        all_timesteps=supervise_all,
     )
     y_last = _prepare_sequence_targets(y_test)
     if isinstance(cvx_result.trained_model, dict) and "weights" in cvx_result.trained_model:
         w = cvx_result.trained_model["weights"]
         scores = d_test @ w
         preds = scores.argmax(axis=1)
+        if supervise_all:
+            n, steps = y_test.shape
+            if int(preds.shape[0]) != n * steps:
+                raise ValueError(
+                    f"All-timestep CVX: expected {n * steps} score rows, got {preds.shape[0]}."
+                )
+            preds = preds.reshape(n, steps)[:, -1]
         return float(np.mean(preds == y_last))
     model = cvx_result.trained_model
     model.eval()
     with torch.no_grad():
         logits = model(torch.tensor(d_test, dtype=torch.float32))
         preds = logits.argmax(dim=1).cpu().numpy()
+    if supervise_all:
+        n, steps = y_test.shape
+        if int(preds.shape[0]) != n * steps:
+            raise ValueError(
+                f"All-timestep CVX: expected {n * steps} score rows, got {preds.shape[0]}."
+            )
+        preds = preds.reshape(n, steps)[:, -1]
     return float(np.mean(preds == y_last))
 
 
@@ -653,16 +669,23 @@ def _run_simple_mode(args: argparse.Namespace, data: Dict[str, Any]) -> Tuple[Di
         if best_cvx is None or best_cvx_params is None or best_init is None:
             raise RuntimeError("Simple mode failed to find CVX candidate.")
 
+    fixed_grids: Dict[str, Any] = {}
+    if run_ste:
+        fixed_grids["ste_lr_grid"] = list(LR_GRID_DEFAULT)
+        fixed_grids["ste_beta_grid"] = list(BETA_GRID_DEFAULT)
+    if run_cvx:
+        fixed_grids["cvx_beta_grid"] = list(BETA_GRID_DEFAULT)
+        fixed_grids["cvx_lr_grid"] = list(cvx_lr_sweep_values(args.cvx_method, LR_GRID_DEFAULT))
+        fixed_grids["bias_grid"] = list(bias_grid)
+        fixed_grids["cvx_lr_sweep_note"] = (
+            "For method=cvx, lr is not swept (single placeholder 0.0); sweep is beta × bias only."
+        )
+
     result: Dict[str, Any] = {
         "mode": "simple",
         "simple_side": args.simple_side,
         "dataset": args.dataset,
-        "fixed_grids": {
-            "beta_grid": list(BETA_GRID_DEFAULT),
-            "lr_grid": list(cvx_lr_sweep_values(args.cvx_method, LR_GRID_DEFAULT)),
-            "bias_grid": list(bias_grid),
-            "cvx_lr_sweep_note": "For method=cvx, lr is not swept (single placeholder 0.0); sweep is beta × bias only.",
-        },
+        "fixed_grids": fixed_grids,
     }
     if init_ckpt_meta is not None:
         result["init_checkpoint"] = init_ckpt_meta

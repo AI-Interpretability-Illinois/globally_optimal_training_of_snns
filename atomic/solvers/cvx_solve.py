@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import math
 from dataclasses import dataclass
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, List, Optional, Sequence, Tuple
 
 import cvxpy as cp
 import numpy as np
@@ -185,41 +185,85 @@ def _run_lif_stack_readout_all_timesteps(
     last_layer_readout: str,
 ) -> np.ndarray:
     """
-    Return the final hidden readout at every timestep, shape (N, T, H_last).
+    Return the last hidden layer readout at every timestep, shape (N, T, H_last).
+
+    Same LIF dynamics as _run_lif_stack_readout per layer: for each layer, membrane
+    ``mem`` is carried across sequence time; input at (t, l) is spikes from below at
+    time t (or x[:, t] for l == 0). Update matches _run_lif_stack_readout:
+    mem = beta * mem + (h_below @ U_in); spk = 1[mem - thr >= 0]; mem -= thr * spk.
     """
     if x_seq.ndim != 3:
         raise ValueError(f"Expected x_seq shape (N,T,d_in), got {x_seq.shape}.")
     n, steps, _ = x_seq.shape
     if len(u_in_list) == 0:
         raise ValueError("u_in_list must be non-empty.")
-    h_prev: List[np.ndarray] = [np.zeros((n, u.shape[1]), dtype=np.float64) for u in u_in_list]
-    mem_prev: List[np.ndarray] = [np.zeros((n, u.shape[1]), dtype=np.float64) for u in u_in_list]
+    n_layers = len(u_in_list)
+    mem_prev: List[np.ndarray] = [np.zeros((n, u_in_list[l].shape[1]), dtype=np.float64) for l in range(n_layers)]
+    h_prev: List[np.ndarray] = [np.zeros((n, u_in_list[l].shape[1]), dtype=np.float64) for l in range(n_layers)]
     readouts: List[np.ndarray] = []
     for t in range(steps):
-        h_t = x_seq[:, t, :].astype(np.float64, copy=False)
-        final_mem = None
-        final_spk = None
+        h_below = x_seq[:, t, :].astype(np.float64, copy=False)
+        final_mem_t: Optional[np.ndarray] = None
+        final_spk_t: Optional[np.ndarray] = None
         for l, u_in in enumerate(u_in_list):
             h_dim = u_in.shape[1]
-            x_in = h_t @ u_in
-            beta_l = beta_list[l]
-            th_l = threshold_list[l]
-            mem = beta_l.reshape(1, h_dim) * mem_prev[l] + x_in
-            spk = (mem >= th_l.reshape(1, h_dim)).astype(np.float64)
+            beta = beta_list[l].reshape(1, h_dim)
+            thr = threshold_list[l].reshape(1, h_dim)
+            cur = h_below @ u_in
+            mem = beta * mem_prev[l] + cur
+            spk = (mem - thr >= 0.0).astype(np.float64)
+            mem = mem - thr * spk
             mem_prev[l] = mem
             h_prev[l] = spk
-            h_t = spk
-            final_mem = mem
-            final_spk = spk
-        if final_mem is None or final_spk is None:
+            h_below = spk
+            if l == n_layers - 1:
+                final_mem_t = mem
+                final_spk_t = spk
+        if final_mem_t is None or final_spk_t is None:
             raise RuntimeError("No hidden layers were executed for LIF sequence readout.")
         if last_layer_readout == "membrane":
-            readouts.append(final_mem)
+            readouts.append(final_mem_t)
         elif last_layer_readout == "spike":
-            readouts.append(final_spk)
+            readouts.append(final_spk_t)
         else:
             raise ValueError(f"Unsupported last_layer_readout={last_layer_readout}. Expected membrane|spike.")
     return np.stack(readouts, axis=1)
+
+
+def _readouts_to_thresholded_features(
+    readout_tr: np.ndarray,
+    readout_va: np.ndarray,
+    readout_te: np.ndarray,
+    bias: float,
+    *,
+    all_timesteps: bool,
+    p_last: int,
+    feature_count: int,
+) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """
+    Map last LIF readout h to convex inputs D = 𝟙(h - bias >= 0). No extra linear U_last:
+    the learned convex weights act directly on these P_last indicators (standard two-layer convex NN view).
+    """
+    if int(feature_count) != int(p_last):
+        raise ValueError(
+            "CVX features are binary thresholds on the last readout only (removed U_last). "
+            f"Require init_cfg.feature_count == P_last ({p_last}), got feature_count={feature_count}."
+        )
+    for r in (readout_tr, readout_va, readout_te):
+        if int(r.shape[-1]) != int(p_last):
+            raise ValueError(f"Readout trailing dim {r.shape[-1]} != P_last {p_last}.")
+    if all_timesteps:
+        d_train_seq = (readout_tr - bias >= 0.0).astype(np.float64)
+        d_val_seq = (readout_va - bias >= 0.0).astype(np.float64)
+        d_test_seq = (readout_te - bias >= 0.0).astype(np.float64)
+        d_train = d_train_seq.reshape(d_train_seq.shape[0] * d_train_seq.shape[1], d_train_seq.shape[2])
+        d_val = d_val_seq.reshape(d_val_seq.shape[0] * d_val_seq.shape[1], d_val_seq.shape[2])
+        d_test = d_test_seq.reshape(d_test_seq.shape[0] * d_test_seq.shape[1], d_test_seq.shape[2])
+    else:
+        d_train = (readout_tr - bias >= 0.0).astype(np.float64)
+        d_val = (readout_va - bias >= 0.0).astype(np.float64)
+        d_test = (readout_te - bias >= 0.0).astype(np.float64)
+    return d_train, d_val, d_test
 
 
 def _build_feature_map(
@@ -264,30 +308,25 @@ def _build_feature_map(
             readout_te = _run_lif_stack_readout(
                 x_test, U_in_list, beta_list, threshold_list, last_layer_readout=init_cfg.last_layer_readout
             )
-        U_last = _sample_weight_matrix(
-            rng, in_dim=hidden_dims[-1], out_dim=int(init_cfg.feature_count), variant=init_cfg.variant
+        d_train, d_val, d_test = _readouts_to_thresholded_features(
+            readout_tr,
+            readout_va,
+            readout_te,
+            float(init_cfg.bias),
+            all_timesteps=all_timesteps,
+            p_last=int(hidden_dims[-1]),
+            feature_count=int(init_cfg.feature_count),
         )
-        if all_timesteps:
-            d_train_seq = (readout_tr @ U_last - init_cfg.bias >= 0.0).astype(np.float64)
-            d_val_seq = (readout_va @ U_last - init_cfg.bias >= 0.0).astype(np.float64)
-            d_test_seq = (readout_te @ U_last - init_cfg.bias >= 0.0).astype(np.float64)
-            d_train = d_train_seq.reshape(d_train_seq.shape[0] * d_train_seq.shape[1], d_train_seq.shape[2])
-            d_val = d_val_seq.reshape(d_val_seq.shape[0] * d_val_seq.shape[1], d_val_seq.shape[2])
-            d_test = d_test_seq.reshape(d_test_seq.shape[0] * d_test_seq.shape[1], d_test_seq.shape[2])
-        else:
-            d_train = (readout_tr @ U_last - init_cfg.bias >= 0.0).astype(np.float64)
-            d_val = (readout_va @ U_last - init_cfg.bias >= 0.0).astype(np.float64)
-            d_test = (readout_te @ U_last - init_cfg.bias >= 0.0).astype(np.float64)
-        return d_train, d_val, d_test, {"U_in_list": np.array([], dtype=np.float64), "U_last": U_last}
+        return d_train, d_val, d_test, {"U_in_list": np.array([], dtype=np.float64), "U_last": np.zeros((0, 0), dtype=np.float64)}
 
     if init_cfg.mode == "pretraining":
         if init_cfg.pretrained_weights is None or len(init_cfg.pretrained_weights) == 0:
             raise ValueError("pretraining mode requires non-empty pretrained_weights.")
         weights = [w.astype(np.float64, copy=False) for w in init_cfg.pretrained_weights]
         n_hidden = len(hidden_dims)
-        if len(weights) < n_hidden + 1:
+        if len(weights) < n_hidden:
             raise ValueError(
-                f"Expected at least {n_hidden + 1} pretrained tensors (hidden layers + classifier), got {len(weights)}."
+                f"pretraining mode requires at least {n_hidden} pretrained tensors (one per LIF stage), got {len(weights)}."
             )
         U_in_list: List[np.ndarray] = []
         in_dim_l = d_in
@@ -314,37 +353,16 @@ def _build_feature_map(
             readout_te = _run_lif_stack_readout(
                 x_test, U_in_list, beta_list, threshold_list, last_layer_readout=init_cfg.last_layer_readout
             )
-        cls_w = weights[n_hidden]
-        if cls_w.ndim != 2:
-            raise ValueError(f"Classifier weight must be rank-2, got shape {cls_w.shape}.")
-        if cls_w.shape[1] == hidden_dims[-1]:
-            U_last_base = cls_w.T
-        elif cls_w.shape[0] == hidden_dims[-1]:
-            U_last_base = cls_w
-        else:
-            raise ValueError(
-                f"Classifier weight shape {cls_w.shape} incompatible with hidden dim {hidden_dims[-1]}."
-            )
-        target_p = int(init_cfg.feature_count)
-        if U_last_base.shape[1] < target_p:
-            extra = _sample_weight_matrix(
-                rng, in_dim=hidden_dims[-1], out_dim=target_p - U_last_base.shape[1], variant=init_cfg.variant
-            )
-            U_last = np.concatenate([U_last_base, extra], axis=1)
-        else:
-            U_last = U_last_base[:, :target_p]
-        if all_timesteps:
-            d_train_seq = (readout_tr @ U_last - init_cfg.bias >= 0.0).astype(np.float64)
-            d_val_seq = (readout_va @ U_last - init_cfg.bias >= 0.0).astype(np.float64)
-            d_test_seq = (readout_te @ U_last - init_cfg.bias >= 0.0).astype(np.float64)
-            d_train = d_train_seq.reshape(d_train_seq.shape[0] * d_train_seq.shape[1], d_train_seq.shape[2])
-            d_val = d_val_seq.reshape(d_val_seq.shape[0] * d_val_seq.shape[1], d_val_seq.shape[2])
-            d_test = d_test_seq.reshape(d_test_seq.shape[0] * d_test_seq.shape[1], d_test_seq.shape[2])
-        else:
-            d_train = (readout_tr @ U_last - init_cfg.bias >= 0.0).astype(np.float64)
-            d_val = (readout_va @ U_last - init_cfg.bias >= 0.0).astype(np.float64)
-            d_test = (readout_te @ U_last - init_cfg.bias >= 0.0).astype(np.float64)
-        return d_train, d_val, d_test, {"pretrained_weights": np.array([], dtype=np.float64), "U_last": U_last}
+        d_train, d_val, d_test = _readouts_to_thresholded_features(
+            readout_tr,
+            readout_va,
+            readout_te,
+            float(init_cfg.bias),
+            all_timesteps=all_timesteps,
+            p_last=int(hidden_dims[-1]),
+            feature_count=int(init_cfg.feature_count),
+        )
+        return d_train, d_val, d_test, {"pretrained_weights": np.array([], dtype=np.float64), "U_last": np.zeros((0, 0), dtype=np.float64)}
 
     raise ValueError(f"Unknown initialization mode={init_cfg.mode}.")
 

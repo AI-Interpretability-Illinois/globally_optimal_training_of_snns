@@ -4,7 +4,8 @@ CVX-SNN vs STE-SNN comparator on the per-timestep arithmetic sequence benchmark.
 
 Key design choices:
 - Uses the per-timestep arithmetic sequence bench.
-- CVX side uses a random recurrent threshold/SNN feature extractor and solves a separate
+- CVX side uses random input/last hyperplanes and the same structured U_rec as snn_p2.py
+  (leak β on v, threshold 1 on h and bias leg), then solves a separate
   convex head at EACH timestep t over D^{L-2,t}; primal and dual are both solved.
 - CVX sweeps beta and last-layer bias.
 - STE baseline uses the path-regularized objective style from snn_p2.py and predicts a token
@@ -29,6 +30,16 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import snntorch as snn
+
+_ATOMIC_DIR = Path(__file__).resolve().parent.parent / "atomic"
+if not _ATOMIC_DIR.is_dir():
+    raise ImportError(
+        f"Expected atomic/ at {_ATOMIC_DIR} (needed for solver_grids.BETA_GRID_DEFAULT)."
+    )
+_atomic_path = str(_ATOMIC_DIR)
+if _atomic_path not in sys.path:
+    sys.path.insert(0, _atomic_path)
+from solver_grids import BETA_GRID_DEFAULT
 
 
 def _load_module(module_name: str, file_path: str):
@@ -87,6 +98,38 @@ def mean_std(vals: List[float]) -> Tuple[float, float]:
 def _col_normalize_np(U: np.ndarray, eps: float = 1e-12) -> np.ndarray:
     norms = np.linalg.norm(U, axis=0, keepdims=True) + eps
     return U / norms
+
+
+def _snn_p2_rec_leak_vector(rng: np.random.Generator, h_dim: int, beta_dist: str) -> np.ndarray:
+    """Per-neuron leak β on recurrent v leg; must match snn_p2.generate_snn_sign_patterns."""
+    if beta_dist == "fixed":
+        b = np.full((h_dim,), 0.99, dtype=np.float32)
+    elif beta_dist == "het_loguniform":
+        log_lo, log_hi = np.log(0.5), np.log(0.999)
+        b = np.exp(rng.uniform(log_lo, log_hi, size=(h_dim,))).astype(np.float32)
+    elif beta_dist == "het_uniform":
+        b = rng.uniform(0.5, 0.999, size=(h_dim,)).astype(np.float32)
+    elif beta_dist == "het_bimodal":
+        b = np.empty(h_dim, dtype=np.float32)
+        n_fast = h_dim // 2
+        b[:n_fast] = rng.uniform(0.3, 0.6, size=(n_fast,))
+        b[n_fast:] = rng.uniform(0.95, 0.999, size=(h_dim - n_fast,))
+        rng.shuffle(b)
+    else:
+        raise ValueError(
+            f"Unknown beta_dist={beta_dist!r}. "
+            f"Choose from: fixed, het_loguniform, het_uniform, het_bimodal."
+        )
+    return b
+
+
+def _snn_p2_build_u_rec_np(b: np.ndarray, g: np.ndarray) -> np.ndarray:
+    """U_rec for s_prev @ U_rec with s_prev = [v_{t-1}, -h_{t-1}, -1]; same stack as snn_p2.py."""
+    if b.shape != g.shape or b.ndim != 1:
+        raise ValueError(f"b and g must be 1D and same length; got b={b.shape}, g={g.shape}")
+    U_rec_top = np.diag(b).astype(np.float32)
+    U_rec_bot = np.diag(g).astype(np.float32)
+    return np.vstack([U_rec_top, U_rec_bot, g]).astype(np.float32)
 
 
 # ---------------------------------------------------------------------
@@ -186,6 +229,8 @@ def sample_random_hypers(
     P_last: int,
     seed: int,
     normalize_hidden: bool = True,
+    *,
+    beta_dist: str = "fixed",
 ) -> RandomRNNHyperplanes:
     rng = np.random.default_rng(seed)
     U_in_list = []
@@ -196,7 +241,9 @@ def sample_random_hypers(
         hidden_dims = [P_last]
     for h_dim in hidden_dims:
         U_in = rng.normal(size=(d_in_l, h_dim)).astype(np.float32)
-        U_rec = rng.normal(size=(2 * h_dim + 1, h_dim)).astype(np.float32)
+        b = _snn_p2_rec_leak_vector(rng, h_dim, beta_dist)
+        g = np.full((h_dim,), 1.0, dtype=np.float32)
+        U_rec = _snn_p2_build_u_rec_np(b, g)
         if normalize_hidden:
             U_in = _col_normalize_np(U_in)
             U_rec = _col_normalize_np(U_rec)
@@ -787,10 +834,11 @@ class ComparatorConfig:
     P_last: int = 128
     epochs: int = 150
     ste_lr_grid: Tuple[float, ...] = (1e-3, 5e-3, 1e-2)
-    ste_beta_grid: Tuple[float, ...] = (0.0, 1e-6, 1e-4, 1e-3)
-    cvx_beta_grid: Tuple[float, ...] = (1e-8, 1e-6, 1e-4, 1e-3, 1e-2)
+    ste_beta_grid: Tuple[float, ...] = BETA_GRID_DEFAULT
+    cvx_beta_grid: Tuple[float, ...] = BETA_GRID_DEFAULT
     bias_grid: Tuple[float, ...] = (0.0, 0.25, 0.5, 1.0)
     normalize_hidden: bool = True
+    beta_dist: str = "fixed"
     num_runs: int = 3
     ste_step_size: int = 50
     ste_gamma: float = 0.5
@@ -801,7 +849,15 @@ class ComparatorConfig:
 
 def run_one_seed(ds: SequenceDataset, cfg: ComparatorConfig, seed: int, device: torch.device) -> Dict[str, float]:
     set_seed(seed)
-    hypers = sample_random_hypers(ds.d_in, cfg.L, cfg.P_rec, cfg.P_last, seed, normalize_hidden=cfg.normalize_hidden)
+    hypers = sample_random_hypers(
+        ds.d_in,
+        cfg.L,
+        cfg.P_rec,
+        cfg.P_last,
+        seed,
+        normalize_hidden=cfg.normalize_hidden,
+        beta_dist=cfg.beta_dist,
+    )
 
     Xtr = torch.tensor(ds.X_train, dtype=torch.float32)
     Xva = torch.tensor(ds.X_val, dtype=torch.float32)
@@ -949,12 +1005,31 @@ def main():
     ap.add_argument("--num_runs", type=int, default=3)
     ap.add_argument("--seed", type=int, default=0)
     ap.add_argument("--ste_lr_grid", nargs="+", type=float, default=[1e-3, 5e-3, 1e-2])
-    ap.add_argument("--ste_beta_grid", nargs="+", type=float, default=[0.0, 1e-6, 1e-4, 1e-3])
-    ap.add_argument("--cvx_beta_grid", nargs="+", type=float, default=[1e-8, 1e-6, 1e-4, 1e-3, 1e-2])
+    ap.add_argument(
+        "--ste_beta_grid",
+        nargs="+",
+        type=float,
+        default=list(BETA_GRID_DEFAULT),
+        help="Path regularization β grid for STE (default: atomic solver_grids.BETA_GRID_DEFAULT).",
+    )
+    ap.add_argument(
+        "--cvx_beta_grid",
+        nargs="+",
+        type=float,
+        default=list(BETA_GRID_DEFAULT),
+        help="Convex Lasso ρ scaling uses β with ρ=β/√P_last; grid matches atomic BETA_GRID_DEFAULT.",
+    )
     ap.add_argument("--bias_grid", nargs="+", type=float, default=[0.0, 0.25, 0.5, 1.0])
     ap.add_argument("--results_csv", type=str, default="cvx_snn_vs_ste_arithmetic_seq_results.csv")
     ap.add_argument("--ste_loss", type=str, default="hinge_ovr", choices=["ce", "hinge", "hinge_ovr"])
     ap.add_argument("--carry_weight", type=float, default=2.0)
+    ap.add_argument(
+        "--beta_dist",
+        type=str,
+        default="fixed",
+        choices=["fixed", "het_loguniform", "het_uniform", "het_bimodal"],
+        help="Recurrent leak distribution for U_rec (same options as snn_p2.generate_snn_sign_patterns).",
+    )
     args = ap.parse_args()
 
     cfg = ComparatorConfig(
@@ -976,6 +1051,7 @@ def main():
         num_runs=args.num_runs,
         ste_loss=args.ste_loss,
         carry_weight=args.carry_weight,
+        beta_dist=args.beta_dist,
     )
 
     device = choose_best_device()
