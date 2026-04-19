@@ -10,7 +10,7 @@ import torch
 import torch.nn as nn
 from torch.optim.lr_scheduler import ReduceLROnPlateau
 
-from .loss_functions import LossFunction
+from .loss_functions import LossFunction, solve_multiclass_softmax_ce_l1_primal_dual
 
 
 def choose_device() -> torch.device:
@@ -532,20 +532,29 @@ def _run_cvx_method(
         ),
         flush=True,
     )
-    w = np.zeros((d_train.shape[1], num_classes), dtype=np.float64)
-    primal_sum = 0.0
-    dual_sum = 0.0
-    for c in range(num_classes):
-        y_bin = np.where(y_train == c, 1.0, -1.0).astype(np.float64)
-        sol = solve_binary_l1_primal_dual(
+    if solve_cfg.loss_name == "ce":
+        w, primal_sum, dual_sum, _ = solve_multiclass_softmax_ce_l1_primal_dual(
             d_train,
-            y_bin,
+            y_train,
             rho=rho,
-            loss_name=solve_cfg.loss_name,
+            num_classes=num_classes,
+            solver_order=("CLARABEL", "SCS"),
         )
-        w[:, c] = sol.w
-        primal_sum += sol.primal_obj
-        dual_sum += sol.dual_obj
+    else:
+        w = np.zeros((d_train.shape[1], num_classes), dtype=np.float64)
+        primal_sum = 0.0
+        dual_sum = 0.0
+        for c in range(num_classes):
+            y_bin = np.where(y_train == c, 1.0, -1.0).astype(np.float64)
+            sol = solve_binary_l1_primal_dual(
+                d_train,
+                y_bin,
+                rho=rho,
+                loss_name=solve_cfg.loss_name,
+            )
+            w[:, c] = sol.w
+            primal_sum += sol.primal_obj
+            dual_sum += sol.dual_obj
     train_scores = d_train @ w
     val_scores = d_val @ w
     test_scores = d_test @ w
@@ -556,10 +565,11 @@ def _run_cvx_method(
     train_objective = train_loss + rho * l1_penalty
     val_objective = val_loss + rho * l1_penalty
     test_objective = test_loss + rho * l1_penalty
+    gap_val = float(primal_sum - dual_sum) if np.isfinite(dual_sum) else float("nan")
     diag = CvxDiagnostics(
         primal_value=float(primal_sum),
         dual_value=float(dual_sum),
-        gap=float(primal_sum - dual_sum),
+        gap=gap_val,
         train_loss=train_loss,
         val_loss=val_loss,
         test_loss=test_loss,

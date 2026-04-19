@@ -1,7 +1,10 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import Tuple
 
+import cvxpy as cp
+import numpy as np
 import torch
 import torch.nn.functional as F
 
@@ -134,3 +137,139 @@ class LossFunction:
         if name == "squared":
             return LossOutput(name=name, value=cls.squared(y=y, f_x=f_x))
         raise ValueError(f"Unknown loss function: {name}. Expected one of: ce, hinge, hinge_ovr, squared.")
+
+
+# ---------------------------------------------------------------------------
+# Convex multiclass softmax CE + elementwise L1 (CVXPY): primal, dual, gap
+# ---------------------------------------------------------------------------
+#
+# Primal (W in R^{p×K}, D in R^{n×p}, rows D_i):
+#   min_W  (1/n) * sum_i ( logsumexp(D_i W) - (D_i W)_{y_i} ) + rho * sum_{j,k} |W_{jk}|
+# Same objective as LossFunction.ce(D @ W, y) (mean) + rho * ||W||_1 in the STE/CVX-SGD head.
+#
+# Dual (Λ in R^{n×K}), Fenchel conjugate of phi_i(z)=lse(z)-z_{y_i} at -n Λ_i:
+#   phi_i^*(-n λ) = sum_k v_{ik} log v_{ik},  v_i = e_{y_i} - n λ_i  on the simplex.
+#   Since v_k log v_k = -entr(v_k) in CVXPY (entr(x) = -x log x),
+#   -phi_i^*(-n λ_i) = sum_k entr(v_{ik}).
+#
+#   max_{Λ}  (1/n) * sum_{i,k} entr( E_{ik} - n Λ_{ik} )
+#   s.t.  E - n Λ >= 0,  sum_k Λ_{ik} = 0  ∀ i,  | (D^T Λ)_{jk} | <= rho  ∀ j,k
+#
+# Reference: composition F(DW)+rho||W||_1; dual -F^*(-Λ) with ||D^T Λ||_inf <= rho.
+
+
+def _solve_cvxpy_with_fallback(
+    problem: cp.Problem,
+    has_solution,
+    solver_order: Tuple[str, ...],
+) -> None:
+    for s in solver_order:
+        if s == "CLARABEL":
+            problem.solve(solver=cp.CLARABEL, verbose=False)
+        elif s == "OSQP":
+            problem.solve(solver=cp.OSQP, verbose=False, eps_abs=1e-8, eps_rel=1e-8, max_iter=200000)
+        elif s == "SCS":
+            problem.solve(solver=cp.SCS, verbose=False, eps=1e-5, max_iters=50000)
+        else:
+            raise ValueError(f"Unsupported solver token={s}")
+        if has_solution():
+            return
+
+
+def build_softmax_ce_l1_primal_problem(
+    D: np.ndarray,
+    y: np.ndarray,
+    rho: float,
+    num_classes: int,
+) -> Tuple[cp.Problem, cp.Variable]:
+    """Primal: mean softmax CE + rho * sum |W|."""
+    n, p = D.shape
+    Df = D.astype(np.float64)
+    y_i = y.astype(np.int64)
+    if y_i.ndim != 1 or y_i.shape[0] != n:
+        raise ValueError(f"Expected y shape (n,) with n={n}, got {y_i.shape}.")
+    if num_classes < 2 or int(y_i.min()) < 0 or int(y_i.max()) >= num_classes:
+        raise ValueError(f"Invalid labels or num_classes={num_classes}.")
+
+    W = cp.Variable((p, num_classes))
+    scores = Df @ W
+    row_losses = []
+    for i in range(n):
+        yi = int(y_i[i])
+        row_losses.append(cp.log_sum_exp(scores[i, :]) - scores[i, yi])
+    primal_obj = (1.0 / n) * cp.sum(row_losses) + rho * cp.sum(cp.abs(W))
+    prob = cp.Problem(cp.Minimize(primal_obj))
+    return prob, W
+
+
+def build_softmax_ce_l1_dual_problem(
+    D: np.ndarray,
+    y: np.ndarray,
+    rho: float,
+    num_classes: int,
+) -> Tuple[cp.Problem, cp.Variable]:
+    """Dual of softmax CE + elementwise L1; objective to be maximized."""
+    n, p = D.shape
+    Df = D.astype(np.float64)
+    y_i = y.astype(np.int64)
+    if y_i.ndim != 1 or y_i.shape[0] != n:
+        raise ValueError(f"Expected y shape (n,) with n={n}, got {y_i.shape}.")
+    if num_classes < 2 or int(y_i.min()) < 0 or int(y_i.max()) >= num_classes:
+        raise ValueError(f"Invalid labels or num_classes={num_classes}.")
+
+    E = np.zeros((n, num_classes), dtype=np.float64)
+    E[np.arange(n), y_i] = 1.0
+    Lam = cp.Variable((n, num_classes))
+    v = E - n * Lam
+    DtLam = Df.T @ Lam
+    constraints = [
+        v >= 0.0,
+        cp.sum(Lam, axis=1) == 0.0,
+        DtLam <= rho,
+        DtLam >= -rho,
+    ]
+    dual_obj = (1.0 / n) * cp.sum(cp.entr(v))
+    prob = cp.Problem(cp.Maximize(dual_obj), constraints)
+    return prob, Lam
+
+
+def solve_multiclass_softmax_ce_l1_primal_dual(
+    D: np.ndarray,
+    y: np.ndarray,
+    rho: float,
+    num_classes: int,
+    *,
+    solver_order: Tuple[str, ...] = ("CLARABEL", "SCS"),
+) -> Tuple[np.ndarray, float, float, float]:
+    """
+    Solve primal and dual for softmax CE + L1; return (W, primal_val, dual_val, gap).
+
+    ``gap = primal_val - dual_val`` should be small when strong duality holds.
+    """
+    primal_prob, W = build_softmax_ce_l1_primal_problem(D, y, rho, num_classes)
+    _solve_cvxpy_with_fallback(
+        primal_prob,
+        has_solution=lambda: W.value is not None,
+        solver_order=solver_order,
+    )
+    if W.value is None:
+        raise RuntimeError("Softmax CE + L1 primal solver failed.")
+    w_star = np.asarray(W.value, dtype=np.float64)
+    primal_val = float(primal_prob.value)
+    if not np.isfinite(w_star).all() or not np.isfinite(primal_val):
+        raise FloatingPointError("Non-finite primal solution for softmax CE + L1.")
+
+    dual_prob, Lam = build_softmax_ce_l1_dual_problem(D, y, rho, num_classes)
+    _solve_cvxpy_with_fallback(
+        dual_prob,
+        has_solution=lambda: Lam.value is not None,
+        solver_order=solver_order,
+    )
+    if Lam.value is None:
+        raise RuntimeError("Softmax CE + L1 dual solver failed.")
+    dual_val = float(dual_prob.value)
+    if not np.isfinite(dual_val):
+        raise FloatingPointError("Non-finite dual objective for softmax CE + L1.")
+
+    gap = float(primal_val - dual_val)
+    return w_star, primal_val, dual_val, gap
