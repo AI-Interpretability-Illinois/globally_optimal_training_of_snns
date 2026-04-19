@@ -212,13 +212,6 @@ def ste_solve(
     val_y = torch.tensor(y_val, dtype=torch.long, device=run_device)
     test_y = torch.tensor(y_test, dtype=torch.long, device=run_device)
 
-    if solve_cfg.optimizer_name == "adam":
-        optimizer = torch.optim.Adam(model.parameters(), lr=solve_cfg.lr, weight_decay=solve_cfg.weight_decay)
-    elif solve_cfg.optimizer_name == "sgd":
-        optimizer = torch.optim.SGD(model.parameters(), lr=solve_cfg.lr, weight_decay=solve_cfg.weight_decay)
-    else:
-        raise ValueError(f"Unknown optimizer_name={solve_cfg.optimizer_name}.")
-    scheduler = ReduceLROnPlateau(optimizer, mode="min", factor=0.5, patience=10)
     n_train = int(train_x.shape[0])
     if solve_cfg.batch_size is not None and int(solve_cfg.batch_size) != n_train:
         raise ValueError(
@@ -229,56 +222,68 @@ def ste_solve(
         (
             f"[ste-run] beta={float(solve_cfg.beta_path_reg):.6g} lr={float(solve_cfg.lr):.6g} "
             f"weight_decay={float(solve_cfg.weight_decay):.6g} "
-            f"batch_size=full({batch_size}) n_train={n_train}"
+            f"batch_size=full({batch_size}) n_train={n_train} epochs={int(solve_cfg.epochs)}"
         ),
         flush=True,
     )
 
     loss_history: List[float] = []
-    best_val = float("inf")
     best_state = None
     n_samples = n_train
-    for epoch in range(1, solve_cfg.epochs + 1):
-        model.train()
-        permutation = torch.randperm(n_samples, device=run_device)
-        epoch_loss_accum = 0.0
-        for start in range(0, n_samples, batch_size):
-            idx = permutation[start : start + batch_size]
-            logits = model(train_x[idx])
-            loss = LossFunction.compute(name=solve_cfg.loss_name, y=train_y[idx], f_x=logits).value
-            if solve_cfg.beta_path_reg > 0.0:
-                loss = loss + float(solve_cfg.beta_path_reg) * snn_path_reg(model)
-            optimizer.zero_grad()
-            loss.backward()
-            optimizer.step()
-            epoch_loss_accum += float(loss.item()) * int(idx.numel())
-        epoch_loss = epoch_loss_accum / float(n_samples)
-        val_loss = _compute_eval_loss(
-            model,
-            val_x,
-            val_y,
-            solve_cfg.loss_name,
-            beta_path_reg=solve_cfg.beta_path_reg,
-        )
-        scheduler.step(val_loss)
-        if val_loss < best_val:
-            best_val = val_loss
-            best_state = {k: v.detach().cpu().clone() for k, v in model.state_dict().items()}
-        if solve_cfg.log_every > 0 and epoch % solve_cfg.log_every == 0:
-            train_acc = _compute_eval_accuracy(model, train_x, train_y)
-            val_acc = _compute_eval_accuracy(model, val_x, val_y)
-            loss_history.append(epoch_loss)
-            print(
-                (
-                    f"[ste] epoch={epoch}/{solve_cfg.epochs} "
-                    f"train_loss={epoch_loss:.6f} val_loss={val_loss:.6f} "
-                    f"train_acc={train_acc:.4f} val_acc={val_acc:.4f}"
-                ),
-                flush=True,
+    if int(solve_cfg.epochs) == 0:
+        if pretrained_weights is None:
+            raise ValueError("ste_solve(epochs=0) requires pretrained_weights (no training steps to set state).")
+        best_state = {k: v.detach().cpu().clone() for k, v in model.state_dict().items()}
+    else:
+        if solve_cfg.optimizer_name == "adam":
+            optimizer = torch.optim.Adam(model.parameters(), lr=solve_cfg.lr, weight_decay=solve_cfg.weight_decay)
+        elif solve_cfg.optimizer_name == "sgd":
+            optimizer = torch.optim.SGD(model.parameters(), lr=solve_cfg.lr, weight_decay=solve_cfg.weight_decay)
+        else:
+            raise ValueError(f"Unknown optimizer_name={solve_cfg.optimizer_name}.")
+        scheduler = ReduceLROnPlateau(optimizer, mode="min", factor=0.5, patience=10)
+        best_val = float("inf")
+        for epoch in range(1, solve_cfg.epochs + 1):
+            model.train()
+            permutation = torch.randperm(n_samples, device=run_device)
+            epoch_loss_accum = 0.0
+            for start in range(0, n_samples, batch_size):
+                idx = permutation[start : start + batch_size]
+                logits = model(train_x[idx])
+                loss = LossFunction.compute(name=solve_cfg.loss_name, y=train_y[idx], f_x=logits).value
+                if solve_cfg.beta_path_reg > 0.0:
+                    loss = loss + float(solve_cfg.beta_path_reg) * snn_path_reg(model)
+                optimizer.zero_grad()
+                loss.backward()
+                optimizer.step()
+                epoch_loss_accum += float(loss.item()) * int(idx.numel())
+            epoch_loss = epoch_loss_accum / float(n_samples)
+            val_loss = _compute_eval_loss(
+                model,
+                val_x,
+                val_y,
+                solve_cfg.loss_name,
+                beta_path_reg=solve_cfg.beta_path_reg,
             )
+            scheduler.step(val_loss)
+            if val_loss < best_val:
+                best_val = val_loss
+                best_state = {k: v.detach().cpu().clone() for k, v in model.state_dict().items()}
+            if solve_cfg.log_every > 0 and epoch % solve_cfg.log_every == 0:
+                train_acc = _compute_eval_accuracy(model, train_x, train_y)
+                val_acc = _compute_eval_accuracy(model, val_x, val_y)
+                loss_history.append(epoch_loss)
+                print(
+                    (
+                        f"[ste] epoch={epoch}/{solve_cfg.epochs} "
+                        f"train_loss={epoch_loss:.6f} val_loss={val_loss:.6f} "
+                        f"train_acc={train_acc:.4f} val_acc={val_acc:.4f}"
+                    ),
+                    flush=True,
+                )
 
-    if best_state is None:
-        raise RuntimeError("Training did not produce any best_state.")
+        if best_state is None:
+            raise RuntimeError("Training did not produce any best_state.")
     model.load_state_dict(best_state)
 
     final_train_objective = _compute_eval_loss(

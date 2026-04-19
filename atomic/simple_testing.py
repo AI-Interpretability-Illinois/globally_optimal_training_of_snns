@@ -8,7 +8,7 @@ from contextlib import redirect_stdout
 from dataclasses import asdict
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, Tuple
+from typing import Any, Dict, List, Tuple
 
 import numpy as np
 import torch
@@ -18,9 +18,15 @@ if __package__ in (None, ""):
     from data_loaders.dfa_data_loader import make_dfa_dataset
     from data_loaders.image_data_loader import ImageSequenceDataset, load_cifar_seq_dataset, load_mnist_seq_dataset
     from data_loaders.uci_data_loader import UciDataset, load_uci_dataset
-    from fine_tune import FineTuneConfig, run_fine_tune_pipeline
+    from fine_tune import (
+        FineTuneConfig,
+        assert_finetune_manifest_matches_runtime,
+        load_finetune_weight_checkpoint,
+        run_fine_tune_pipeline,
+        validate_finetune_weight_shapes_against_manifest,
+    )
     from layer_wise_stacking_test_bench import LayerWiseConfig, run_layer_wise_stacking_test_bench
-    from solver_grids import BETA_GRID_DEFAULT, BIAS_GRID_DEFAULT, LR_GRID_DEFAULT
+    from solver_grids import BETA_GRID_DEFAULT, BIAS_GRID_DEFAULT, LR_GRID_DEFAULT, cvx_lr_sweep_values
     from solvers.cvx_solve import (
         InitializationConfig,
         SolveConfig,
@@ -34,9 +40,15 @@ else:
     from .data_loaders.dfa_data_loader import make_dfa_dataset
     from .data_loaders.image_data_loader import ImageSequenceDataset, load_cifar_seq_dataset, load_mnist_seq_dataset
     from .data_loaders.uci_data_loader import UciDataset, load_uci_dataset
-    from .fine_tune import FineTuneConfig, run_fine_tune_pipeline
+    from .fine_tune import (
+        FineTuneConfig,
+        assert_finetune_manifest_matches_runtime,
+        load_finetune_weight_checkpoint,
+        run_fine_tune_pipeline,
+        validate_finetune_weight_shapes_against_manifest,
+    )
     from .layer_wise_stacking_test_bench import LayerWiseConfig, run_layer_wise_stacking_test_bench
-    from .solver_grids import BETA_GRID_DEFAULT, BIAS_GRID_DEFAULT, LR_GRID_DEFAULT
+    from .solver_grids import BETA_GRID_DEFAULT, BIAS_GRID_DEFAULT, LR_GRID_DEFAULT, cvx_lr_sweep_values
     from .solvers.cvx_solve import (
         InitializationConfig,
         SolveConfig,
@@ -360,9 +372,10 @@ def _make_simple_summary_md(args: argparse.Namespace, result: Dict[str, Any]) ->
     if cvx is not None:
         cvx_p = cvx["selected_params"]
         cvx_l = cvx["final_losses"]
+        lr_cell = "-" if cvx_p.get("lr") is None else f"{float(cvx_p['lr']):.6g}"
         lines.append(
             (
-                f"| CVX (gaussian, {args.cvx_method}) | {cvx_p['lr']:.6g} | {cvx_p['beta']:.6g} | {cvx_p['bias']:.6g} | "
+                f"| CVX (gaussian, {args.cvx_method}) | {lr_cell} | {cvx_p['beta']:.6g} | {cvx_p['bias']:.6g} | "
                 f"{cvx_l['train_loss']:.6f} | {cvx_l['val_loss']:.6f} | {cvx_l['test_loss']:.6f} | "
                 f"{float(cvx['test_last_step_acc']):.4f} |"
             )
@@ -413,6 +426,24 @@ def _run_simple_mode(args: argparse.Namespace, data: Dict[str, Any]) -> Tuple[Di
     run_cvx = args.simple_side in ("both", "cvx_only")
     bias_grid = _resolve_simple_bias_grid(args)
 
+    init_weights: List[np.ndarray] | None = None
+    init_ckpt_meta: Dict[str, Any] | None = None
+    init_dir = args.init_weights_dir.strip() if getattr(args, "init_weights_dir", "") else ""
+    if init_dir:
+        man, w_list = load_finetune_weight_checkpoint(init_dir, args.init_weights_variant)
+        assert_finetune_manifest_matches_runtime(
+            man,
+            readout_mode=args.last_layer_readout,
+            P_in=d_in,
+            P_rec=args.P_rec,
+            P_last=args.P_last,
+            L=args.L,
+            num_classes=num_classes,
+        )
+        validate_finetune_weight_shapes_against_manifest(man, w_list)
+        init_weights = [np.asarray(w, dtype=np.float32) for w in w_list]
+        init_ckpt_meta = {"dir": str(Path(init_dir).resolve()), "variant": args.init_weights_variant, "manifest": man}
+
     best_ste = None
     best_ste_params = None
     best_ste_curve: Dict[str, list[float]] = {"epoch": [], "train_loss": [], "val_loss": [], "train_acc": [], "val_acc": []}
@@ -447,6 +478,7 @@ def _run_simple_mode(args: argparse.Namespace, data: Dict[str, Any]) -> Tuple[Di
                         weight_decay=0.0,
                         beta_path_reg=float(ste_beta),
                     ),
+                    pretrained_weights=init_weights,
                 )
                 score = float(out.best_losses["val_loss"]) + float(ste_beta)
                 if score < best_ste_score:
@@ -480,6 +512,7 @@ def _run_simple_mode(args: argparse.Namespace, data: Dict[str, Any]) -> Tuple[Di
                 weight_decay=0.0,
                 beta_path_reg=float(best_ste_params["beta"]),
             ),
+            pretrained_weights=init_weights,
         )
         print(ste_log_text, end="")
         best_ste_curve = _extract_ste_curve(ste_log_text)
@@ -502,20 +535,34 @@ def _run_simple_mode(args: argparse.Namespace, data: Dict[str, Any]) -> Tuple[Di
     }
     if run_cvx:
         best_cvx_score = float("inf")
+        cvx_lr_eff = cvx_lr_sweep_values(args.cvx_method, LR_GRID_DEFAULT)
         for cvx_beta in BETA_GRID_DEFAULT:
-            for cvx_lr in LR_GRID_DEFAULT:
+            for cvx_lr in cvx_lr_eff:
                 for cvx_bias in bias_grid:
                     _set_seed(args.seed)
-                    init_cfg = InitializationConfig(
-                        mode="gaussian",
-                        seed=args.seed,
-                        L=args.L,
-                        P_rec=args.P_rec,
-                        P_last=args.P_last,
-                        feature_count=args.P_last,
-                        last_layer_readout=args.last_layer_readout,
-                        bias=float(cvx_bias),
-                    )
+                    if init_weights is not None:
+                        init_cfg = InitializationConfig(
+                            mode="pretraining",
+                            seed=args.seed,
+                            L=args.L,
+                            P_rec=args.P_rec,
+                            P_last=args.P_last,
+                            feature_count=args.P_last,
+                            last_layer_readout=args.last_layer_readout,
+                            bias=float(cvx_bias),
+                            pretrained_weights=init_weights,
+                        )
+                    else:
+                        init_cfg = InitializationConfig(
+                            mode="gaussian",
+                            seed=args.seed,
+                            L=args.L,
+                            P_rec=args.P_rec,
+                            P_last=args.P_last,
+                            feature_count=args.P_last,
+                            last_layer_readout=args.last_layer_readout,
+                            bias=float(cvx_bias),
+                        )
                     out, _ = _capture_solver_stdout(
                         cvx_solve,
                         x_train=x_train,
@@ -540,19 +587,36 @@ def _run_simple_mode(args: argparse.Namespace, data: Dict[str, Any]) -> Tuple[Di
                     score = float(out.final_losses.get("val_objective", out.final_losses["val_loss"]))
                     if score < best_cvx_score:
                         best_cvx_score = score
-                        best_cvx_params = {"lr": float(cvx_lr), "beta": float(cvx_beta), "bias": float(cvx_bias)}
+                        best_cvx_params = {
+                            "lr": None if args.cvx_method == "cvx" else float(cvx_lr),
+                            "beta": float(cvx_beta),
+                            "bias": float(cvx_bias),
+                        }
         if best_cvx_params is not None:
             _set_seed(args.seed)
-            best_init = InitializationConfig(
-                mode="gaussian",
-                seed=args.seed,
-                L=args.L,
-                P_rec=args.P_rec,
-                P_last=args.P_last,
-                feature_count=args.P_last,
-                last_layer_readout=args.last_layer_readout,
-                bias=float(best_cvx_params["bias"]),
-            )
+            if init_weights is not None:
+                best_init = InitializationConfig(
+                    mode="pretraining",
+                    seed=args.seed,
+                    L=args.L,
+                    P_rec=args.P_rec,
+                    P_last=args.P_last,
+                    feature_count=args.P_last,
+                    last_layer_readout=args.last_layer_readout,
+                    bias=float(best_cvx_params["bias"]),
+                    pretrained_weights=init_weights,
+                )
+            else:
+                best_init = InitializationConfig(
+                    mode="gaussian",
+                    seed=args.seed,
+                    L=args.L,
+                    P_rec=args.P_rec,
+                    P_last=args.P_last,
+                    feature_count=args.P_last,
+                    last_layer_readout=args.last_layer_readout,
+                    bias=float(best_cvx_params["bias"]),
+                )
             best_cvx, cvx_log_text = _capture_solver_stdout(
                 cvx_solve,
                 x_train=x_train,
@@ -566,7 +630,7 @@ def _run_simple_mode(args: argparse.Namespace, data: Dict[str, Any]) -> Tuple[Di
                     method=args.cvx_method,
                     loss_name=args.loss_type,
                     beta=float(best_cvx_params["beta"]),
-                    lr=float(best_cvx_params["lr"]),
+                    lr=float(best_cvx_params["lr"]) if best_cvx_params["lr"] is not None else 0.0,
                     optimizer_name=args.optimizer_name,
                     epochs=args.cvx_epochs,
                     batch_size=None if args.batch_size == -1 else int(args.batch_size),
@@ -584,10 +648,13 @@ def _run_simple_mode(args: argparse.Namespace, data: Dict[str, Any]) -> Tuple[Di
         "dataset": args.dataset,
         "fixed_grids": {
             "beta_grid": list(BETA_GRID_DEFAULT),
-            "lr_grid": list(LR_GRID_DEFAULT),
+            "lr_grid": list(cvx_lr_sweep_values(args.cvx_method, LR_GRID_DEFAULT)),
             "bias_grid": list(bias_grid),
+            "cvx_lr_sweep_note": "For method=cvx, lr is not swept (single placeholder 0.0); sweep is beta × bias only.",
         },
     }
+    if init_ckpt_meta is not None:
+        result["init_checkpoint"] = init_ckpt_meta
     arithmetic_mode = args.dataset == "arithmetic_seq"
     if run_ste and best_ste is not None and best_ste_params is not None:
         ste_losses = dict(best_ste.best_losses)
@@ -660,6 +727,9 @@ def _run_fine_tune_mode(args: argparse.Namespace, data: Dict[str, Any]) -> Dict[
         bias_grid=bias_grid_default,
         ste_beta_grid=BETA_GRID_DEFAULT,
         ste_lr_grid=LR_GRID_DEFAULT,
+        weights_save_dir=(args.weights_save_dir.strip() or None),
+        init_weights_dir=(args.init_weights_dir.strip() or None),
+        init_weights_variant=args.init_weights_variant,
     )
     out = run_fine_tune_pipeline(
         x_train=data["x_train"],
@@ -776,6 +846,28 @@ def parse_args() -> argparse.Namespace:
         nargs="+",
         default=None,
         help="Optional CVX bias sweep values for --mode simple. If omitted, simple mode uses bias=0.0 only.",
+    )
+    parser.add_argument(
+        "--weights_save_dir",
+        type=str,
+        default="",
+        help="If set with --mode fine_tune, save pretrain/CVX/STE-post weights under this directory (per readout subfolder).",
+    )
+    parser.add_argument(
+        "--init_weights_dir",
+        type=str,
+        default="",
+        help=(
+            "Directory with finetune_manifest.json + pretrain_snn_weights.npz (or ste_post per --init_weights_variant). "
+            "When set, STE and CVX use these SNN weights (simple + fine_tune); architecture must match CLI L, P_rec, P_last, readout."
+        ),
+    )
+    parser.add_argument(
+        "--init_weights_variant",
+        type=str,
+        choices=("pretrain", "ste_post"),
+        default="pretrain",
+        help="Which SNN npz inside init_weights_dir to load for initialization.",
     )
 
     # Arithmetic dataset options

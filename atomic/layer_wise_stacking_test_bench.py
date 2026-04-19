@@ -7,11 +7,11 @@ import numpy as np
 import torch
 
 if __package__ in (None, ""):
-    from solver_grids import BETA_GRID_DEFAULT, BIAS_GRID_DEFAULT, LR_GRID_DEFAULT
+    from solver_grids import BETA_GRID_DEFAULT, BIAS_GRID_DEFAULT, LR_GRID_DEFAULT, cvx_lr_sweep_values
     from solvers.cvx_solve import InitializationConfig, SolveConfig, cvx_solve
     from solvers.ste_solve import SNNBaselineSeq, SteModelConfig, SteSolveConfig, ste_solve
 else:
-    from .solver_grids import BETA_GRID_DEFAULT, BIAS_GRID_DEFAULT, LR_GRID_DEFAULT
+    from .solver_grids import BETA_GRID_DEFAULT, BIAS_GRID_DEFAULT, LR_GRID_DEFAULT, cvx_lr_sweep_values
     from .solvers.cvx_solve import InitializationConfig, SolveConfig, cvx_solve
     from .solvers.ste_solve import SNNBaselineSeq, SteModelConfig, SteSolveConfig, ste_solve
 
@@ -134,8 +134,9 @@ def run_layer_wise_stacking_test_bench(
         best_cvx_beta = None
         best_cvx_lr = None
         best_cvx_bias = None
+        cvx_lr_eff = cvx_lr_sweep_values(cfg.cvx_method, cfg.cvx_lr_grid)
         for cvx_beta in cfg.cvx_beta_grid:
-            for cvx_lr in cfg.cvx_lr_grid:
+            for cvx_lr in cvx_lr_eff:
                 for cvx_bias in cfg.cvx_bias_grid:
                     out = cvx_solve(
                         x_train=current_x_train,
@@ -166,10 +167,12 @@ def run_layer_wise_stacking_test_bench(
                         best_cvx_val = float(val_obj)
                         best_cvx = out
                         best_cvx_beta = float(cvx_beta)
-                        best_cvx_lr = float(cvx_lr)
+                        best_cvx_lr = None if cfg.cvx_method == "cvx" else float(cvx_lr)
                         best_cvx_bias = float(cvx_bias)
-        if best_cvx is None or best_cvx_beta is None or best_cvx_lr is None or best_cvx_bias is None:
+        if best_cvx is None or best_cvx_beta is None or best_cvx_bias is None:
             raise RuntimeError("Layer-wise CVX sweep failed.")
+        if cfg.cvx_method == "sgd" and best_cvx_lr is None:
+            raise RuntimeError("Layer-wise CVX-SGD sweep failed to record lr.")
 
         best_ste_ft = None
         best_ste_ft_val = float("inf")
@@ -220,7 +223,11 @@ def run_layer_wise_stacking_test_bench(
                 "ste_finetune": best_ste_ft,
                 "cvx_init_source": "pretraining",
                 "ste_pre_selected_params": {"lr": best_ste_pre_lr, "beta": best_ste_pre_beta},
-                "cvx_selected_params": {"lr": best_cvx_lr, "beta": best_cvx_beta, "bias": best_cvx_bias},
+                "cvx_selected_params": {
+                    "lr": best_cvx_lr,
+                    "beta": best_cvx_beta,
+                    "bias": best_cvx_bias,
+                },
                 "ste_finetune_selected_params": {"lr": best_ste_ft_lr, "beta": best_ste_ft_beta},
             }
         )

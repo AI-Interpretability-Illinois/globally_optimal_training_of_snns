@@ -11,7 +11,7 @@ import numpy as np
 from .data_loaders.arithmetic_data_loader import load_arithmetic_dataset
 from .data_loaders.dfa_data_loader import make_dfa_dataset
 from .layer_wise_stacking_test_bench import LayerWiseConfig, run_layer_wise_stacking_test_bench
-from .solver_grids import BETA_GRID_DEFAULT, BIAS_GRID_DEFAULT, LR_GRID_DEFAULT
+from .solver_grids import BETA_GRID_DEFAULT, BIAS_GRID_DEFAULT, LR_GRID_DEFAULT, cvx_lr_sweep_values
 from .solvers.cvx_solve import InitializationConfig, SolveConfig, cvx_solve
 from .solvers.ste_solve import SNNBaselineSeq, SteModelConfig, SteSolveConfig, ste_solve
 
@@ -375,15 +375,16 @@ def run_deterministic_bench(cfg: DeterministicBenchConfig) -> dict:
         transferred_weights = _extract_weight_list(ste_out.model)
 
         cvx_by_init: Dict[str, object] = {}
-        cvx_selected_params: Dict[str, Dict[str, float]] = {}
+        cvx_selected_params: Dict[str, Dict[str, float | None]] = {}
         if cfg.init_mode in ("gaussian", "both"):
             best_cvx = None
             best_cvx_val = float("inf")
             best_beta = None
-            best_lr = None
+            best_lr: float | None = None
             best_bias = None
+            cvx_lr_eff = cvx_lr_sweep_values(cfg.cvx_method, cfg.cvx_lr_grid)
             for cvx_beta in cfg.cvx_beta_grid:
-                for cvx_lr in cfg.cvx_lr_grid:
+                for cvx_lr in cvx_lr_eff:
                     for cvx_bias in cfg.cvx_bias_grid:
                         out = cvx_solve(
                             x_train=x_train,
@@ -413,20 +414,23 @@ def run_deterministic_bench(cfg: DeterministicBenchConfig) -> dict:
                             best_cvx_val = float(val_obj)
                             best_cvx = out
                             best_beta = float(cvx_beta)
-                            best_lr = float(cvx_lr)
+                            best_lr = float(cvx_lr) if cfg.cvx_method == "sgd" else None
                             best_bias = float(cvx_bias)
-            if best_cvx is None or best_beta is None or best_lr is None or best_bias is None:
+            if best_cvx is None or best_beta is None or best_bias is None:
                 raise RuntimeError("Deterministic CVX (gaussian) sweep failed.")
+            if cfg.cvx_method == "sgd" and best_lr is None:
+                raise RuntimeError("Deterministic CVX (gaussian) sweep missing selected lr for sgd.")
             cvx_by_init["gaussian"] = best_cvx
             cvx_selected_params["gaussian"] = {"beta": best_beta, "lr": best_lr, "bias": best_bias}
         if cfg.init_mode in ("fine_tune", "both"):
             best_cvx = None
             best_cvx_val = float("inf")
             best_beta = None
-            best_lr = None
+            best_lr: float | None = None
             best_bias = None
+            cvx_lr_eff = cvx_lr_sweep_values(cfg.cvx_method, cfg.cvx_lr_grid)
             for cvx_beta in cfg.cvx_beta_grid:
-                for cvx_lr in cfg.cvx_lr_grid:
+                for cvx_lr in cvx_lr_eff:
                     for cvx_bias in cfg.cvx_bias_grid:
                         out = cvx_solve(
                             x_train=x_train,
@@ -457,10 +461,12 @@ def run_deterministic_bench(cfg: DeterministicBenchConfig) -> dict:
                             best_cvx_val = float(val_obj)
                             best_cvx = out
                             best_beta = float(cvx_beta)
-                            best_lr = float(cvx_lr)
+                            best_lr = float(cvx_lr) if cfg.cvx_method == "sgd" else None
                             best_bias = float(cvx_bias)
-            if best_cvx is None or best_beta is None or best_lr is None or best_bias is None:
+            if best_cvx is None or best_beta is None or best_bias is None:
                 raise RuntimeError("Deterministic CVX (fine_tune) sweep failed.")
+            if cfg.cvx_method == "sgd" and best_lr is None:
+                raise RuntimeError("Deterministic CVX (fine_tune) sweep missing selected lr for sgd.")
             cvx_by_init["fine_tune"] = best_cvx
             cvx_selected_params["fine_tune"] = {"beta": best_beta, "lr": best_lr, "bias": best_bias}
 
