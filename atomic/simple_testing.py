@@ -327,6 +327,17 @@ def _resolve_task_name(args: argparse.Namespace) -> str:
     return re.sub(r"[^A-Za-z0-9_]+", "_", raw).strip("_")
 
 
+def _resolve_weights_save_dir(args: argparse.Namespace) -> str | None:
+    """Relative paths are resolved under the atomic package directory (e.g. finetune_weights -> atomic/finetune_weights)."""
+    raw = (args.weights_save_dir or "").strip()
+    if not raw:
+        return None
+    p = Path(raw)
+    if not p.is_absolute():
+        p = Path(__file__).resolve().parent / p
+    return str(p.resolve())
+
+
 def _artifact_paths(args: argparse.Namespace) -> Dict[str, Path]:
     task_name = _resolve_task_name(args)
     out_dir = Path(__file__).resolve().parent / "sweep_results" / f"{task_name}_{args.L}_{args.T}"
@@ -727,7 +738,7 @@ def _run_fine_tune_mode(args: argparse.Namespace, data: Dict[str, Any]) -> Dict[
         bias_grid=bias_grid_default,
         ste_beta_grid=BETA_GRID_DEFAULT,
         ste_lr_grid=LR_GRID_DEFAULT,
-        weights_save_dir=(args.weights_save_dir.strip() or None),
+        weights_save_dir=_resolve_weights_save_dir(args),
         init_weights_dir=(args.init_weights_dir.strip() or None),
         init_weights_variant=args.init_weights_variant,
     )
@@ -850,8 +861,12 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--weights_save_dir",
         type=str,
-        default="",
-        help="If set with --mode fine_tune, save pretrain/CVX/STE-post weights under this directory (per readout subfolder).",
+        default="finetune_weights",
+        help=(
+            "With --mode fine_tune, save weights under this directory (per readout subfolder). "
+            "Relative paths are resolved under atomic/ (default: finetune_weights -> atomic/finetune_weights). "
+            "Pass empty to disable saving."
+        ),
     )
     parser.add_argument(
         "--init_weights_dir",
