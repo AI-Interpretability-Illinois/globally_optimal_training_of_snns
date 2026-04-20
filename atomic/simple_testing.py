@@ -188,6 +188,38 @@ def _load_dataset_from_args(args: argparse.Namespace) -> Dict[str, Any]:
     raise ValueError(f"Unsupported dataset={args.dataset}.")
 
 
+def _build_cvx_features_for_eval(
+    *,
+    x_train: np.ndarray,
+    x_val: np.ndarray,
+    x_test: np.ndarray,
+    init_cfg: InitializationConfig,
+    all_timesteps: bool,
+) -> Tuple[np.ndarray, np.ndarray, np.ndarray, Any]:
+    """Must match ``cvx_solve`` routing: K_parallel>1 uses parallel feature map (same as training)."""
+    if int(getattr(init_cfg, "K_parallel", 1)) > 1:
+        if __package__ in (None, ""):
+            from solvers import cvx_parallel_Solve as cvx_par
+        else:
+            from .solvers import cvx_parallel_Solve as cvx_par
+
+        pic = cvx_par.InitializationConfig(**asdict(init_cfg))
+        return cvx_par._build_feature_map(
+            x_train,
+            x_val,
+            x_test,
+            pic,
+            all_timesteps=all_timesteps,
+        )
+    return _build_feature_map(
+        x_train,
+        x_val,
+        x_test,
+        init_cfg,
+        all_timesteps=all_timesteps,
+    )
+
+
 def _ste_last_step_acc(model: torch.nn.Module, x_test: np.ndarray, y_test: np.ndarray) -> float:
     device = next(model.parameters()).device
     x = torch.tensor(x_test, dtype=torch.float32, device=device)
@@ -211,7 +243,7 @@ def _cvx_last_step_acc(
     init_cfg: InitializationConfig,
 ) -> float:
     supervise_all = y_test.ndim == 2
-    _, _, d_test, _ = _build_feature_map(
+    _, _, d_test, _ = _build_cvx_features_for_eval(
         x_train=x_train,
         x_val=x_val,
         x_test=x_test,

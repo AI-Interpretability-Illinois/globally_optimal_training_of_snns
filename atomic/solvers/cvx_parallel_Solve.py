@@ -263,19 +263,40 @@ def _readouts_to_thresholded_features(
     all_timesteps: bool,
     p_last: int,
     feature_count: int,
+    last_layer_readout: str,
 ) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
     """
-    Map last LIF readout h to convex inputs D = 𝟙(h - bias >= 0). No extra linear U_last:
-    the learned convex weights act directly on these P_last indicators (standard two-layer convex NN view).
+    Map last LIF readout to convex inputs D. No extra linear U_last.
+
+    - membrane: D = 𝟙(h - bias >= 0).
+    - spike: readout is already {0,1}; pass through as D without applying ``bias``.
     """
     if int(feature_count) != int(p_last):
         raise ValueError(
-            "CVX features are binary thresholds on the last readout only (removed U_last). "
+            "CVX feature dim must match last readout width (removed U_last). "
             f"Require init_cfg.feature_count == P_last ({p_last}), got feature_count={feature_count}."
         )
     for r in (readout_tr, readout_va, readout_te):
         if int(r.shape[-1]) != int(p_last):
             raise ValueError(f"Readout trailing dim {r.shape[-1]} != P_last {p_last}.")
+    if last_layer_readout == "spike":
+        if all_timesteps:
+            d_train = readout_tr.astype(np.float64, copy=False).reshape(
+                readout_tr.shape[0] * readout_tr.shape[1], readout_tr.shape[2]
+            )
+            d_val = readout_va.astype(np.float64, copy=False).reshape(
+                readout_va.shape[0] * readout_va.shape[1], readout_va.shape[2]
+            )
+            d_test = readout_te.astype(np.float64, copy=False).reshape(
+                readout_te.shape[0] * readout_te.shape[1], readout_te.shape[2]
+            )
+        else:
+            d_train = readout_tr.astype(np.float64, copy=False)
+            d_val = readout_va.astype(np.float64, copy=False)
+            d_test = readout_te.astype(np.float64, copy=False)
+        return d_train, d_val, d_test
+    if last_layer_readout != "membrane":
+        raise ValueError(f"Unsupported last_layer_readout={last_layer_readout}. Expected membrane|spike.")
     if all_timesteps:
         d_train_seq = (readout_tr - bias >= 0.0).astype(np.float64)
         d_val_seq = (readout_va - bias >= 0.0).astype(np.float64)
@@ -357,6 +378,7 @@ def _build_feature_map(
                 all_timesteps=all_timesteps,
                 p_last=int(sub_p_last),
                 feature_count=int(sub_p_last),
+                last_layer_readout=str(init_cfg.last_layer_readout),
             )
             branch_tr.append(d_tr_b)
             branch_va.append(d_va_b)
@@ -431,6 +453,7 @@ def _build_feature_map(
                 all_timesteps=all_timesteps,
                 p_last=int(sub_p_last),
                 feature_count=int(sub_p_last),
+                last_layer_readout=str(init_cfg.last_layer_readout),
             )
             branch_tr.append(d_tr_b)
             branch_va.append(d_va_b)
