@@ -13,6 +13,7 @@ from .data_loaders.dfa_data_loader import make_dfa_dataset
 from .layer_wise_stacking_test_bench import LayerWiseConfig, run_layer_wise_stacking_test_bench
 from .solver_grids import BETA_GRID_DEFAULT, BIAS_GRID_DEFAULT, LR_GRID_DEFAULT, cvx_lr_sweep_values
 from .solvers.cvx_solve import InitializationConfig, SolveConfig, cvx_solve
+from .solvers import ste_parallel_Solve as ste_par
 from .solvers.ste_solve import SNNBaselineSeq, SteModelConfig, SteSolveConfig, ste_solve
 
 
@@ -33,6 +34,7 @@ class DeterministicBenchConfig:
     P_rec: int = 128
     P_last: int = 64
     L: int = 3
+    K_parallel: int = 1
     layer_wise_num_blocks: int = 2
     optimizer_name: str = "adam"
     cvx_method: str = "cvx"  # cvx | sgd
@@ -51,12 +53,20 @@ WIDTH_SCALE_SWEEP: tuple[float, ...] = (0.25, 0.5, 1.0, 2.0, 4.0)
 SPECIAL_SMALL_T: tuple[int, ...] = (5, 8)
 
 
-def _extract_weight_list(model: SNNBaselineSeq) -> List[np.ndarray]:
+def _extract_weight_list(model: SNNBaselineSeq | ste_par.SNNBaselineSeq) -> List[np.ndarray]:
     weights: List[np.ndarray] = []
-    for fc in model.fcs:
-        weights.append(fc.weight.detach().cpu().numpy().copy())
-    weights.append(model.classifier.weight.detach().cpu().numpy().copy())
-    return weights
+    if hasattr(model, "fcs") and hasattr(model, "classifier"):
+        for fc in model.fcs:
+            weights.append(fc.weight.detach().cpu().numpy().copy())
+        weights.append(model.classifier.weight.detach().cpu().numpy().copy())
+        return weights
+    if hasattr(model, "branches") and hasattr(model, "classifier"):
+        for br in model.branches:
+            for fc in br.fcs:
+                weights.append(fc.weight.detach().cpu().numpy().copy())
+        weights.append(model.classifier.weight.detach().cpu().numpy().copy())
+        return weights
+    raise TypeError(f"Unsupported SNN layout for weight export: {type(model)}")
 
 
 def _scalarize(value: Any) -> Any:
@@ -299,6 +309,11 @@ def _build_sweep_plan_for_task(
 
 
 def run_deterministic_bench(cfg: DeterministicBenchConfig) -> dict:
+    if int(cfg.K_parallel) > 1 and int(cfg.P_last) % int(cfg.K_parallel) != 0:
+        raise ValueError(f"P_last={cfg.P_last} must be divisible by K_parallel={cfg.K_parallel}.")
+    if int(cfg.L) >= 3 and int(cfg.K_parallel) > 1 and int(cfg.P_rec) % int(cfg.K_parallel) != 0:
+        raise ValueError(f"P_rec={cfg.P_rec} must be divisible by K_parallel={cfg.K_parallel} when L>=3.")
+
     if cfg.benchmark == "arithmetic":
         ds = load_arithmetic_dataset(
             op=cfg.op,
@@ -351,6 +366,7 @@ def run_deterministic_bench(cfg: DeterministicBenchConfig) -> dict:
                         L=cfg.L,
                         P_rec=cfg.P_rec,
                         P_last=cfg.P_last,
+                        K_parallel=int(cfg.K_parallel),
                     ),
                     solve_cfg=SteSolveConfig(
                         loss_name="hinge_ovr",
@@ -370,8 +386,8 @@ def run_deterministic_bench(cfg: DeterministicBenchConfig) -> dict:
         if best_ste is None or best_ste_lr is None or best_ste_beta is None:
             raise RuntimeError("Deterministic STE sweep failed to produce a candidate.")
         ste_out = best_ste
-        if not isinstance(ste_out.model, SNNBaselineSeq):
-            raise TypeError("Expected SNNBaselineSeq model from ste_solve.")
+        if not isinstance(ste_out.model, (SNNBaselineSeq, ste_par.SNNBaselineSeq)):
+            raise TypeError("Expected SNNBaselineSeq (or parallel variant) from ste_solve.")
         transferred_weights = _extract_weight_list(ste_out.model)
 
         cvx_by_init: Dict[str, object] = {}
@@ -400,6 +416,7 @@ def run_deterministic_bench(cfg: DeterministicBenchConfig) -> dict:
                                 P_last=cfg.P_last,
                                 feature_count=cfg.P_last,
                                 bias=float(cvx_bias),
+                                K_parallel=int(cfg.K_parallel),
                             ),
                             solve_cfg=SolveConfig(
                                 method=cfg.cvx_method,
@@ -447,6 +464,7 @@ def run_deterministic_bench(cfg: DeterministicBenchConfig) -> dict:
                                 P_last=cfg.P_last,
                                 feature_count=cfg.P_last,
                                 bias=float(cvx_bias),
+                                K_parallel=int(cfg.K_parallel),
                             ),
                             solve_cfg=SolveConfig(
                                 method=cfg.cvx_method,
@@ -507,6 +525,7 @@ def run_deterministic_bench(cfg: DeterministicBenchConfig) -> dict:
                 cvx_bias_grid=cfg.cvx_bias_grid,
                 ste_beta_grid=cfg.ste_beta_grid,
                 ste_lr_grid=cfg.ste_lr_grid,
+                K_parallel=int(cfg.K_parallel),
             ),
         )
 
@@ -552,6 +571,12 @@ def main() -> None:
         default=("addition", "xor", "parity"),
         help="Subset of tasks to run: addition xor parity",
     )
+    parser.add_argument(
+        "--K_parallel",
+        type=int,
+        default=1,
+        help="Parallel branch count for STE/CVX/layer_wise in this bench (1 = monolithic solvers).",
+    )
     args = parser.parse_args()
 
     csv_path = Path(args.csv_path)
@@ -565,6 +590,7 @@ def main() -> None:
         for item in plan:
             cfg = item["cfg"]
             cfg.cvx_method = args.cvx_method
+            cfg.K_parallel = int(args.K_parallel)
             out = run_deterministic_bench(cfg)
             base = {
                 "task_name": item["task_name"],
@@ -583,6 +609,7 @@ def main() -> None:
                 "n_test": cfg.n_test,
                 "P_rec": cfg.P_rec,
                 "P_last": cfg.P_last,
+                "K_parallel": cfg.K_parallel,
                 "op": cfg.op,
                 "base": cfg.base,
                 "n_digits": cfg.n_digits,

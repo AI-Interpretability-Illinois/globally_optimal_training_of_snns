@@ -20,6 +20,7 @@ if __package__ in (None, ""):
     from layer_wise_stacking_test_bench import LayerWiseConfig, run_layer_wise_stacking_test_bench
     from simple_testing import _cvx_last_step_acc, _load_dataset_from_args, _set_seed, _ste_last_step_acc
     from solver_grids import BETA_GRID_DEFAULT, BIAS_GRID_DEFAULT, LR_GRID_DEFAULT
+    from solvers import ste_parallel_Solve as ste_par
     from solvers.cvx_solve import InitializationConfig, SolveConfig, cvx_solve
     from solvers.ste_solve import SNNBaselineSeq, SteModelConfig, SteSolveConfig, ste_solve
 else:
@@ -27,6 +28,7 @@ else:
     from .layer_wise_stacking_test_bench import LayerWiseConfig, run_layer_wise_stacking_test_bench
     from .simple_testing import _cvx_last_step_acc, _load_dataset_from_args, _set_seed, _ste_last_step_acc
     from .solver_grids import BETA_GRID_DEFAULT, BIAS_GRID_DEFAULT, LR_GRID_DEFAULT
+    from .solvers import ste_parallel_Solve as ste_par
     from .solvers.cvx_solve import InitializationConfig, SolveConfig, cvx_solve
     from .solvers.ste_solve import SNNBaselineSeq, SteModelConfig, SteSolveConfig, ste_solve
 
@@ -84,12 +86,41 @@ def _arithmetic_acc_suffix(extra: Dict[str, Any]) -> str:
     return ""
 
 
+def _sweep_context_suffix() -> str:
+    """Best-effort context from the worker argparse namespace (set in _worker_init)."""
+    if _WORKER_ARGS is None:
+        return ""
+    ds = getattr(_WORKER_ARGS, "dataset", "")
+    kpar = int(getattr(_WORKER_ARGS, "K_parallel", 1))
+    t = int(getattr(_WORKER_ARGS, "T", 0))
+    l = int(getattr(_WORKER_ARGS, "L", 0))
+    p_rec = int(getattr(_WORKER_ARGS, "P_rec", 0))
+    p_last = int(getattr(_WORKER_ARGS, "P_last", 0))
+    cvx_m = getattr(_WORKER_ARGS, "cvx_method", "")
+    simple_side = getattr(_WORKER_ARGS, "simple_side", "")
+    return (
+        f" dataset={ds} K_parallel={kpar} T={t} L={l} P_rec={p_rec} P_last={p_last}"
+        f" cvx_method={cvx_m} simple_side={simple_side}"
+    )
+
+
+def _fmt_metric(x: Any) -> str:
+    try:
+        v = float(x)
+    except (TypeError, ValueError):
+        return "nan"
+    if not np.isfinite(v):
+        return "nan"
+    return f"{v:.6f}"
+
+
 def _log_run_start(task: SweepTask) -> None:
     print(
         "[run-start] "
-        f"run_id={task.run_id} pair_id={task.pair_id} task_type={task.task_type} "
-        f"pipeline_mode={task.pipeline_mode} seed={int(task.seed)} "
-        f"beta={float(task.beta):.8g} lr={float(task.lr):.8g} bias={float(task.bias):.8g}",
+        f"task_type={task.task_type} pipeline_mode={task.pipeline_mode} "
+        f"beta={float(task.beta):.8g} lr={float(task.lr):.8g} bias={float(task.bias):.8g} "
+        f"seed={int(task.seed)} run_id={task.run_id} pair_id={task.pair_id}"
+        f"{_sweep_context_suffix()}",
         flush=True,
     )
 
@@ -97,14 +128,25 @@ def _log_run_start(task: SweepTask) -> None:
 def _log_run_finish(task: SweepTask, result: SweepResult) -> None:
     extra = result.extra if isinstance(result.extra, dict) else {}
     arithmetic_suffix = _arithmetic_acc_suffix(extra)
+    arith_val = ""
+    if _is_finite_number(extra.get("val_token_acc")) and _is_finite_number(extra.get("val_seq_acc")):
+        arith_val = (
+            f" val_token_acc={_fmt_metric(extra.get('val_token_acc'))}"
+            f" val_seq_acc={_fmt_metric(extra.get('val_seq_acc'))}"
+        )
     if arithmetic_suffix:
-        acc_part = arithmetic_suffix
-    else:
-        acc_part = f" test_acc={float(result.test_last_step_acc):.6f}"
+        arith_val += " " + arithmetic_suffix.strip()
     print(
         "[run-finish] "
-        f"run_id={task.run_id} pair_id={task.pair_id} task_type={task.task_type} "
-        f"score={float(result.score):.6f}{acc_part}",
+        f"task_type={result.task_type} "
+        f"beta={float(task.beta):.8g} lr={float(task.lr):.8g} bias={float(task.bias):.8g} "
+        f"seed={int(task.seed)} run_id={task.run_id} pair_id={task.pair_id} "
+        f"score={_fmt_metric(result.score)} "
+        f"train_loss={_fmt_metric(result.train_loss)} val_loss={_fmt_metric(result.val_loss)} "
+        f"test_loss={_fmt_metric(result.test_loss)} "
+        f"train_acc={_fmt_metric(result.train_last_step_acc)} val_acc={_fmt_metric(result.val_last_step_acc)} "
+        f"test_acc={_fmt_metric(result.test_last_step_acc)}"
+        f"{arith_val}",
         flush=True,
     )
 
@@ -339,6 +381,7 @@ def _run_one_task(task: SweepTask) -> SweepResult:
             ste_post_epochs=int(_WORKER_ARGS.ste_post_epochs),
             last_layer_readout=str(_WORKER_ARGS.last_layer_readout),
             readout_modes=(str(_WORKER_ARGS.last_layer_readout),),
+            K_parallel=int(_WORKER_ARGS.K_parallel),
             beta_grid=tuple(float(x) for x in _WORKER_ARGS.beta_grid),
             lr_grid=tuple(float(x) for x in _WORKER_ARGS.lr_grid),
             bias_grid=tuple(float(x) for x in _WORKER_ARGS.bias_grid),
@@ -376,8 +419,8 @@ def _run_one_task(task: SweepTask) -> SweepResult:
         pretrained_weights = None
         if cvx_init_mode == "pretraining":
             ste_pre = selected["ste_pretrain"]
-            if not isinstance(ste_pre.model, SNNBaselineSeq):
-                raise TypeError("Expected SNNBaselineSeq model in fine_tune ste_pretrain result.")
+            if not isinstance(ste_pre.model, (SNNBaselineSeq, ste_par.SNNBaselineSeq)):
+                raise TypeError("Expected SNNBaselineSeq (or parallel variant) in fine_tune ste_pretrain result.")
             pretrained_weights = _extract_weights_from_snn(ste_pre.model)
         test_acc = float(
             _cvx_last_step_acc(
@@ -396,6 +439,7 @@ def _run_one_task(task: SweepTask) -> SweepResult:
                     last_layer_readout=str(_WORKER_ARGS.last_layer_readout),
                     bias=float(cvx_sel[best_source]["bias"]),
                     pretrained_weights=pretrained_weights,
+                    K_parallel=int(_WORKER_ARGS.K_parallel),
                 ),
             )
         )
@@ -429,6 +473,7 @@ def _run_one_task(task: SweepTask) -> SweepResult:
                         last_layer_readout=str(_WORKER_ARGS.last_layer_readout),
                         bias=float(cvx_sel[best_source]["bias"]),
                         pretrained_weights=pretrained_weights,
+                        K_parallel=int(_WORKER_ARGS.K_parallel),
                     ),
                 )
             ),
@@ -449,6 +494,7 @@ def _run_one_task(task: SweepTask) -> SweepResult:
                         last_layer_readout=str(_WORKER_ARGS.last_layer_readout),
                         bias=float(cvx_sel[best_source]["bias"]),
                         pretrained_weights=pretrained_weights,
+                        K_parallel=int(_WORKER_ARGS.K_parallel),
                     ),
                 )
             ),
@@ -506,6 +552,7 @@ def _run_one_task(task: SweepTask) -> SweepResult:
             cvx_bias_grid=tuple(float(x) for x in _WORKER_ARGS.bias_grid),
             ste_beta_grid=tuple(float(x) for x in _WORKER_ARGS.beta_grid),
             ste_lr_grid=tuple(float(x) for x in _WORKER_ARGS.lr_grid),
+            K_parallel=int(_WORKER_ARGS.K_parallel),
         )
         with _mute_output(suppress_task_logs):
             rows = run_layer_wise_stacking_test_bench(
@@ -524,8 +571,8 @@ def _run_one_task(task: SweepTask) -> SweepResult:
         cvx_out = final_block["cvx"]
         ste_ft = final_block["ste_finetune"]
         ste_pre = final_block["ste_pre"]
-        if not isinstance(ste_pre.model, SNNBaselineSeq):
-            raise TypeError("Expected SNNBaselineSeq model in layer-wise ste_pre result.")
+        if not isinstance(ste_pre.model, (SNNBaselineSeq, ste_par.SNNBaselineSeq)):
+            raise TypeError("Expected SNNBaselineSeq (or parallel variant) in layer-wise ste_pre result.")
         cvx_init = InitializationConfig(
             mode="pretraining",
             seed=int(task.seed),
@@ -535,6 +582,7 @@ def _run_one_task(task: SweepTask) -> SweepResult:
             feature_count=int(_WORKER_ARGS.P_last),
             bias=float(final_block["cvx_selected_params"]["bias"]),
             pretrained_weights=_extract_weights_from_snn(ste_pre.model),
+            K_parallel=int(_WORKER_ARGS.K_parallel),
         )
         result = SweepResult(
             task_type="layer_wise",
@@ -631,6 +679,7 @@ def _run_one_task(task: SweepTask) -> SweepResult:
                     L=int(_WORKER_ARGS.L),
                     P_rec=int(_WORKER_ARGS.P_rec),
                     P_last=int(_WORKER_ARGS.P_last),
+                    K_parallel=int(_WORKER_ARGS.K_parallel),
                     last_layer_readout=str(_WORKER_ARGS.last_layer_readout),
                 ),
                 solve_cfg=SteSolveConfig(
@@ -691,6 +740,7 @@ def _run_one_task(task: SweepTask) -> SweepResult:
         feature_count=int(_WORKER_ARGS.P_last),
         last_layer_readout=str(_WORKER_ARGS.last_layer_readout),
         bias=float(task.bias),
+        K_parallel=int(_WORKER_ARGS.K_parallel),
     )
     run_device = torch.device("cpu") if str(_WORKER_ARGS.cvx_method) == "cvx" else _WORKER_DEVICE
     with _mute_output(suppress_task_logs):
@@ -906,12 +956,20 @@ def _build_task_name(args: argparse.Namespace) -> str:
     return str(args.dataset)
 
 
-def _extract_weights_from_snn(model: SNNBaselineSeq) -> List[np.ndarray]:
+def _extract_weights_from_snn(model: torch.nn.Module) -> List[np.ndarray]:
     weights: List[np.ndarray] = []
-    for fc in model.fcs:
-        weights.append(fc.weight.detach().cpu().numpy().copy())
-    weights.append(model.classifier.weight.detach().cpu().numpy().copy())
-    return weights
+    if hasattr(model, "fcs") and hasattr(model, "classifier"):
+        for fc in model.fcs:
+            weights.append(fc.weight.detach().cpu().numpy().copy())
+        weights.append(model.classifier.weight.detach().cpu().numpy().copy())
+        return weights
+    if hasattr(model, "branches") and hasattr(model, "classifier"):
+        for br in model.branches:
+            for fc in br.fcs:
+                weights.append(fc.weight.detach().cpu().numpy().copy())
+        weights.append(model.classifier.weight.detach().cpu().numpy().copy())
+        return weights
+    raise TypeError(f"Unsupported SNN layout for weight export: {type(model)}")
 
 
 def _default_csv_paths(args: argparse.Namespace) -> Dict[str, Path]:
@@ -942,6 +1000,7 @@ def _flatten_result_row(
         "L": int(args.L),
         "P_rec": int(args.P_rec),
         "P_last": int(args.P_last),
+        "K_parallel": int(args.K_parallel),
         "loss_type": str(args.loss_type),
         "optimizer_name": str(args.optimizer_name),
         "cvx_method": str(args.cvx_method),
@@ -1012,6 +1071,12 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--L", type=int, default=3)
     parser.add_argument("--P_rec", type=int, default=2048)
     parser.add_argument("--P_last", type=int, default=4096)
+    parser.add_argument(
+        "--K_parallel",
+        type=int,
+        default=1,
+        help="Parallel SNN/CVX branch count; 1 uses monolithic solvers.",
+    )
     parser.add_argument("--loss_type", choices=("ce", "hinge", "hinge_ovr", "squared"), default="hinge")
     parser.add_argument("--optimizer_name", choices=("adam", "sgd"), default="adam")
     parser.add_argument("--cvx_method", choices=("cvx", "sgd"), default="sgd")

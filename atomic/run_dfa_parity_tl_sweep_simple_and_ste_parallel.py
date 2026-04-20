@@ -11,8 +11,10 @@ L_LIST = [3, 5, 10, 15, 20, 30, 50, 80, 120]
 SEEDS = [0, 1, 2]
 PARITY_SPECS = ["parity_2", "parity_3", "parity_5", "parity_7"]
 CVX_BIAS_GRID = [0.0]
+K_PARALLEL_LIST = [50, 100, 500, 1000, 2000]
 
 # Placeholder widths/sample sizes, aligned with MNIST sweep style.
+# P_rec and P_last must be divisible by every K_parallel in K_PARALLEL_LIST.
 COMMON = {
     "dataset": "dfa",
     "P_rec": 10000,
@@ -49,18 +51,65 @@ def main() -> None:
     python_exe = "python3"
 
     if args.side in ("both", "cvx_only"):
-        for dfa_spec in PARITY_SPECS:
-            for l in L_LIST:
+        for k_par in K_PARALLEL_LIST:
+            for dfa_spec in PARITY_SPECS:
+                for l in L_LIST:
+                    for t in T_LIST:
+                        for seed in SEEDS:
+                            cmd = [
+                                python_exe,
+                                "-m",
+                                "simple_testing",
+                                "--mode",
+                                "simple",
+                                "--simple_side",
+                                "cvx_only",
+                                "--dataset",
+                                COMMON["dataset"],
+                                "--dfa_spec",
+                                dfa_spec,
+                                "--cvx_method",
+                                COMMON["cvx_method"],
+                                "--loss_type",
+                                COMMON["loss_type"],
+                                "--seed",
+                                str(seed),
+                                "--T",
+                                str(t),
+                                "--n_train",
+                                str(COMMON["n_train"]),
+                                "--n_val",
+                                str(COMMON["n_val"]),
+                                "--n_test",
+                                str(COMMON["n_test"]),
+                                "--L",
+                                str(l),
+                                "--P_last",
+                                str(COMMON["P_last"]),
+                                "--P_rec",
+                                str(COMMON["P_rec"]),
+                                "--K_parallel",
+                                str(k_par),
+                                "--cvx_epochs",
+                                "200",
+                                "--bias_grid",
+                                *[str(b) for b in CVX_BIAS_GRID],
+                            ]
+                            run_cmd(cmd, cwd=atomic_dir)
+
+    if args.side in ("both", "ste_only"):
+        for k_par in K_PARALLEL_LIST:
+            for dfa_spec in PARITY_SPECS:
                 for t in T_LIST:
-                    for seed in SEEDS:
+                    for l in L_LIST:
                         cmd = [
                             python_exe,
                             "-m",
-                            "simple_testing",
-                            "--mode",
+                            "parallel_sweep_helper",
+                            "--pipeline_mode",
                             "simple",
                             "--simple_side",
-                            "cvx_only",
+                            "ste_only",
                             "--dataset",
                             COMMON["dataset"],
                             "--dfa_spec",
@@ -69,8 +118,8 @@ def main() -> None:
                             COMMON["cvx_method"],
                             "--loss_type",
                             COMMON["loss_type"],
-                            "--seed",
-                            str(seed),
+                            "--seeds",
+                            *[str(s) for s in SEEDS],
                             "--T",
                             str(t),
                             "--n_train",
@@ -85,53 +134,12 @@ def main() -> None:
                             str(COMMON["P_last"]),
                             "--P_rec",
                             str(COMMON["P_rec"]),
-                            "--cvx_epochs",
+                            "--K_parallel",
+                            str(k_par),
+                            "--ste_epochs",
                             "200",
-                            "--bias_grid",
-                            *[str(b) for b in CVX_BIAS_GRID],
                         ]
                         run_cmd(cmd, cwd=atomic_dir)
-
-    if args.side in ("both", "ste_only"):
-        for dfa_spec in PARITY_SPECS:
-            for t in T_LIST:
-                for l in L_LIST:
-                    cmd = [
-                        python_exe,
-                        "-m",
-                        "parallel_sweep_helper",
-                        "--pipeline_mode",
-                        "simple",
-                        "--simple_side",
-                        "ste_only",
-                        "--dataset",
-                        COMMON["dataset"],
-                        "--dfa_spec",
-                        dfa_spec,
-                        "--cvx_method",
-                        COMMON["cvx_method"],
-                        "--loss_type",
-                        COMMON["loss_type"],
-                        "--seeds",
-                        *[str(s) for s in SEEDS],
-                        "--T",
-                        str(t),
-                        "--n_train",
-                        str(COMMON["n_train"]),
-                        "--n_val",
-                        str(COMMON["n_val"]),
-                        "--n_test",
-                        str(COMMON["n_test"]),
-                        "--L",
-                        str(l),
-                        "--P_last",
-                        str(COMMON["P_last"]),
-                        "--P_rec",
-                        str(COMMON["P_rec"]),
-                        "--ste_epochs",
-                        "200",
-                    ]
-                    run_cmd(cmd, cwd=atomic_dir)
 
 
 if __name__ == "__main__":

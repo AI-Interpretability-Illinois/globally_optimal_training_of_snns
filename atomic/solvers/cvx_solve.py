@@ -32,6 +32,7 @@ class InitializationConfig:
     L: int = 3
     P_rec: int = 128
     P_last: int = 64
+    K_parallel: int = 1
     beta_leak: float = 0.99
     threshold: float = 1.0
     last_layer_readout: str = "membrane"
@@ -575,7 +576,7 @@ def _run_cvx_method(
         test_loss=test_loss,
     )
     return CvxSolveResult(
-        trained_model={"weights": w},
+        trained_model={"weights": w, "weights_blocks": None, "method": "cvx"},
         loss_history=[train_loss],
         final_losses={
             "train_loss": train_loss,
@@ -693,8 +694,9 @@ def _run_sgd_method(
         val_loss=val_loss,
         test_loss=test_loss,
     )
+    w_np = model.linear.weight.detach().cpu().numpy().astype(np.float64).T
     return CvxSolveResult(
-        trained_model=model.cpu(),
+        trained_model={"weights": w_np, "weights_blocks": None, "method": "sgd"},
         loss_history=loss_history,
         final_losses={
             "train_loss": train_loss,
@@ -720,6 +722,44 @@ def cvx_solve(
     solve_cfg: SolveConfig,
     device: Optional[torch.device] = None,
 ) -> CvxSolveResult:
+    if int(getattr(init_cfg, "K_parallel", 1)) > 1:
+        from . import cvx_parallel_Solve as p
+
+        return p.cvx_solve(
+            x_train=x_train,
+            y_train=y_train,
+            x_val=x_val,
+            y_val=y_val,
+            x_test=x_test,
+            y_test=y_test,
+            init_cfg=p.InitializationConfig(
+                mode=init_cfg.mode,
+                variant=init_cfg.variant,
+                seed=init_cfg.seed,
+                feature_count=init_cfg.feature_count,
+                bias=init_cfg.bias,
+                pretrained_weights=init_cfg.pretrained_weights,
+                L=init_cfg.L,
+                P_rec=init_cfg.P_rec,
+                P_last=init_cfg.P_last,
+                K_parallel=init_cfg.K_parallel,
+                beta_leak=init_cfg.beta_leak,
+                threshold=init_cfg.threshold,
+                last_layer_readout=init_cfg.last_layer_readout,
+            ),
+            solve_cfg=p.SolveConfig(
+                loss_name=solve_cfg.loss_name,
+                method=solve_cfg.method,
+                beta=solve_cfg.beta,
+                lr=solve_cfg.lr,
+                optimizer_name=solve_cfg.optimizer_name,
+                epochs=solve_cfg.epochs,
+                batch_size=solve_cfg.batch_size,
+                log_every=solve_cfg.log_every,
+            ),
+            device=device,
+        )
+
     supervise_all_timesteps = y_train.ndim == 2
     if supervise_all_timesteps and (y_val.ndim != 2 or y_test.ndim != 2):
         raise ValueError(

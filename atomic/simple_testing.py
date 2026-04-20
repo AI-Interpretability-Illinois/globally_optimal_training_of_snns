@@ -18,13 +18,8 @@ if __package__ in (None, ""):
     from data_loaders.dfa_data_loader import make_dfa_dataset
     from data_loaders.image_data_loader import ImageSequenceDataset, load_cifar_seq_dataset, load_mnist_seq_dataset
     from data_loaders.uci_data_loader import UciDataset, load_uci_dataset
-    from fine_tune import (
-        FineTuneConfig,
-        assert_finetune_manifest_matches_runtime,
-        load_finetune_weight_checkpoint,
-        run_fine_tune_pipeline,
-        validate_finetune_weight_shapes_against_manifest,
-    )
+    from finetune_manifest import assert_finetune_manifest_matches_runtime, validate_finetune_weight_shapes_against_manifest
+    from fine_tune import FineTuneConfig, load_finetune_weight_checkpoint, run_fine_tune_pipeline
     from layer_wise_stacking_test_bench import LayerWiseConfig, run_layer_wise_stacking_test_bench
     from solver_grids import BETA_GRID_DEFAULT, BIAS_GRID_DEFAULT, LR_GRID_DEFAULT, cvx_lr_sweep_values
     from solvers.cvx_solve import (
@@ -34,19 +29,15 @@ if __package__ in (None, ""):
         _prepare_sequence_targets,
         cvx_solve,
     )
+    from solvers import ste_parallel_Solve as ste_par
     from solvers.ste_solve import SNNBaselineSeq, SteModelConfig, SteSolveConfig, ste_solve
 else:
     from .data_loaders.arithmetic_data_loader import ArithmeticDataset, load_arithmetic_dataset
     from .data_loaders.dfa_data_loader import make_dfa_dataset
     from .data_loaders.image_data_loader import ImageSequenceDataset, load_cifar_seq_dataset, load_mnist_seq_dataset
     from .data_loaders.uci_data_loader import UciDataset, load_uci_dataset
-    from .fine_tune import (
-        FineTuneConfig,
-        assert_finetune_manifest_matches_runtime,
-        load_finetune_weight_checkpoint,
-        run_fine_tune_pipeline,
-        validate_finetune_weight_shapes_against_manifest,
-    )
+    from .finetune_manifest import assert_finetune_manifest_matches_runtime, validate_finetune_weight_shapes_against_manifest
+    from .fine_tune import FineTuneConfig, load_finetune_weight_checkpoint, run_fine_tune_pipeline
     from .layer_wise_stacking_test_bench import LayerWiseConfig, run_layer_wise_stacking_test_bench
     from .solver_grids import BETA_GRID_DEFAULT, BIAS_GRID_DEFAULT, LR_GRID_DEFAULT, cvx_lr_sweep_values
     from .solvers.cvx_solve import (
@@ -56,6 +47,7 @@ else:
         _prepare_sequence_targets,
         cvx_solve,
     )
+    from .solvers import ste_parallel_Solve as ste_par
     from .solvers.ste_solve import SNNBaselineSeq, SteModelConfig, SteSolveConfig, ste_solve
 
 
@@ -196,7 +188,7 @@ def _load_dataset_from_args(args: argparse.Namespace) -> Dict[str, Any]:
     raise ValueError(f"Unsupported dataset={args.dataset}.")
 
 
-def _ste_last_step_acc(model: SNNBaselineSeq, x_test: np.ndarray, y_test: np.ndarray) -> float:
+def _ste_last_step_acc(model: torch.nn.Module, x_test: np.ndarray, y_test: np.ndarray) -> float:
     device = next(model.parameters()).device
     x = torch.tensor(x_test, dtype=torch.float32, device=device)
     with torch.no_grad():
@@ -466,6 +458,7 @@ def _run_simple_mode(args: argparse.Namespace, data: Dict[str, Any]) -> Tuple[Di
             P_last=args.P_last,
             L=args.L,
             num_classes=num_classes,
+            K_parallel=int(args.K_parallel),
         )
         validate_finetune_weight_shapes_against_manifest(man, w_list)
         init_weights = [np.asarray(w, dtype=np.float32) for w in w_list]
@@ -493,6 +486,7 @@ def _run_simple_mode(args: argparse.Namespace, data: Dict[str, Any]) -> Tuple[Di
                         L=args.L,
                         P_rec=args.P_rec,
                         P_last=args.P_last,
+                        K_parallel=int(args.K_parallel),
                         last_layer_readout=args.last_layer_readout,
                     ),
                     solve_cfg=SteSolveConfig(
@@ -528,6 +522,7 @@ def _run_simple_mode(args: argparse.Namespace, data: Dict[str, Any]) -> Tuple[Di
                 L=args.L,
                 P_rec=args.P_rec,
                 P_last=args.P_last,
+                K_parallel=int(args.K_parallel),
                 last_layer_readout=args.last_layer_readout,
             ),
             solve_cfg=SteSolveConfig(
@@ -545,7 +540,7 @@ def _run_simple_mode(args: argparse.Namespace, data: Dict[str, Any]) -> Tuple[Di
         best_ste_curve = _extract_ste_curve(ste_log_text)
         if best_ste is None:
             raise RuntimeError("Simple mode failed to rerun best STE candidate.")
-        if not isinstance(best_ste.model, SNNBaselineSeq):
+        if not isinstance(best_ste.model, (SNNBaselineSeq, ste_par.SNNBaselineSeq)):
             raise TypeError("Expected SNNBaselineSeq from ste_solve.")
 
     best_cvx = None
@@ -574,6 +569,7 @@ def _run_simple_mode(args: argparse.Namespace, data: Dict[str, Any]) -> Tuple[Di
                             L=args.L,
                             P_rec=args.P_rec,
                             P_last=args.P_last,
+                            K_parallel=int(args.K_parallel),
                             feature_count=args.P_last,
                             last_layer_readout=args.last_layer_readout,
                             bias=float(cvx_bias),
@@ -586,6 +582,7 @@ def _run_simple_mode(args: argparse.Namespace, data: Dict[str, Any]) -> Tuple[Di
                             L=args.L,
                             P_rec=args.P_rec,
                             P_last=args.P_last,
+                            K_parallel=int(args.K_parallel),
                             feature_count=args.P_last,
                             last_layer_readout=args.last_layer_readout,
                             bias=float(cvx_bias),
@@ -628,6 +625,7 @@ def _run_simple_mode(args: argparse.Namespace, data: Dict[str, Any]) -> Tuple[Di
                     L=args.L,
                     P_rec=args.P_rec,
                     P_last=args.P_last,
+                    K_parallel=int(args.K_parallel),
                     feature_count=args.P_last,
                     last_layer_readout=args.last_layer_readout,
                     bias=float(best_cvx_params["bias"]),
@@ -640,6 +638,7 @@ def _run_simple_mode(args: argparse.Namespace, data: Dict[str, Any]) -> Tuple[Di
                     L=args.L,
                     P_rec=args.P_rec,
                     P_last=args.P_last,
+                    K_parallel=int(args.K_parallel),
                     feature_count=args.P_last,
                     last_layer_readout=args.last_layer_readout,
                     bias=float(best_cvx_params["bias"]),
@@ -764,6 +763,7 @@ def _run_fine_tune_mode(args: argparse.Namespace, data: Dict[str, Any]) -> Dict[
         weights_save_dir=_resolve_weights_save_dir(args),
         init_weights_dir=(args.init_weights_dir.strip() or None),
         init_weights_variant=args.init_weights_variant,
+        K_parallel=int(args.K_parallel),
     )
     out = run_fine_tune_pipeline(
         x_train=data["x_train"],
@@ -806,6 +806,7 @@ def _run_layer_wise_mode(args: argparse.Namespace, data: Dict[str, Any]) -> Dict
         cvx_bias_grid=bias_grid_default,
         ste_beta_grid=BETA_GRID_DEFAULT,
         ste_lr_grid=LR_GRID_DEFAULT,
+        K_parallel=int(args.K_parallel),
     )
     out = run_layer_wise_stacking_test_bench(
         x_train=data["x_train"],
@@ -858,6 +859,12 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--L", type=int, default=5)
     parser.add_argument("--P_rec", type=int, default=128)
     parser.add_argument("--P_last", type=int, default=128)
+    parser.add_argument(
+        "--K_parallel",
+        type=int,
+        default=1,
+        help="Number of parallel SNN branches; 1 uses default solvers, >1 uses parallel CVX/STE backends.",
+    )
     parser.add_argument("--loss_type", choices=("ce", "hinge", "hinge_ovr", "squared"), default="hinge_ovr")
     parser.add_argument("--optimizer_name", choices=("adam", "sgd"), default="adam")
     parser.add_argument("--cvx_method", choices=("cvx", "sgd"), default="cvx")

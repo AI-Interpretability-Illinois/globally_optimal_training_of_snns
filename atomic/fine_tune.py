@@ -9,11 +9,15 @@ import numpy as np
 import torch
 
 if __package__ in (None, ""):
+    from finetune_manifest import assert_finetune_manifest_matches_runtime, validate_finetune_weight_shapes_against_manifest
     from solver_grids import BETA_GRID_DEFAULT, BIAS_GRID_DEFAULT, LR_GRID_DEFAULT, cvx_lr_sweep_values
+    from solvers import ste_parallel_Solve as ste_par
     from solvers.cvx_solve import InitializationConfig, SolveConfig, cvx_solve
     from solvers.ste_solve import SNNBaselineSeq, SteModelConfig, SteSolveConfig, ste_solve
 else:
+    from .finetune_manifest import assert_finetune_manifest_matches_runtime, validate_finetune_weight_shapes_against_manifest
     from .solver_grids import BETA_GRID_DEFAULT, BIAS_GRID_DEFAULT, LR_GRID_DEFAULT, cvx_lr_sweep_values
+    from .solvers import ste_parallel_Solve as ste_par
     from .solvers.cvx_solve import InitializationConfig, SolveConfig, cvx_solve
     from .solvers.ste_solve import SNNBaselineSeq, SteModelConfig, SteSolveConfig, ste_solve
 
@@ -26,6 +30,7 @@ class FineTuneConfig:
     P_rec: int
     P_last: int
     L: int
+    K_parallel: int = 1
 
     # names/shape aligned to snn_generalized_pt2/snn_convex_fine_tune.py arguments
     loss_type: str = "hinge_ovr"
@@ -100,58 +105,23 @@ def load_finetune_weight_checkpoint(checkpoint_dir: Path | str, variant: str) ->
     return manifest, weights
 
 
-def assert_finetune_manifest_matches_runtime(
-    manifest: Mapping[str, Any],
-    *,
-    readout_mode: str,
-    P_in: int,
-    P_rec: int,
-    P_last: int,
-    L: int,
-    num_classes: int,
-) -> None:
-    if int(manifest["L"]) != int(L):
-        raise ValueError(f"Checkpoint L={manifest['L']} does not match runtime L={L}.")
-    if int(manifest["P_rec"]) != int(P_rec):
-        raise ValueError(f"Checkpoint P_rec={manifest['P_rec']} does not match runtime P_rec={P_rec}.")
-    if int(manifest["P_last"]) != int(P_last):
-        raise ValueError(f"Checkpoint P_last={manifest['P_last']} does not match runtime P_last={P_last}.")
-    if int(manifest["P_in"]) != int(P_in):
-        raise ValueError(f"Checkpoint P_in={manifest['P_in']} does not match runtime P_in={P_in}.")
-    if int(manifest["num_classes"]) != int(num_classes):
-        raise ValueError(
-            f"Checkpoint num_classes={manifest['num_classes']} does not match runtime num_classes={num_classes}."
-        )
-    if str(manifest["readout_mode"]) != str(readout_mode):
-        raise ValueError(
-            f"Checkpoint readout_mode={manifest['readout_mode']!r} does not match runtime {readout_mode!r}."
-        )
-
-
-def validate_finetune_weight_shapes_against_manifest(manifest: Mapping[str, Any], weights: Sequence[np.ndarray]) -> None:
-    shapes = manifest.get("snn_weight_shapes")
-    if shapes is None:
-        return
-    if len(shapes) != len(weights):
-        raise ValueError(
-            f"Manifest snn_weight_shapes has length {len(shapes)} but loaded {len(weights)} weight tensors."
-        )
-    for i, (exp, arr) in enumerate(zip(shapes, weights)):
-        got = [int(x) for x in arr.shape]
-        want = [int(x) for x in exp]
-        if want != got:
-            raise ValueError(f"Weight w{i} shape mismatch: manifest {want}, file {got}.")
-
-
-def _extract_weight_list(model: SNNBaselineSeq) -> List[np.ndarray]:
+def _extract_weight_list(model: torch.nn.Module) -> List[np.ndarray]:
     weights: List[np.ndarray] = []
-    for fc in model.fcs:
-        weights.append(fc.weight.detach().cpu().numpy().copy())
-    weights.append(model.classifier.weight.detach().cpu().numpy().copy())
-    return weights
+    if hasattr(model, "fcs") and hasattr(model, "classifier"):
+        for fc in model.fcs:
+            weights.append(fc.weight.detach().cpu().numpy().copy())
+        weights.append(model.classifier.weight.detach().cpu().numpy().copy())
+        return weights
+    if hasattr(model, "branches") and hasattr(model, "classifier"):
+        for br in model.branches:
+            for fc in br.fcs:
+                weights.append(fc.weight.detach().cpu().numpy().copy())
+        weights.append(model.classifier.weight.detach().cpu().numpy().copy())
+        return weights
+    raise TypeError(f"Unsupported SNN layout for weight export: {type(model)}")
 
 
-def _last_step_acc(model: SNNBaselineSeq, x: np.ndarray, y: np.ndarray) -> float:
+def _last_step_acc(model: torch.nn.Module, x: np.ndarray, y: np.ndarray) -> float:
     device = next(model.parameters()).device
     x_t = torch.tensor(x, dtype=torch.float32, device=device)
     with torch.no_grad():
@@ -194,14 +164,19 @@ def _save_finetune_pretrain_artifacts(
         "P_in": cfg.P_in,
         "P_rec": cfg.P_rec,
         "P_last": cfg.P_last,
+        "K_parallel": int(cfg.K_parallel),
         "num_classes": num_classes,
         "snn_weight_shapes": snn_weight_shapes,
         "loss_type": cfg.loss_type,
         "cvx_method": cfg.cvx_method,
         "pretrain_ste_selected": dict(pretrain_selected),
         "reload": {
-            "pretrain_for_ste_solve": "pretrain_snn_weights.npz keys w0..w{L} last is classifier",
-            "pretrain_for_cvx_init": "same arrays as list for InitializationConfig.pretrained_weights",
+            "pretrain_for_ste_solve": (
+                "pretrain_snn_weights.npz keys w0,w1,... in branch-major order: for each branch k=0..K-1, "
+                "each hidden fc.weight in order; the final key is the single shared classifier.weight "
+                "(shape num_classes x P_last). Total tensors = K_parallel * n_hidden_layers + 1."
+            ),
+            "pretrain_for_cvx_init": "Same arrays as a Python list passed to InitializationConfig.pretrained_weights.",
             "note": "Export is written immediately after STE pretrain; CVX readout and ste_post weights are not stored.",
         },
     }
@@ -255,6 +230,7 @@ def run_fine_tune_pipeline(
                 P_last=cfg.P_last,
                 L=cfg.L,
                 num_classes=num_classes,
+                K_parallel=int(cfg.K_parallel),
             )
             validate_finetune_weight_shapes_against_manifest(ckpt_manifest, loaded_w)
             transferred_weights = [np.asarray(w, dtype=np.float32) for w in loaded_w]
@@ -278,6 +254,7 @@ def run_fine_tune_pipeline(
                     L=cfg.L,
                     P_rec=cfg.P_rec,
                     P_last=cfg.P_last,
+                    K_parallel=cfg.K_parallel,
                     last_layer_readout=readout_mode,
                 ),
                 solve_cfg=SteSolveConfig(
@@ -293,7 +270,7 @@ def run_fine_tune_pipeline(
                 pretrained_weights=transferred_weights,
             )
             pretrained_model = best_pre.model
-            if not isinstance(pretrained_model, SNNBaselineSeq):
+            if not isinstance(pretrained_model, (SNNBaselineSeq, ste_par.SNNBaselineSeq)):
                 raise TypeError("Expected SNNBaselineSeq from ste_solve.")
             pre_acc = {
                 "train_last_step_acc": _last_step_acc(pretrained_model, x_train, y_train),
@@ -331,6 +308,7 @@ def run_fine_tune_pipeline(
                             L=cfg.L,
                             P_rec=cfg.P_rec,
                             P_last=cfg.P_last,
+                            K_parallel=cfg.K_parallel,
                             last_layer_readout=readout_mode,
                         ),
                         solve_cfg=SteSolveConfig(
@@ -353,7 +331,7 @@ def run_fine_tune_pipeline(
             if best_pre is None or best_pre_lr is None or best_pre_beta is None:
                 raise RuntimeError("Fine-tune pretraining failed to produce any candidate.")
             pretrained_model = best_pre.model
-            if not isinstance(pretrained_model, SNNBaselineSeq):
+            if not isinstance(pretrained_model, (SNNBaselineSeq, ste_par.SNNBaselineSeq)):
                 raise TypeError("Expected SNNBaselineSeq from ste_solve.")
             transferred_weights = _extract_weight_list(pretrained_model)
             pre_acc = {
@@ -373,7 +351,7 @@ def run_fine_tune_pipeline(
 
         if cfg.weights_save_dir:
             pre_m = best_pre.model
-            if not isinstance(pre_m, SNNBaselineSeq):
+            if not isinstance(pre_m, (SNNBaselineSeq, ste_par.SNNBaselineSeq)):
                 raise TypeError("Expected SNNBaselineSeq for weight export.")
             tw_save = _extract_weight_list(pre_m)
             weight_paths_root[readout_mode] = _save_finetune_pretrain_artifacts(
@@ -411,6 +389,7 @@ def run_fine_tune_pipeline(
                 L=int(cfg.L),
                 P_rec=int(cfg.P_rec),
                 P_last=int(cfg.P_last),
+                K_parallel=int(cfg.K_parallel),
                 last_layer_readout=readout_mode,
             )
             best_cvx = None
@@ -431,6 +410,7 @@ def run_fine_tune_pipeline(
                             L=init_cfg.L,
                             P_rec=init_cfg.P_rec,
                             P_last=init_cfg.P_last,
+                            K_parallel=init_cfg.K_parallel,
                             beta_leak=init_cfg.beta_leak,
                             threshold=init_cfg.threshold,
                             last_layer_readout=init_cfg.last_layer_readout,
@@ -476,6 +456,7 @@ def run_fine_tune_pipeline(
                 L=init_cfg.L,
                 P_rec=init_cfg.P_rec,
                 P_last=init_cfg.P_last,
+                K_parallel=init_cfg.K_parallel,
                 beta_leak=init_cfg.beta_leak,
                 threshold=init_cfg.threshold,
                 last_layer_readout=init_cfg.last_layer_readout,
@@ -522,6 +503,7 @@ def run_fine_tune_pipeline(
                         L=cfg.L,
                         P_rec=cfg.P_rec,
                         P_last=cfg.P_last,
+                        K_parallel=cfg.K_parallel,
                         last_layer_readout=readout_mode,
                     ),
                     solve_cfg=SteSolveConfig(
@@ -559,6 +541,7 @@ def run_fine_tune_pipeline(
                 L=cfg.L,
                 P_rec=cfg.P_rec,
                 P_last=cfg.P_last,
+                K_parallel=cfg.K_parallel,
                 last_layer_readout=readout_mode,
             ),
             solve_cfg=SteSolveConfig(

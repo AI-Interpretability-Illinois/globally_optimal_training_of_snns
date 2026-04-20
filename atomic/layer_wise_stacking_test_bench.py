@@ -5,13 +5,16 @@ from typing import Dict, List, Sequence
 
 import numpy as np
 import torch
+import torch.nn as nn
 
 if __package__ in (None, ""):
     from solver_grids import BETA_GRID_DEFAULT, BIAS_GRID_DEFAULT, LR_GRID_DEFAULT, cvx_lr_sweep_values
+    from solvers import ste_parallel_Solve as ste_par
     from solvers.cvx_solve import InitializationConfig, SolveConfig, cvx_solve
     from solvers.ste_solve import SNNBaselineSeq, SteModelConfig, SteSolveConfig, ste_solve
 else:
     from .solver_grids import BETA_GRID_DEFAULT, BIAS_GRID_DEFAULT, LR_GRID_DEFAULT, cvx_lr_sweep_values
+    from .solvers import ste_parallel_Solve as ste_par
     from .solvers.cvx_solve import InitializationConfig, SolveConfig, cvx_solve
     from .solvers.ste_solve import SNNBaselineSeq, SteModelConfig, SteSolveConfig, ste_solve
 
@@ -22,6 +25,7 @@ class LayerWiseConfig:
     L: int = 5
     P_rec: int = 128
     P_last: int = 64
+    K_parallel: int = 1
     ste_pretrain_epochs: int = 80
     ste_finetune_epochs: int = 100
     loss_name: str = "hinge_ovr"
@@ -34,15 +38,23 @@ class LayerWiseConfig:
     ste_lr_grid: Sequence[float] = LR_GRID_DEFAULT
 
 
-def _extract_weight_list(model: SNNBaselineSeq) -> List[np.ndarray]:
+def _extract_weight_list(model: nn.Module) -> List[np.ndarray]:
     weights: List[np.ndarray] = []
-    for fc in model.fcs:
-        weights.append(fc.weight.detach().cpu().numpy().copy())
-    weights.append(model.classifier.weight.detach().cpu().numpy().copy())
-    return weights
+    if hasattr(model, "fcs") and hasattr(model, "classifier"):
+        for fc in model.fcs:
+            weights.append(fc.weight.detach().cpu().numpy().copy())
+        weights.append(model.classifier.weight.detach().cpu().numpy().copy())
+        return weights
+    if hasattr(model, "branches") and hasattr(model, "classifier"):
+        for br in model.branches:
+            for fc in br.fcs:
+                weights.append(fc.weight.detach().cpu().numpy().copy())
+        weights.append(model.classifier.weight.detach().cpu().numpy().copy())
+        return weights
+    raise TypeError(f"Unsupported SNN layout for weight export: {type(model)}")
 
 
-def _extract_block_hidden_sequence(model: SNNBaselineSeq, x_seq: np.ndarray) -> np.ndarray:
+def _extract_block_hidden_sequence(model: nn.Module, x_seq: np.ndarray) -> np.ndarray:
     """Run a trained block as frozen feature extractor (classifier dropped)."""
     if x_seq.ndim != 3:
         raise ValueError(f"Expected rank-3 sequence input, got shape={x_seq.shape}.")
@@ -51,8 +63,29 @@ def _extract_block_hidden_sequence(model: SNNBaselineSeq, x_seq: np.ndarray) -> 
     model.eval()
     with torch.no_grad():
         batch, steps, _ = x.shape
+        if hasattr(model, "branches"):
+            branch_mems = [[lif.init_leaky().to(device) for lif in b.lifs] for b in model.branches]
+            hidden_seq: List[torch.Tensor] = []
+            for t in range(steps):
+                x_t = x[:, t, :]
+                readouts: List[torch.Tensor] = []
+                for bi, br in enumerate(model.branches):
+                    mems = branch_mems[bi]
+                    h = x_t
+                    last_spk = last_mem = None
+                    for i, (fc, lif) in enumerate(zip(br.fcs, br.lifs)):
+                        spk, mem = lif(fc(h), mems[i])
+                        mems[i] = mem
+                        h = spk
+                        last_spk, last_mem = spk, mem
+                    if last_spk is None or last_mem is None:
+                        raise RuntimeError("Empty branch while extracting block features.")
+                    readouts.append(last_mem if model.last_layer_readout == "membrane" else last_spk)
+                hidden_seq.append(torch.cat(readouts, dim=1))
+            out = torch.stack(hidden_seq, dim=1)
+            return out.detach().cpu().numpy().astype(np.float32, copy=False)
         mems = [lif.init_leaky().to(device) for lif in model.lifs]
-        hidden_seq: List[torch.Tensor] = []
+        hidden_seq = []
         for t in range(steps):
             h = x[:, t, :]
             last_spk = None
@@ -68,7 +101,7 @@ def _extract_block_hidden_sequence(model: SNNBaselineSeq, x_seq: np.ndarray) -> 
             readout = last_mem if model.last_layer_readout == "membrane" else last_spk
             hidden_seq.append(readout)
         out = torch.stack(hidden_seq, dim=1)
-    return out.detach().cpu().numpy().astype(np.float32, copy=False)
+        return out.detach().cpu().numpy().astype(np.float32, copy=False)
 
 
 def run_layer_wise_stacking_test_bench(
@@ -82,6 +115,11 @@ def run_layer_wise_stacking_test_bench(
     num_classes: int,
     cfg: LayerWiseConfig,
 ) -> List[Dict[str, object]]:
+    if int(cfg.K_parallel) > 1 and int(cfg.P_last) % int(cfg.K_parallel) != 0:
+        raise ValueError(f"P_last={cfg.P_last} must be divisible by K_parallel={cfg.K_parallel}.")
+    if int(cfg.L) >= 3 and int(cfg.K_parallel) > 1 and int(cfg.P_rec) % int(cfg.K_parallel) != 0:
+        raise ValueError(f"P_rec={cfg.P_rec} must be divisible by K_parallel={cfg.K_parallel} when L>=3.")
+
     block_rows: List[Dict[str, object]] = []
     current_x_train = x_train.astype(np.float32, copy=False)
     current_x_val = x_val.astype(np.float32, copy=False)
@@ -107,6 +145,7 @@ def run_layer_wise_stacking_test_bench(
                         L=cfg.L,
                         P_rec=cfg.P_rec,
                         P_last=cfg.P_last,
+                        K_parallel=cfg.K_parallel,
                     ),
                     solve_cfg=SteSolveConfig(
                         loss_name=cfg.loss_name,
@@ -125,7 +164,7 @@ def run_layer_wise_stacking_test_bench(
                     best_ste_pre_beta = float(ste_beta)
         if best_ste_pre is None or best_ste_pre_lr is None or best_ste_pre_beta is None:
             raise RuntimeError("Layer-wise STE pretrain sweep failed.")
-        if not isinstance(best_ste_pre.model, SNNBaselineSeq):
+        if not isinstance(best_ste_pre.model, (SNNBaselineSeq, ste_par.SNNBaselineSeq)):
             raise TypeError("Expected SNNBaselineSeq model from ste_solve.")
         transferred_weights = _extract_weight_list(best_ste_pre.model)
 
@@ -151,6 +190,7 @@ def run_layer_wise_stacking_test_bench(
                             L=cfg.L,
                             P_rec=cfg.P_rec,
                             P_last=cfg.P_last,
+                            K_parallel=cfg.K_parallel,
                             feature_count=cfg.P_last,
                             bias=float(cvx_bias),
                         ),
@@ -193,6 +233,7 @@ def run_layer_wise_stacking_test_bench(
                         L=cfg.L,
                         P_rec=cfg.P_rec,
                         P_last=cfg.P_last,
+                        K_parallel=cfg.K_parallel,
                     ),
                     solve_cfg=SteSolveConfig(
                         loss_name=cfg.loss_name,
@@ -212,7 +253,7 @@ def run_layer_wise_stacking_test_bench(
                     best_ste_ft_beta = float(ste_beta)
         if best_ste_ft is None or best_ste_ft_lr is None or best_ste_ft_beta is None:
             raise RuntimeError("Layer-wise STE finetune sweep failed.")
-        if not isinstance(best_ste_ft.model, SNNBaselineSeq):
+        if not isinstance(best_ste_ft.model, (SNNBaselineSeq, ste_par.SNNBaselineSeq)):
             raise TypeError("Expected SNNBaselineSeq model from ste_solve.")
 
         block_rows.append(

@@ -27,6 +27,7 @@ class SteModelConfig:
     L: int
     P_rec: int
     P_last: int
+    K_parallel: int = 1
     beta_leak: float = 0.99
     threshold: float = 1.0
     last_layer_readout: str = "membrane"
@@ -188,6 +189,32 @@ def ste_solve(
     pretrained_weights: Optional[List[np.ndarray]] = None,
     device: Optional[torch.device] = None,
 ) -> SteSolveResult:
+    if int(getattr(model_cfg, "K_parallel", 1)) > 1:
+        from . import ste_parallel_Solve as p
+
+        return p.ste_solve(
+            x_train=x_train,
+            y_train=y_train,
+            x_val=x_val,
+            y_val=y_val,
+            x_test=x_test,
+            y_test=y_test,
+            model_cfg=p.SteModelConfig(
+                d_in=model_cfg.d_in,
+                num_classes=model_cfg.num_classes,
+                L=model_cfg.L,
+                P_rec=model_cfg.P_rec,
+                P_last=model_cfg.P_last,
+                K_parallel=model_cfg.K_parallel,
+                beta_leak=model_cfg.beta_leak,
+                threshold=model_cfg.threshold,
+                last_layer_readout=model_cfg.last_layer_readout,
+            ),
+            solve_cfg=solve_cfg,
+            pretrained_weights=pretrained_weights,
+            device=device,
+        )
+
     run_device = choose_device() if device is None else device
     model = SNNBaselineSeq(model_cfg).to(run_device)
     if pretrained_weights is not None:
