@@ -50,7 +50,7 @@ def main() -> None:
     # 1) CVX-only runs via parallel_sweep_helper (same grids as before; emits [run-start]/[run-finish] per task).
     if args.side in ("both", "cvx_only"):
         for k_par in K_PARALLEL_LIST:
-            for L in L_LIST:
+            for l in L_LIST:
                 for t in T_LIST:
                     cmd = [
                         python_exe,
@@ -96,8 +96,8 @@ def main() -> None:
     # 2) SNN-only sweep via parallel helper (parallel over seeds for each (T, L)).
     if args.side in ("both", "ste_only"):
         for k_par in K_PARALLEL_LIST:
-            for L in L_LIST:
-                for T in T_LIST:
+            for l in L_LIST:
+                for t in T_LIST:
                     cmd = [
                         python_exe,
                         "-m",
