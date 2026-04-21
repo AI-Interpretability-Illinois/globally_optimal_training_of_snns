@@ -61,6 +61,8 @@ def main() -> None:
     for k_par in K_PARALLEL_LIST:
         for dfa_spec in PARITY_SPECS:
             for l in L_LIST:
+                if (l > 10):
+                    COMMON["cvx_method"] = "cvx"
                 for t in T_LIST:
                     for seed in SEEDS:
                         cmd = [

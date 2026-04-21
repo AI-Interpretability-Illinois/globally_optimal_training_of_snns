@@ -46,6 +46,11 @@ def build_cmd(
     p_last: int,
     args: argparse.Namespace,
 ) -> list[str]:
+    simple_side = str(getattr(args, "simple_side", "both")).strip()
+    dataset = str(getattr(args, "dataset", "")).strip()
+    cvx_method = str(getattr(args, "cvx_method", "cvx")).strip()
+    loss_type = str(getattr(args, "loss_type", "ce")).strip()
+    last_readout = str(getattr(args, "last_layer_readout", "membrane")).strip()
     cmd = [
         python_exe,
         "-m",
@@ -53,13 +58,13 @@ def build_cmd(
         "--mode",
         "fine_tune",
         "--simple_side",
-        args.simple_side,
+        simple_side,
         "--dataset",
-        args.dataset,
+        dataset,
         "--cvx_method",
-        args.cvx_method,
+        cvx_method,
         "--loss_type",
-        args.loss_type,
+        loss_type,
         "--seed",
         str(args.seed),
         "--T",
@@ -83,16 +88,16 @@ def build_cmd(
         "--ste_epochs",
         str(args.ste_epochs),
         "--last_layer_readout",
-        args.last_layer_readout,
+        last_readout,
     ]
     if args.bias_grid is not None:
         cmd.extend(["--bias_grid", *[str(float(x)) for x in args.bias_grid]])
-    ds = str(args.dataset)
+    ds = dataset
     if ds.startswith("dfa:"):
         pass
     elif ds == "dfa" and getattr(args, "dfa_spec", ""):
-        cmd.extend(["--dfa_spec", args.dfa_spec])
-    if args.dataset == "arithmetic_seq":
+        cmd.extend(["--dfa_spec", str(args.dfa_spec).strip()])
+    if dataset == "arithmetic_seq":
         cmd.extend(
             [
                 "--arith_op",
