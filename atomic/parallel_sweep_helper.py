@@ -1050,6 +1050,169 @@ def _best_of(results: List[Dict[str, Any]], task_type: str) -> Dict[str, Any]:
     return min(subset, key=lambda r: float(r["score"]))
 
 
+def _best_of_seed(results: List[Dict[str, Any]], task_type: str, seed: int) -> Dict[str, Any]:
+    subset = [r for r in results if str(r["task_type"]) == task_type and int(r["seed"]) == int(seed)]
+    if len(subset) == 0:
+        raise RuntimeError(f"No results for task_type={task_type} seed={seed}.")
+    return min(subset, key=lambda r: float(r["score"]))
+
+
+def _mean_std_test_accs(vals: List[float]) -> Tuple[float, float]:
+    arr = np.asarray(vals, dtype=np.float64)
+    if arr.size == 0:
+        raise ValueError("Cannot compute mean/std of empty test-acc list.")
+    mean_v = float(np.mean(arr))
+    if arr.size == 1:
+        return mean_v, 0.0
+    return mean_v, float(np.std(arr, ddof=1))
+
+
+def _hyperparams_bundle(args: argparse.Namespace) -> Dict[str, Any]:
+    """Full sweep / run configuration for JSON manifests (reviewer-friendly)."""
+    return {
+        "dataset": str(args.dataset),
+        "pipeline_mode": str(args.pipeline_mode),
+        "simple_side": str(args.simple_side),
+        "last_layer_readout": str(args.last_layer_readout),
+        "K_parallel": int(args.K_parallel),
+        "T": int(args.T),
+        "L": int(args.L),
+        "P_rec": int(args.P_rec),
+        "P_last": int(args.P_last),
+        "n_train": int(args.n_train),
+        "n_val": int(args.n_val),
+        "n_test": int(args.n_test),
+        "loss_type": str(args.loss_type),
+        "cvx_method": str(args.cvx_method),
+        "optimizer_name": str(args.optimizer_name),
+        "batch_size": int(args.batch_size),
+        "cvx_epochs": int(args.cvx_epochs),
+        "ste_epochs": int(args.ste_epochs),
+        "ste_pretrain_epochs": int(args.ste_pretrain_epochs),
+        "ste_post_epochs": int(args.ste_post_epochs),
+        "num_blocks": int(args.num_blocks),
+        "beta_grid": [float(x) for x in args.beta_grid],
+        "lr_grid": [float(x) for x in args.lr_grid],
+        "bias_grid": [float(x) for x in args.bias_grid],
+        "seeds": [int(s) for s in args.seeds],
+        "dfa_spec": str(args.dfa_spec),
+        "arith_op": str(args.arith_op),
+        "arith_base": int(args.arith_base),
+        "n_digits": int(args.n_digits),
+        "uci_name": str(args.uci_name),
+    }
+
+
+def _task_types_for_bundle(
+    results: List[Dict[str, Any]],
+    pipeline_mode: str,
+    *,
+    simple_side: str | None = None,
+) -> List[str]:
+    pm = str(pipeline_mode)
+    if pm == "simple":
+        side = str(simple_side) if simple_side is not None else "both"
+        if side == "both":
+            return ["ste", "cvx"]
+        if side == "ste_only":
+            return ["ste"]
+        if side == "cvx_only":
+            return ["cvx"]
+        raise ValueError(f"Unknown simple_side={side}.")
+    if pm == "fine_tune":
+        return ["fine_tune"]
+    if pm == "layer_wise":
+        return ["layer_wise"]
+    raise ValueError(f"Unknown pipeline_mode={pipeline_mode}.")
+
+
+def _champion_param_record(task_type: str, seed: int, b: Dict[str, Any]) -> Dict[str, Any]:
+    rec: Dict[str, Any] = {
+        "seed": int(seed),
+        "score": float(b["score"]),
+        "test_last_step_acc": float(b["test_last_step_acc"]),
+        "val_last_step_acc": float(b["val_last_step_acc"]),
+        "train_last_step_acc": float(b["train_last_step_acc"]),
+    }
+    if task_type in ("ste", "cvx"):
+        rec["beta"] = float(b["beta"])
+        rec["lr"] = float(b["lr"])
+    if task_type == "cvx":
+        rec["bias"] = float(b["bias"])
+    rec["run_id"] = str(b["run_id"])
+    rec["pair_id"] = str(b["pair_id"])
+    return rec
+
+
+def _write_seed_bundle(
+    *,
+    results: List[Dict[str, Any]],
+    args: argparse.Namespace,
+    bundle_dir: Path,
+    csv_paths: Dict[str, Path],
+    timestamp: str,
+) -> Dict[str, Any]:
+    bundle_dir.mkdir(parents=True, exist_ok=True)
+    seeds = [int(s) for s in args.seeds]
+    simple_side = str(args.simple_side) if str(args.pipeline_mode) == "simple" else None
+    task_types = _task_types_for_bundle(results, str(args.pipeline_mode), simple_side=simple_side)
+    if len(task_types) == 0:
+        raise RuntimeError("No task types in results for seed bundle.")
+    for tt in task_types:
+        if not any(str(r["task_type"]) == tt for r in results):
+            raise RuntimeError(
+                f"Seed bundle expects task_type={tt} (simple_side={simple_side!r}) but no rows were returned."
+            )
+
+    per_seed_files: Dict[str, str] = {}
+    acc_by_tt: Dict[str, List[float]] = {tt: [] for tt in task_types}
+    params_by_tt: Dict[str, List[Dict[str, Any]]] = {tt: [] for tt in task_types}
+
+    for seed in seeds:
+        seed_payload: Dict[str, Any] = {
+            "bundle_timestamp": timestamp,
+            "seed": seed,
+            "hyperparams": _hyperparams_bundle(args),
+            "best": {},
+            "csv_paths": {k: str(v.resolve()) for k, v in csv_paths.items()},
+        }
+        for tt in task_types:
+            b = _best_of_seed(results, tt, seed)
+            seed_payload["best"][tt] = b
+            acc_by_tt[tt].append(float(b["test_last_step_acc"]))
+            params_by_tt[tt].append(_champion_param_record(tt, seed, b))
+        seed_path = bundle_dir / f"seed_{seed}_{timestamp}.json"
+        seed_path.write_text(json.dumps(seed_payload, indent=2, default=str) + "\n")
+        per_seed_files[str(seed)] = str(seed_path.resolve())
+
+    aggregate: Dict[str, Any] = {}
+    for tt in task_types:
+        m, s = _mean_std_test_accs(acc_by_tt[tt])
+        aggregate[tt] = {
+            "test_last_step_acc_mean": m,
+            "test_last_step_acc_std": s,
+            "n_seeds": len(acc_by_tt[tt]),
+            "per_seed_test_last_step_acc": acc_by_tt[tt],
+            "per_seed_champion_params": params_by_tt[tt],
+        }
+
+    summary: Dict[str, Any] = {
+        "bundle_timestamp": timestamp,
+        "created_at": timestamp,
+        "bundle_dir": str(bundle_dir.resolve()),
+        "pipeline_mode": str(args.pipeline_mode),
+        "simple_side": str(args.simple_side),
+        "per_seed_json": per_seed_files,
+        "hyperparams_tested": _hyperparams_bundle(args),
+        "aggregate": aggregate,
+    }
+    summary_path = bundle_dir / f"multi_seed_summary_{timestamp}.json"
+    summary_path.write_text(json.dumps(summary, indent=2, default=str) + "\n")
+    summary["multi_seed_summary_path"] = str(summary_path.resolve())
+    summary["bundle_timestamp"] = timestamp
+    return summary
+
+
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description="Queue each beta-lr(-bias) combo as an independent run and schedule over GPUs/CPUs."
@@ -1128,6 +1291,15 @@ def parse_args() -> argparse.Namespace:
         type=str,
         default="atomic/sweep_results",
         help="Directory for per-run CSV/JSON outputs.",
+    )
+    parser.add_argument(
+        "--seed_bundle_dir",
+        type=str,
+        default="",
+        help=(
+            "If set, write per-seed champion JSON (seed_<s>.json) and multi_seed_summary.json here. "
+            "If empty and len(--seeds)>1, a subdirectory seed_bundle_<task>_<timestamp> is created under --output_dir."
+        ),
     )
     parser.add_argument("--ste_csv_path", type=str, default="", help="Optional override for STE per-task CSV.")
     parser.add_argument("--cvx_csv_path", type=str, default="", help="Optional override for CVX per-task CSV.")
@@ -1337,11 +1509,39 @@ def main() -> None:
             "num_gpus": int(args.num_gpus),
             "num_cpu_workers": int(args.num_cpu_workers),
             "csv_paths": {k: str(v) for k, v in csv_paths.items()},
+            "hyperparams_tested": _hyperparams_bundle(args),
         },
         "best": best,
     }
     if bool(args.include_all_results_json):
         out["all_results"] = results
+
+    bundle_ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+    write_bundle = len(args.seeds) > 1 or str(getattr(args, "seed_bundle_dir", "")).strip() != ""
+    if write_bundle:
+        task_nm = _build_task_name(args)
+        if str(args.seed_bundle_dir).strip():
+            bundle_base = Path(str(args.seed_bundle_dir)).expanduser().resolve()
+        else:
+            bundle_base = Path(args.output_dir).expanduser().resolve() / f"seed_bundle_{task_nm}_{bundle_ts}"
+        out["seed_bundle"] = _write_seed_bundle(
+            results=results,
+            args=args,
+            bundle_dir=bundle_base,
+            csv_paths=csv_paths,
+            timestamp=bundle_ts,
+        )
+        print(
+            f"[seed-bundle] wrote per-seed champions under {out['seed_bundle']['bundle_dir']} "
+            f"summary={out['seed_bundle']['multi_seed_summary_path']}",
+            flush=True,
+        )
+        for tt, block in out["seed_bundle"]["aggregate"].items():
+            print(
+                f"[aggregate-{tt}] test_last_step_acc mean={float(block['test_last_step_acc_mean']):.6f} "
+                f"std={float(block['test_last_step_acc_std']):.6f} n_seeds={int(block['n_seeds'])}",
+                flush=True,
+            )
 
     # Human-readable summary: only best combos, printed once at end.
     if str(args.pipeline_mode) == "simple":

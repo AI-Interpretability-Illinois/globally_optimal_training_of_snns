@@ -9,7 +9,7 @@ from pathlib import Path
 T_LIST = [2, 4, 7, 14, 28, 56, 196, 784]
 L_LIST = [3, 5, 10, 15, 20, 30, 50, 80, 120]
 SEEDS = [0, 1, 2]
-CVX_BIAS_GRID = [-1.0, -0.5, 0.0, 0.5, 1.0]
+CVX_BIAS_GRID = [0.0]
 K_PARALLEL_LIST = [50, 100, 500, 1000, 2000]
 
 # Requested fixed MNIST configuration.
@@ -47,56 +47,57 @@ def main() -> None:
     atomic_dir = Path(__file__).resolve().parent
     python_exe = "python3"
 
-    # 1) CVX-only runs via simple_testing (3 seeds per (T, L)).
+    # 1) CVX-only runs via parallel_sweep_helper (same grids as before; emits [run-start]/[run-finish] per task).
     if args.side in ("both", "cvx_only"):
         for k_par in K_PARALLEL_LIST:
-            for t in T_LIST:
-                for l in L_LIST:
-                    for seed in SEEDS:
-                        cmd = [
-                            python_exe,
-                            "-m",
-                            "simple_testing",
-                            "--mode",
-                            "simple",
-                            "--simple_side",
-                            "cvx_only",
-                            "--dataset",
-                            COMMON["dataset"],
-                            "--cvx_method",
-                            "sgd",
-                            "--loss_type",
-                            "ce",
-                            "--seed",
-                            str(seed),
-                            "--T",
-                            str(t),
-                            "--n_train",
-                            str(COMMON["n_train"]),
-                            "--n_val",
-                            str(COMMON["n_val"]),
-                            "--n_test",
-                            str(COMMON["n_test"]),
-                            "--L",
-                            str(l),
-                            "--P_last",
-                            str(COMMON["P_last"]),
-                            "--P_rec",
-                            str(COMMON["P_rec"]),
-                            "--K_parallel",
-                            str(k_par),
-                            "--cvx_epochs",
-                            "200",
-                            "--bias_grid",
-                            *[str(b) for b in CVX_BIAS_GRID],
-                        ]
-                        run_cmd(cmd, cwd=atomic_dir)
+            for L in L_LIST:
+                for t in T_LIST:
+                    cmd = [
+                        python_exe,
+                        "-m",
+                        "parallel_sweep_helper",
+                        "--pipeline_mode",
+                        "simple",
+                        "--simple_side",
+                        "cvx_only",
+                        "--dataset",
+                        COMMON["dataset"],
+                        "--cvx_method",
+                        "sgd",
+                        "--loss_type",
+                        "ce",
+                        "--seeds",
+                        *[str(s) for s in SEEDS],
+                        "--T",
+                        str(t),
+                        "--n_train",
+                        str(COMMON["n_train"]),
+                        "--n_val",
+                        str(COMMON["n_val"]),
+                        "--n_test",
+                        str(COMMON["n_test"]),
+                        "--L",
+                        str(l),
+                        "--P_last",
+                        str(COMMON["P_last"]),
+                        "--P_rec",
+                        str(COMMON["P_rec"]),
+                        "--K_parallel",
+                        str(k_par),
+                        "--cvx_epochs",
+                        "200",
+                        "--bias_grid",
+                        *[str(b) for b in CVX_BIAS_GRID],
+                        "--last_layer_readout",
+                        "spike",
+                    ]
+                    run_cmd(cmd, cwd=atomic_dir)
 
     # 2) SNN-only sweep via parallel helper (parallel over seeds for each (T, L)).
     if args.side in ("both", "ste_only"):
         for k_par in K_PARALLEL_LIST:
-            for t in T_LIST:
-                for l in L_LIST:
+            for L in L_LIST:
+                for T in T_LIST:
                     cmd = [
                         python_exe,
                         "-m",
@@ -131,6 +132,8 @@ def main() -> None:
                         str(k_par),
                         "--ste_epochs",
                         "200",
+                        "--last_layer_readout",
+                        "spike",
                     ]
                     run_cmd(cmd, cwd=atomic_dir)
 
