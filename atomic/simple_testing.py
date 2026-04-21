@@ -395,6 +395,26 @@ def _experiment_hyperparameters(
     return hp
 
 
+def _flat_sweep_json_record(result: Dict[str, Any]) -> Dict[str, Any]:
+    """Match on-disk ``sweep_results/*.json`` layout: flat ``mode``, ``dataset``, ``fixed_grids``, ``simple_side`` (simple only), then metric blocks (``ste``, ``cvx_*``, ``ste_pretrain``, …)."""
+    if "hyperparameters" not in result or "metrics" not in result:
+        raise TypeError("Expected result dict with 'hyperparameters' and 'metrics'.")
+    hp = result["hyperparameters"]
+    m = result["metrics"]
+    mode = str(hp["mode"])
+    grids = hp.get("search_grids")
+    out: Dict[str, Any] = {
+        "mode": mode,
+        "dataset": hp["dataset"],
+        "fixed_grids": dict(grids) if grids is not None else {},
+    }
+    if mode == "simple":
+        out["simple_side"] = hp["simple_side"]
+    for k, v in m.items():
+        out[k] = v
+    return out
+
+
 def _ste_training_curve_from_loss_history(loss_history: List[float], log_every: int) -> Dict[str, List[float]]:
     if log_every <= 0 or not loss_history:
         return {"epoch": [], "train_loss": [], "val_loss": [], "train_acc": [], "val_acc": []}
@@ -1174,7 +1194,7 @@ def _run_simple_mode(args: argparse.Namespace, data: Dict[str, Any]) -> Tuple[Di
             metrics["ste"]["test_last_step_acc"] = _ste_last_step_acc(best_ste.model, x_test, y_test)
         else:
             metrics["ste"]["reported_metrics"] = _arithmetic_reported_metrics(ste_losses)
-        if args.simple_side == "ste_only":
+        if args.simple_side in ("ste_only", "both"):
             metrics["ste"]["training_curve"] = best_ste_curve
     if run_cvx and best_cvx is not None and best_cvx_params is not None and best_init is not None:
         cvx_losses = dict(best_cvx.final_losses)
@@ -1195,7 +1215,7 @@ def _run_simple_mode(args: argparse.Namespace, data: Dict[str, Any]) -> Tuple[Di
             )
         else:
             metrics[cvx_json_key]["reported_metrics"] = _arithmetic_reported_metrics(cvx_losses)
-        if args.simple_side == "cvx_only":
+        if args.simple_side in ("cvx_only", "both"):
             metrics[cvx_json_key]["training_curve"] = best_cvx_curve
     result = {"hyperparameters": hp, "metrics": metrics}
     return result, {"ste": best_ste_curve, "cvx": best_cvx_curve}
@@ -1208,7 +1228,8 @@ def _save_run_artifacts(
 ) -> Dict[str, str]:
     """Persist run JSON under ``sweep_results/`` exactly like simple mode; plot/md only for ``--mode simple`` with ``--simple_side both``."""
     paths = _artifact_paths(args)
-    json_text = json.dumps(result, indent=2, default=str)
+    flat = _flat_sweep_json_record(result)
+    json_text = json.dumps(flat, indent=2, default=str)
     paths["json"].write_text(json_text + "\n")
     out_paths: Dict[str, str] = {"json": str(paths["json"])}
     if args.mode == "simple" and args.simple_side == "both":
@@ -1424,7 +1445,8 @@ def main() -> None:
 
     _save_run_artifacts(args, result, curves)
 
-    text = json.dumps(result, indent=2, default=str)
+    flat = _flat_sweep_json_record(result)
+    text = json.dumps(flat, indent=2, default=str)
     print(text)
     if args.output_json:
         with open(args.output_json, "w") as f:
