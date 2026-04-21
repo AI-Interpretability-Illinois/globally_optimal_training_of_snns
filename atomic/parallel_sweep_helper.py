@@ -18,7 +18,13 @@ import torch
 if __package__ in (None, ""):
     from fine_tune import FineTuneConfig, run_fine_tune_pipeline
     from layer_wise_stacking_test_bench import LayerWiseConfig, run_layer_wise_stacking_test_bench
-    from simple_testing import _cvx_last_step_acc, _load_dataset_from_args, _set_seed, _ste_last_step_acc
+    from simple_testing import (
+        _apply_dataset_cli,
+        _cvx_last_step_acc,
+        _load_dataset_from_args,
+        _set_seed,
+        _ste_last_step_acc,
+    )
     from solver_grids import BETA_GRID_DEFAULT, BIAS_GRID_DEFAULT, LR_GRID_DEFAULT
     from solvers import ste_parallel_Solve as ste_par
     from solvers.cvx_solve import InitializationConfig, SolveConfig, cvx_solve
@@ -26,7 +32,13 @@ if __package__ in (None, ""):
 else:
     from .fine_tune import FineTuneConfig, run_fine_tune_pipeline
     from .layer_wise_stacking_test_bench import LayerWiseConfig, run_layer_wise_stacking_test_bench
-    from .simple_testing import _cvx_last_step_acc, _load_dataset_from_args, _set_seed, _ste_last_step_acc
+    from .simple_testing import (
+        _apply_dataset_cli,
+        _cvx_last_step_acc,
+        _load_dataset_from_args,
+        _set_seed,
+        _ste_last_step_acc,
+    )
     from .solver_grids import BETA_GRID_DEFAULT, BIAS_GRID_DEFAULT, LR_GRID_DEFAULT
     from .solvers import ste_parallel_Solve as ste_par
     from .solvers.cvx_solve import InitializationConfig, SolveConfig, cvx_solve
@@ -90,7 +102,7 @@ def _sweep_context_suffix() -> str:
     """Best-effort context from the worker argparse namespace (set in _worker_init)."""
     if _WORKER_ARGS is None:
         return ""
-    ds = getattr(_WORKER_ARGS, "dataset", "")
+    ds = getattr(_WORKER_ARGS, "dataset_tag", None) or getattr(_WORKER_ARGS, "dataset", "")
     kpar = int(getattr(_WORKER_ARGS, "K_parallel", 1))
     t = int(getattr(_WORKER_ARGS, "T", 0))
     l = int(getattr(_WORKER_ARGS, "L", 0))
@@ -874,6 +886,7 @@ def _build_tasks(args: argparse.Namespace) -> Tuple[List[SweepTask], List[SweepT
     cvx_tasks: List[SweepTask] = []
     pipeline_tasks: List[SweepTask] = []
 
+    _ds_rep = getattr(args, "dataset_tag", args.dataset)
     seeds = [int(s) for s in args.seeds]
     if str(args.pipeline_mode) == "simple":
         simple_side = str(args.simple_side)
@@ -882,7 +895,7 @@ def _build_tasks(args: argparse.Namespace) -> Tuple[List[SweepTask], List[SweepT
         for seed in seeds:
             for lr in args.lr_grid:
                 for beta in args.beta_grid:
-                    pair_id = f"{args.dataset}|seed={seed}|beta={float(beta):.8g}|lr={float(lr):.8g}"
+                    pair_id = f"{_ds_rep}|seed={seed}|beta={float(beta):.8g}|lr={float(lr):.8g}"
                     ste_run_id = f"ste|{pair_id}"
                     if run_ste:
                         ste_tasks.append(
@@ -918,8 +931,8 @@ def _build_tasks(args: argparse.Namespace) -> Tuple[List[SweepTask], List[SweepT
                 SweepTask(
                     task_type=task_type,
                     pipeline_mode=str(args.pipeline_mode),
-                    run_id=f"{task_type}|{args.dataset}|seed={seed}",
-                    pair_id=f"{task_type}|{args.dataset}|seed={seed}",
+                    run_id=f"{task_type}|{_ds_rep}|seed={seed}",
+                    pair_id=f"{task_type}|{_ds_rep}|seed={seed}",
                     seed=seed,
                     beta=0.0,
                     lr=0.0,
@@ -993,7 +1006,7 @@ def _flatten_result_row(
     cpu_workers: int,
 ) -> Dict[str, Any]:
     flat: Dict[str, Any] = {
-        "dataset": str(args.dataset),
+        "dataset": str(getattr(args, "dataset_tag", args.dataset)),
         "task_name": _build_task_name(args),
         "seed": int(args.seed),
         "T": int(args.T),
@@ -1070,7 +1083,7 @@ def _mean_std_test_accs(vals: List[float]) -> Tuple[float, float]:
 def _hyperparams_bundle(args: argparse.Namespace) -> Dict[str, Any]:
     """Full sweep / run configuration for JSON manifests (reviewer-friendly)."""
     return {
-        "dataset": str(args.dataset),
+        "dataset": str(getattr(args, "dataset_tag", args.dataset)),
         "pipeline_mode": str(args.pipeline_mode),
         "simple_side": str(args.simple_side),
         "last_layer_readout": str(args.last_layer_readout),
@@ -1224,7 +1237,12 @@ def parse_args() -> argparse.Namespace:
         default="both",
         help="Used only when --pipeline_mode simple. Run both sides or only one side.",
     )
-    parser.add_argument("--dataset", choices=("mnist_seq", "mnist_perm_seq", "cifar_seq", "arithmetic_seq", "dfa", "uci"), required=True)
+    parser.add_argument(
+        "--dataset",
+        type=str,
+        required=True,
+        help="Same as simple_testing --dataset (use dfa:<spec> for a specific DFA, e.g. dfa:first_last_xor).",
+    )
     parser.add_argument("--seed", type=int, default=0)
     parser.add_argument("--seeds", type=int, nargs="+", default=None, help="Optional list of seeds to run in parallel.")
     parser.add_argument("--T", type=int, default=6)
@@ -1310,7 +1328,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--arith_op", choices=("add", "sub", "mul", "div"), default="add")
     parser.add_argument("--arith_base", type=int, default=2)
     parser.add_argument("--n_digits", type=int, default=5)
-    parser.add_argument("--dfa_spec", type=str, default="first_last_xor")
+    parser.add_argument("--dfa_spec", type=str, default="tomita_3")
     parser.add_argument("--uci_name", type=str, default="pima")
     parser.add_argument("--uci_test_size", type=float, default=0.2)
     parser.add_argument("--uci_val_size", type=float, default=0.2)
@@ -1323,6 +1341,7 @@ def parse_args() -> argparse.Namespace:
         parsed.seeds = [int(parsed.seed)]
     if len(parsed.seeds) == 0:
         raise ValueError("--seeds cannot be empty.")
+    _apply_dataset_cli(parsed)
     return parsed
 
 

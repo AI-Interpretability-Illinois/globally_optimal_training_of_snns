@@ -19,7 +19,12 @@ if __package__ in (None, ""):
     from data_loaders.image_data_loader import ImageSequenceDataset, load_cifar_seq_dataset, load_mnist_seq_dataset
     from data_loaders.uci_data_loader import UciDataset, load_uci_dataset
     from finetune_manifest import assert_finetune_manifest_matches_runtime, validate_finetune_weight_shapes_against_manifest
-    from fine_tune import FineTuneConfig, load_finetune_weight_checkpoint, run_fine_tune_pipeline
+    from fine_tune import (
+        FineTuneConfig,
+        _extract_weight_list,
+        load_finetune_weight_checkpoint,
+        run_fine_tune_pipeline,
+    )
     from layer_wise_stacking_test_bench import LayerWiseConfig, run_layer_wise_stacking_test_bench
     from solver_grids import BETA_GRID_DEFAULT, BIAS_GRID_DEFAULT, LR_GRID_DEFAULT, cvx_lr_sweep_values
     from solvers.cvx_solve import (
@@ -30,14 +35,19 @@ if __package__ in (None, ""):
         cvx_solve,
     )
     from solvers import ste_parallel_Solve as ste_par
-    from solvers.ste_solve import SNNBaselineSeq, SteModelConfig, SteSolveConfig, ste_solve
+    from solvers.ste_solve import SNNBaselineSeq, SteModelConfig, SteSolveConfig, SteSolveResult, ste_solve
 else:
     from .data_loaders.arithmetic_data_loader import ArithmeticDataset, load_arithmetic_dataset
     from .data_loaders.dfa_data_loader import make_dfa_dataset
     from .data_loaders.image_data_loader import ImageSequenceDataset, load_cifar_seq_dataset, load_mnist_seq_dataset
     from .data_loaders.uci_data_loader import UciDataset, load_uci_dataset
     from .finetune_manifest import assert_finetune_manifest_matches_runtime, validate_finetune_weight_shapes_against_manifest
-    from .fine_tune import FineTuneConfig, load_finetune_weight_checkpoint, run_fine_tune_pipeline
+    from .fine_tune import (
+        FineTuneConfig,
+        _extract_weight_list,
+        load_finetune_weight_checkpoint,
+        run_fine_tune_pipeline,
+    )
     from .layer_wise_stacking_test_bench import LayerWiseConfig, run_layer_wise_stacking_test_bench
     from .solver_grids import BETA_GRID_DEFAULT, BIAS_GRID_DEFAULT, LR_GRID_DEFAULT, cvx_lr_sweep_values
     from .solvers.cvx_solve import (
@@ -48,7 +58,7 @@ else:
         cvx_solve,
     )
     from .solvers import ste_parallel_Solve as ste_par
-    from .solvers.ste_solve import SNNBaselineSeq, SteModelConfig, SteSolveConfig, ste_solve
+    from .solvers.ste_solve import SNNBaselineSeq, SteModelConfig, SteSolveConfig, SteSolveResult, ste_solve
 
 
 def _set_seed(seed: int) -> None:
@@ -302,6 +312,406 @@ def _arithmetic_reported_metrics(metrics: Dict[str, Any]) -> Dict[str, float]:
     }
 
 
+# Matches ``fine_tune.run_fine_tune_pipeline`` final reruns with ``log_every=10``.
+_FINE_TUNE_SOLVER_LOG_EVERY = 10
+
+
+def _cvx_json_key_for_init_mode(init_mode: str, *, source_tag: str | None = None) -> str:
+    """Top-level JSON field for a CVX run, e.g. ``gaussian`` -> ``cvx_gaussian`` (same naming as legacy simple mode)."""
+    m = str(init_mode).strip().lower()
+    if m == "gaussian":
+        base = "cvx_gaussian"
+    elif m == "pretraining":
+        base = "cvx_pretraining"
+    else:
+        base = f"cvx_{m}"
+    if source_tag is None:
+        return base
+    st = str(source_tag).strip().lower().replace(" ", "_")
+    return f"{base}__{st}"
+
+
+def _experiment_hyperparameters(
+    args: argparse.Namespace,
+    data: Dict[str, Any],
+    *,
+    search_grids: Dict[str, Any] | None = None,
+) -> Dict[str, Any]:
+    """Serializable run configuration only (no filesystem paths, manifests, or weights)."""
+    hp: Dict[str, Any] = {
+        "mode": args.mode,
+        "dataset": args.dataset_tag,
+        "seed": int(args.seed),
+        "T": int(args.T),
+        "L": int(args.L),
+        "d_in": int(data["d_in"]),
+        "P_rec": int(args.P_rec),
+        "P_last": int(args.P_last),
+        "K_parallel": int(args.K_parallel),
+        "n_train": int(args.n_train),
+        "n_val": int(args.n_val),
+        "n_test": int(args.n_test),
+        "num_classes": int(data["num_classes"]),
+        "loss_type": str(args.loss_type),
+        "optimizer_name": str(args.optimizer_name),
+        "cvx_method": str(args.cvx_method),
+        "batch_size": int(args.batch_size),
+        "cvx_epochs": int(args.cvx_epochs),
+        "last_layer_readout": str(args.last_layer_readout),
+    }
+    if search_grids is not None:
+        hp["search_grids"] = search_grids
+    if args.mode == "simple":
+        hp["simple_side"] = str(args.simple_side)
+        hp["ste_epochs"] = int(args.ste_epochs)
+        hp["cvx_device"] = str(args.cvx_device)
+        hp["used_pretrained_weight_init"] = bool(str(getattr(args, "init_weights_dir", "") or "").strip())
+        if hp["used_pretrained_weight_init"]:
+            hp["init_weights_variant"] = str(args.init_weights_variant)
+        if args.bias_grid is not None:
+            hp["bias_grid_cli"] = [float(x) for x in args.bias_grid]
+    elif args.mode == "fine_tune":
+        hp["ste_pretrain_epochs"] = int(args.ste_pretrain_epochs)
+        hp["ste_post_epochs"] = int(args.ste_post_epochs)
+        hp["used_pretrained_weight_init"] = bool(str(getattr(args, "init_weights_dir", "") or "").strip())
+        if hp["used_pretrained_weight_init"]:
+            hp["init_weights_variant"] = str(args.init_weights_variant)
+        hp["weights_export_enabled"] = _resolve_weights_save_dir(args) is not None
+    elif args.mode == "layer_wise":
+        hp["num_blocks"] = int(args.num_blocks)
+        hp["ste_pretrain_epochs"] = int(args.ste_pretrain_epochs)
+        hp["ste_finetune_epochs"] = int(args.ste_post_epochs)
+    if args.dataset == "arithmetic_seq":
+        hp["arith_op"] = str(args.arith_op)
+        hp["arith_base"] = int(args.arith_base)
+        hp["n_digits"] = int(args.n_digits)
+    if args.dataset == "dfa":
+        hp["dfa_spec"] = str(args.dfa_spec)
+    if args.dataset == "uci":
+        hp["uci_name"] = str(args.uci_name)
+        hp["uci_test_size"] = float(args.uci_test_size)
+        hp["uci_val_size"] = float(args.uci_val_size)
+        hp["uci_standardize"] = not bool(args.uci_no_standardize)
+    return hp
+
+
+def _ste_training_curve_from_loss_history(loss_history: List[float], log_every: int) -> Dict[str, List[float]]:
+    if log_every <= 0 or not loss_history:
+        return {"epoch": [], "train_loss": [], "val_loss": [], "train_acc": [], "val_acc": []}
+    return {
+        "epoch": [float((i + 1) * log_every) for i in range(len(loss_history))],
+        "train_loss": [float(v) for v in loss_history],
+        "val_loss": [],
+        "train_acc": [],
+        "val_acc": [],
+    }
+
+
+def _cvx_training_curve_for_json(
+    cvx_result: Any,
+    *,
+    log_every: int,
+    epochs: int,
+) -> Dict[str, List[float]]:
+    _ = epochs
+    lh = list(cvx_result.loss_history)
+    empty: Dict[str, List[float]] = {
+        "epoch": [],
+        "train_loss": [],
+        "val_loss": [],
+        "train_obj": [],
+        "val_obj": [],
+        "train_acc": [],
+        "val_acc": [],
+    }
+    if not lh:
+        return empty
+    if len(lh) == 1:
+        return {
+            "epoch": [1.0],
+            "train_loss": [float(lh[0])],
+            "val_loss": [],
+            "train_obj": [],
+            "val_obj": [],
+            "train_acc": [],
+            "val_acc": [],
+        }
+    if log_every <= 0:
+        return empty
+    return {
+        "epoch": [float((i + 1) * log_every) for i in range(len(lh))],
+        "train_loss": [float(v) for v in lh],
+        "val_loss": [],
+        "train_obj": [],
+        "val_obj": [],
+        "train_acc": [],
+        "val_acc": [],
+    }
+
+
+def _serialize_ste_block_simple_style(
+    ste_res: SteSolveResult,
+    *,
+    selected_params: Dict[str, float],
+    x_test: np.ndarray,
+    y_test: np.ndarray,
+    arithmetic_mode: bool,
+    log_every_for_curve: int,
+) -> Dict[str, Any]:
+    block: Dict[str, Any] = {
+        "selected_params": {k: float(v) for k, v in selected_params.items()},
+        "best_losses": dict(ste_res.best_losses),
+        "training_curve": _ste_training_curve_from_loss_history(ste_res.loss_history, log_every_for_curve),
+    }
+    if arithmetic_mode:
+        block["reported_metrics"] = _arithmetic_reported_metrics(ste_res.best_losses)
+    else:
+        block["test_last_step_acc"] = _ste_last_step_acc(ste_res.model, x_test, y_test)
+    return block
+
+
+def _serialize_cvx_block_simple_style(
+    cvx_res: Any,
+    *,
+    selected_params: Dict[str, Any],
+    init_cfg_eval: InitializationConfig,
+    x_train: np.ndarray,
+    x_val: np.ndarray,
+    x_test: np.ndarray,
+    y_test: np.ndarray,
+    arithmetic_mode: bool,
+    cvx_epochs: int,
+    log_every_for_curve: int,
+) -> Dict[str, Any]:
+    sel = dict(selected_params)
+    block: Dict[str, Any] = {
+        "selected_params": sel,
+        "final_losses": dict(cvx_res.final_losses),
+        "diagnostics": asdict(cvx_res.diagnostics),
+        "training_curve": _cvx_training_curve_for_json(
+            cvx_res, log_every=log_every_for_curve, epochs=cvx_epochs
+        ),
+    }
+    if arithmetic_mode:
+        block["reported_metrics"] = _arithmetic_reported_metrics(cvx_res.final_losses)
+    else:
+        block["test_last_step_acc"] = _cvx_last_step_acc(
+            cvx_res,
+            x_train=x_train,
+            x_val=x_val,
+            x_test=x_test,
+            y_test=y_test,
+            init_cfg=init_cfg_eval,
+        )
+    return block
+
+
+def _finetune_pipeline_to_simple_style_json(
+    pipeline_out: Dict[str, Any],
+    args: argparse.Namespace,
+    data: Dict[str, Any],
+) -> Dict[str, Any]:
+    bias_grid_default = _grid_to_list(BIAS_GRID_DEFAULT)
+    cvx_lr_eff = cvx_lr_sweep_values(args.cvx_method, LR_GRID_DEFAULT)
+    fixed_grids: Dict[str, Any] = {
+        "beta_grid": list(BETA_GRID_DEFAULT),
+        "lr_grid": list(LR_GRID_DEFAULT),
+        "bias_grid": bias_grid_default,
+        "ste_lr_grid": list(LR_GRID_DEFAULT),
+        "ste_beta_grid": list(BETA_GRID_DEFAULT),
+        "cvx_lr_grid_effective": list(cvx_lr_eff),
+    }
+    if args.cvx_method == "cvx":
+        fixed_grids["cvx_lr_sweep_note"] = (
+            "For method=cvx, lr is not swept (single placeholder 0.0); sweep is beta × bias only."
+        )
+
+    selected_readout = str(pipeline_out["selected_readout"])
+    br: Dict[str, Any] = pipeline_out["by_readout"][selected_readout]
+    pre = br["ste_pretrain"]
+    post = br["ste_post"]
+    if not isinstance(pre, SteSolveResult) or not isinstance(post, SteSolveResult):
+        raise TypeError("Expected SteSolveResult for fine_tune STE stages.")
+
+    arithmetic_mode = args.dataset == "arithmetic_seq"
+    x_train = data["x_train"]
+    x_val = data["x_val"]
+    x_test = data["x_test"]
+    y_test = data["y_test"]
+
+    ste_pre_json = _serialize_ste_block_simple_style(
+        pre,
+        selected_params=dict(br["ste_pretrain_selected_params"]),
+        x_test=x_test,
+        y_test=y_test,
+        arithmetic_mode=arithmetic_mode,
+        log_every_for_curve=0,
+    )
+    ste_pre_json["pretrain_accuracy"] = dict(br["pretrain_accuracy"])
+
+    hp = _experiment_hyperparameters(args, data, search_grids=fixed_grids)
+    metrics: Dict[str, Any] = {
+        "ste_pretrain": ste_pre_json,
+        "ste_post": _serialize_ste_block_simple_style(
+            post,
+            selected_params=dict(br["ste_post_selected_params"]),
+            x_test=x_test,
+            y_test=y_test,
+            arithmetic_mode=arithmetic_mode,
+            log_every_for_curve=_FINE_TUNE_SOLVER_LOG_EVERY,
+        ),
+    }
+    cvx_by_src: Dict[str, Any] = br["cvx_by_source"]
+    init_mode = "pretraining"
+    cvx_items = list(cvx_by_src.items())
+    if len(cvx_items) == 0:
+        raise ValueError("fine_tune json: cvx_by_source is empty.")
+    if len(cvx_items) == 1:
+        src, cvx_one = cvx_items[0]
+        cvx_pk = _cvx_json_key_for_init_mode(init_mode)
+        cvx_sel_one = br["cvx_selected_params"][src]
+        init_one = InitializationConfig(
+            mode=init_mode,
+            seed=int(args.seed),
+            feature_count=int(args.P_last),
+            bias=float(cvx_sel_one["bias"]),
+            pretrained_weights=_extract_weight_list(pre.model),
+            L=int(args.L),
+            P_rec=int(args.P_rec),
+            P_last=int(args.P_last),
+            K_parallel=int(args.K_parallel),
+            last_layer_readout=selected_readout,
+        )
+        metrics[cvx_pk] = _serialize_cvx_block_simple_style(
+            cvx_one,
+            selected_params=dict(cvx_sel_one),
+            init_cfg_eval=init_one,
+            x_train=x_train,
+            x_val=x_val,
+            x_test=x_test,
+            y_test=y_test,
+            arithmetic_mode=arithmetic_mode,
+            cvx_epochs=int(args.cvx_epochs),
+            log_every_for_curve=_FINE_TUNE_SOLVER_LOG_EVERY,
+        )
+    else:
+        for src, cvx_one in cvx_items:
+            cvx_pk = _cvx_json_key_for_init_mode(init_mode, source_tag=src)
+            if cvx_pk in metrics:
+                raise ValueError(f"Duplicate CVX JSON key {cvx_pk!r} for fine_tune cvx_by_source.")
+            cvx_sel_one = br["cvx_selected_params"][src]
+            init_one = InitializationConfig(
+                mode=init_mode,
+                seed=int(args.seed),
+                feature_count=int(args.P_last),
+                bias=float(cvx_sel_one["bias"]),
+                pretrained_weights=_extract_weight_list(pre.model),
+                L=int(args.L),
+                P_rec=int(args.P_rec),
+                P_last=int(args.P_last),
+                K_parallel=int(args.K_parallel),
+                last_layer_readout=selected_readout,
+            )
+            metrics[cvx_pk] = _serialize_cvx_block_simple_style(
+                cvx_one,
+                selected_params=dict(cvx_sel_one),
+                init_cfg_eval=init_one,
+                x_train=x_train,
+                x_val=x_val,
+                x_test=x_test,
+                y_test=y_test,
+                arithmetic_mode=arithmetic_mode,
+                cvx_epochs=int(args.cvx_epochs),
+                log_every_for_curve=_FINE_TUNE_SOLVER_LOG_EVERY,
+            )
+    return {"hyperparameters": hp, "metrics": metrics}
+
+
+def _layer_wise_pipeline_to_simple_style_json(
+    block_rows: List[Dict[str, Any]],
+    args: argparse.Namespace,
+    data: Dict[str, Any],
+) -> Dict[str, Any]:
+    bias_grid_default = _grid_to_list(BIAS_GRID_DEFAULT)
+    cvx_lr_eff = cvx_lr_sweep_values(args.cvx_method, LR_GRID_DEFAULT)
+    fixed_grids: Dict[str, Any] = {
+        "cvx_beta_grid": list(BETA_GRID_DEFAULT),
+        "cvx_lr_grid": list(cvx_lr_eff),
+        "cvx_bias_grid": bias_grid_default,
+        "ste_lr_grid": list(LR_GRID_DEFAULT),
+        "ste_beta_grid": list(BETA_GRID_DEFAULT),
+    }
+    if args.cvx_method == "cvx":
+        fixed_grids["cvx_lr_sweep_note"] = (
+            "For method=cvx, lr is not swept (single placeholder 0.0); sweep is beta × bias only."
+        )
+
+    arithmetic_mode = args.dataset == "arithmetic_seq"
+    x_train = data["x_train"]
+    x_val = data["x_val"]
+    x_test = data["x_test"]
+    y_test = data["y_test"]
+
+    blocks_out: List[Dict[str, Any]] = []
+    for block in block_rows:
+        ste_pre = block["ste_pre"]
+        cvx_b = block["cvx"]
+        ste_ft = block["ste_finetune"]
+        if not isinstance(ste_pre, SteSolveResult) or not isinstance(ste_ft, SteSolveResult):
+            raise TypeError("Expected SteSolveResult in layer_wise block.")
+        readout = str(ste_pre.model.last_layer_readout)
+        cvx_sel = dict(block["cvx_selected_params"])
+        init_cfg_eval = InitializationConfig(
+            mode="pretraining",
+            seed=int(args.seed),
+            feature_count=int(args.P_last),
+            bias=float(cvx_sel["bias"]),
+            pretrained_weights=_extract_weight_list(ste_pre.model),
+            L=int(args.L),
+            P_rec=int(args.P_rec),
+            P_last=int(args.P_last),
+            K_parallel=int(args.K_parallel),
+            last_layer_readout=readout,
+        )
+        cvx_field = _cvx_json_key_for_init_mode("pretraining")
+        blocks_out.append(
+            {
+                "block_idx": int(block["block_idx"]),
+                "ste_pretrain": _serialize_ste_block_simple_style(
+                    ste_pre,
+                    selected_params=dict(block["ste_pre_selected_params"]),
+                    x_test=x_test,
+                    y_test=y_test,
+                    arithmetic_mode=arithmetic_mode,
+                    log_every_for_curve=0,
+                ),
+                cvx_field: _serialize_cvx_block_simple_style(
+                    cvx_b,
+                    selected_params=cvx_sel,
+                    init_cfg_eval=init_cfg_eval,
+                    x_train=x_train,
+                    x_val=x_val,
+                    x_test=x_test,
+                    y_test=y_test,
+                    arithmetic_mode=arithmetic_mode,
+                    cvx_epochs=int(args.cvx_epochs),
+                    log_every_for_curve=_FINE_TUNE_SOLVER_LOG_EVERY,
+                ),
+                "ste_post": _serialize_ste_block_simple_style(
+                    ste_ft,
+                    selected_params=dict(block["ste_finetune_selected_params"]),
+                    x_test=x_test,
+                    y_test=y_test,
+                    arithmetic_mode=arithmetic_mode,
+                    log_every_for_curve=0,
+                ),
+            }
+        )
+
+    hp = _experiment_hyperparameters(args, data, search_grids=fixed_grids)
+    return {"hyperparameters": hp, "metrics": {"blocks": blocks_out}}
+
+
 def _capture_solver_stdout(fn: Any, **kwargs: Any) -> Tuple[Any, str]:
     buf = io.StringIO()
     with redirect_stdout(buf):
@@ -353,6 +763,37 @@ def _extract_cvx_curve(log_text: str) -> Dict[str, list[float]]:
         curve["train_acc"].append(float(match.group(7)))
         curve["val_acc"].append(float(match.group(8)))
     return curve
+
+
+_DATASET_CLI_BASE = frozenset(
+    {"mnist_seq", "mnist_perm_seq", "cifar_seq", "arithmetic_seq", "dfa", "uci"}
+)
+
+
+def _dataset_tag(args: argparse.Namespace) -> str:
+    """Human-readable dataset id for JSON (for DFA always ``dfa:<spec>``)."""
+    if str(args.dataset) == "dfa":
+        return f"dfa:{args.dfa_spec}"
+    return str(args.dataset)
+
+
+def _apply_dataset_cli(args: argparse.Namespace) -> None:
+    """Parse ``--dataset``; supports ``dfa:<dfa_spec>`` to name the exact automaton (plain ``dfa`` uses ``--dfa_spec``)."""
+    raw = str(args.dataset).strip()
+    if raw.startswith("dfa:"):
+        spec = raw.split(":", 1)[1].strip()
+        if not spec:
+            raise ValueError("Invalid --dataset: empty name after 'dfa:'.")
+        args.dataset = "dfa"
+        args.dfa_spec = spec
+    elif raw in _DATASET_CLI_BASE:
+        args.dataset = raw
+    else:
+        raise ValueError(
+            f"Unsupported --dataset {raw!r}. Expected one of {sorted(_DATASET_CLI_BASE)} "
+            "or 'dfa:<dfa_spec>' (e.g. 'dfa:first_last_xor')."
+        )
+    args.dataset_tag = _dataset_tag(args)
 
 
 def _resolve_task_name(args: argparse.Namespace) -> str:
@@ -408,27 +849,37 @@ def _make_simple_summary_md(args: argparse.Namespace, result: Dict[str, Any]) ->
         "| Model | Selected lr | Selected beta | Selected bias | Train loss | Val loss | Test loss | Test acc |",
         "|---|---:|---:|---:|---:|---:|---:|---:|",
     ]
-    ste = result.get("ste")
+    m = result["metrics"]
+    ste = m.get("ste")
     if ste is not None:
         ste_p = ste["selected_params"]
         ste_l = ste["best_losses"]
+        if "test_last_step_acc" in ste:
+            ste_acc = float(ste["test_last_step_acc"])
+        else:
+            ste_acc = float(ste["reported_metrics"]["test_seq_acc"])
         lines.append(
             (
                 f"| STE | {ste_p['lr']:.6g} | {ste_p['beta']:.6g} | - | "
                 f"{ste_l['train_loss']:.6f} | {ste_l['val_loss']:.6f} | {ste_l['test_loss']:.6f} | "
-                f"{float(ste['test_last_step_acc']):.4f} |"
+                f"{ste_acc:.4f} |"
             )
         )
-    cvx = result.get("cvx_gaussian")
-    if cvx is not None:
+    for cvx_key in sorted(k for k in m if k.startswith("cvx_")):
+        cvx = m[cvx_key]
         cvx_p = cvx["selected_params"]
         cvx_l = cvx["final_losses"]
         lr_cell = "-" if cvx_p.get("lr") is None else f"{float(cvx_p['lr']):.6g}"
+        init_label = cvx_key[len("cvx_") :].split("__", 1)[0]
+        if "test_last_step_acc" in cvx:
+            cvx_acc = float(cvx["test_last_step_acc"])
+        else:
+            cvx_acc = float(cvx["reported_metrics"]["test_seq_acc"])
         lines.append(
             (
-                f"| CVX (gaussian, {args.cvx_method}) | {lr_cell} | {cvx_p['beta']:.6g} | {cvx_p['bias']:.6g} | "
+                f"| CVX ({init_label}, {args.cvx_method}) | {lr_cell} | {cvx_p['beta']:.6g} | {cvx_p['bias']:.6g} | "
                 f"{cvx_l['train_loss']:.6f} | {cvx_l['val_loss']:.6f} | {cvx_l['test_loss']:.6f} | "
-                f"{float(cvx['test_last_step_acc']):.4f} |"
+                f"{cvx_acc:.4f} |"
             )
         )
     return "\n".join(lines) + "\n"
@@ -478,7 +929,6 @@ def _run_simple_mode(args: argparse.Namespace, data: Dict[str, Any]) -> Tuple[Di
     bias_grid = _resolve_simple_bias_grid(args)
 
     init_weights: List[np.ndarray] | None = None
-    init_ckpt_meta: Dict[str, Any] | None = None
     init_dir = args.init_weights_dir.strip() if getattr(args, "init_weights_dir", "") else ""
     if init_dir:
         man, w_list = load_finetune_weight_checkpoint(init_dir, args.init_weights_variant)
@@ -494,7 +944,6 @@ def _run_simple_mode(args: argparse.Namespace, data: Dict[str, Any]) -> Tuple[Di
         )
         validate_finetune_weight_shapes_against_manifest(man, w_list)
         init_weights = [np.asarray(w, dtype=np.float32) for w in w_list]
-        init_ckpt_meta = {"dir": str(Path(init_dir).resolve()), "variant": args.init_weights_variant, "manifest": man}
 
     best_ste = None
     best_ste_params = None
@@ -712,36 +1161,31 @@ def _run_simple_mode(args: argparse.Namespace, data: Dict[str, Any]) -> Tuple[Di
             "For method=cvx, lr is not swept (single placeholder 0.0); sweep is beta × bias only."
         )
 
-    result: Dict[str, Any] = {
-        "mode": "simple",
-        "simple_side": args.simple_side,
-        "dataset": args.dataset,
-        "fixed_grids": fixed_grids,
-    }
-    if init_ckpt_meta is not None:
-        result["init_checkpoint"] = init_ckpt_meta
+    hp = _experiment_hyperparameters(args, data, search_grids=fixed_grids)
+    metrics: Dict[str, Any] = {}
     arithmetic_mode = args.dataset == "arithmetic_seq"
     if run_ste and best_ste is not None and best_ste_params is not None:
         ste_losses = dict(best_ste.best_losses)
-        result["ste"] = {
+        metrics["ste"] = {
             "selected_params": best_ste_params,
             "best_losses": ste_losses,
         }
         if not arithmetic_mode:
-            result["ste"]["test_last_step_acc"] = _ste_last_step_acc(best_ste.model, x_test, y_test)
+            metrics["ste"]["test_last_step_acc"] = _ste_last_step_acc(best_ste.model, x_test, y_test)
         else:
-            result["ste"]["reported_metrics"] = _arithmetic_reported_metrics(ste_losses)
+            metrics["ste"]["reported_metrics"] = _arithmetic_reported_metrics(ste_losses)
         if args.simple_side == "ste_only":
-            result["ste"]["training_curve"] = best_ste_curve
+            metrics["ste"]["training_curve"] = best_ste_curve
     if run_cvx and best_cvx is not None and best_cvx_params is not None and best_init is not None:
         cvx_losses = dict(best_cvx.final_losses)
-        result["cvx_gaussian"] = {
+        cvx_json_key = _cvx_json_key_for_init_mode(best_init.mode)
+        metrics[cvx_json_key] = {
             "selected_params": best_cvx_params,
             "final_losses": cvx_losses,
             "diagnostics": asdict(best_cvx.diagnostics),
         }
         if not arithmetic_mode:
-            result["cvx_gaussian"]["test_last_step_acc"] = _cvx_last_step_acc(
+            metrics[cvx_json_key]["test_last_step_acc"] = _cvx_last_step_acc(
                 best_cvx,
                 x_train=x_train,
                 x_val=x_val,
@@ -750,18 +1194,24 @@ def _run_simple_mode(args: argparse.Namespace, data: Dict[str, Any]) -> Tuple[Di
                 init_cfg=best_init,
             )
         else:
-            result["cvx_gaussian"]["reported_metrics"] = _arithmetic_reported_metrics(cvx_losses)
+            metrics[cvx_json_key]["reported_metrics"] = _arithmetic_reported_metrics(cvx_losses)
         if args.simple_side == "cvx_only":
-            result["cvx_gaussian"]["training_curve"] = best_cvx_curve
+            metrics[cvx_json_key]["training_curve"] = best_cvx_curve
+    result = {"hyperparameters": hp, "metrics": metrics}
     return result, {"ste": best_ste_curve, "cvx": best_cvx_curve}
 
 
-def _save_simple_artifacts(args: argparse.Namespace, result: Dict[str, Any], curves: Dict[str, Dict[str, list[float]]]) -> Dict[str, str]:
+def _save_run_artifacts(
+    args: argparse.Namespace,
+    result: Dict[str, Any],
+    curves: Dict[str, Dict[str, list[float]]],
+) -> Dict[str, str]:
+    """Persist run JSON under ``sweep_results/`` exactly like simple mode; plot/md only for ``--mode simple`` with ``--simple_side both``."""
     paths = _artifact_paths(args)
     json_text = json.dumps(result, indent=2, default=str)
     paths["json"].write_text(json_text + "\n")
     out_paths: Dict[str, str] = {"json": str(paths["json"])}
-    if args.simple_side == "both":
+    if args.mode == "simple" and args.simple_side == "both":
         _save_simple_plot(paths["png"], curves["ste"], curves["cvx"])
         paths["md"].write_text(_make_simple_summary_md(args, result))
         out_paths["plot"] = str(paths["png"])
@@ -797,7 +1247,7 @@ def _run_fine_tune_mode(args: argparse.Namespace, data: Dict[str, Any]) -> Dict[
         init_weights_variant=args.init_weights_variant,
         K_parallel=int(args.K_parallel),
     )
-    out = run_fine_tune_pipeline(
+    pipeline_out = run_fine_tune_pipeline(
         x_train=data["x_train"],
         y_train=data["y_train"],
         x_val=data["x_val"],
@@ -808,16 +1258,7 @@ def _run_fine_tune_mode(args: argparse.Namespace, data: Dict[str, Any]) -> Dict[
         seed=args.seed,
         cfg=cfg,
     )
-    return {
-        "mode": "fine_tune",
-        "dataset": args.dataset,
-        "fixed_grids": {
-            "beta_grid": list(BETA_GRID_DEFAULT),
-            "lr_grid": list(LR_GRID_DEFAULT),
-            "bias_grid": bias_grid_default,
-        },
-        "result": out,
-    }
+    return _finetune_pipeline_to_simple_style_json(pipeline_out, args, data)
 
 
 def _run_layer_wise_mode(args: argparse.Namespace, data: Dict[str, Any]) -> Dict[str, Any]:
@@ -840,7 +1281,7 @@ def _run_layer_wise_mode(args: argparse.Namespace, data: Dict[str, Any]) -> Dict
         ste_lr_grid=LR_GRID_DEFAULT,
         K_parallel=int(args.K_parallel),
     )
-    out = run_layer_wise_stacking_test_bench(
+    block_rows = run_layer_wise_stacking_test_bench(
         x_train=data["x_train"],
         y_train=data["y_train"],
         x_val=data["x_val"],
@@ -850,16 +1291,7 @@ def _run_layer_wise_mode(args: argparse.Namespace, data: Dict[str, Any]) -> Dict
         num_classes=data["num_classes"],
         cfg=cfg,
     )
-    return {
-        "mode": "layer_wise",
-        "dataset": args.dataset,
-        "fixed_grids": {
-            "beta_grid": list(BETA_GRID_DEFAULT),
-            "lr_grid": list(LR_GRID_DEFAULT),
-            "bias_grid": bias_grid_default,
-        },
-        "result": out,
-    }
+    return _layer_wise_pipeline_to_simple_style_json(block_rows, args, data)
 
 
 def parse_args() -> argparse.Namespace:
@@ -880,8 +1312,12 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument(
         "--dataset",
-        choices=("mnist_seq", "mnist_perm_seq", "cifar_seq", "arithmetic_seq", "dfa", "uci"),
+        type=str,
         default="mnist_seq",
+        help=(
+            "Sequence dataset id. Use ``dfa:<spec>`` for a specific DFA (e.g. ``dfa:first_last_xor``); "
+            "plain ``dfa`` uses ``--dfa_spec`` (default tomita_3)."
+        ),
     )
     parser.add_argument("--seed", type=int, default=0)
     parser.add_argument("--T", type=int, default=2)
@@ -967,6 +1403,7 @@ def parse_args() -> argparse.Namespace:
         if args.mode != "simple":
             raise ValueError("--snn_only is only valid with --mode simple.")
         args.simple_side = "ste_only"
+    _apply_dataset_cli(args)
     return args
 
 
@@ -985,8 +1422,7 @@ def main() -> None:
     else:
         raise ValueError(f"Unsupported mode={args.mode}")
 
-    if args.mode == "simple":
-        result["artifact_paths"] = _save_simple_artifacts(args, result, curves)
+    _save_run_artifacts(args, result, curves)
 
     text = json.dumps(result, indent=2, default=str)
     print(text)

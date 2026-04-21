@@ -8,6 +8,8 @@ import numpy as np
 import torch
 import torch.nn.functional as F
 
+from .ovr_cvx_metrics import multiclass_ovr_cvx_data_loss
+
 
 @dataclass(frozen=True)
 class LossOutput:

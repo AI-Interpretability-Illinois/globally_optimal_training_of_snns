@@ -11,6 +11,7 @@ import torch.nn as nn
 from torch.optim.lr_scheduler import ReduceLROnPlateau
 
 from .loss_functions import LossFunction, solve_multiclass_softmax_ce_l1_primal_dual
+from .ovr_cvx_metrics import multiclass_ovr_cvx_data_loss
 
 
 def choose_device() -> torch.device:
@@ -578,6 +579,7 @@ def _hinge_ovr_numpy(scores: np.ndarray, y: np.ndarray, margin: float = 1.0) -> 
 
 
 def _compute_split_loss(loss_name: str, scores: np.ndarray, y: np.ndarray) -> float:
+    """Same convention as ``cvx_solve._compute_split_loss`` (LossFunction-style means, not OVR CVX sum)."""
     if loss_name in ("hinge_ovr", "hinge"):
         return _hinge_ovr_numpy(scores=scores, y=y)
     if loss_name == "squared":
@@ -668,13 +670,19 @@ def _run_cvx_method(
     train_scores = d_train @ w
     val_scores = d_val @ w
     test_scores = d_test @ w
-    train_loss = _compute_split_loss(solve_cfg.loss_name, train_scores, y_train)
-    val_loss = _compute_split_loss(solve_cfg.loss_name, val_scores, y_val)
-    test_loss = _compute_split_loss(solve_cfg.loss_name, test_scores, y_test)
     l1_penalty = float(np.abs(w).sum())
-    train_objective = train_loss + rho * l1_penalty
-    val_objective = val_loss + rho * l1_penalty
-    test_objective = test_loss + rho * l1_penalty
+    if solve_cfg.loss_name == "ce":
+        train_loss = float(primal_sum - rho * l1_penalty)
+        val_loss = _compute_split_loss(solve_cfg.loss_name, val_scores, y_val)
+        test_loss = _compute_split_loss(solve_cfg.loss_name, test_scores, y_test)
+        train_objective = float(primal_sum)
+    else:
+        train_loss = float(primal_sum - rho * l1_penalty)
+        val_loss = multiclass_ovr_cvx_data_loss(solve_cfg.loss_name, val_scores, y_val)
+        test_loss = multiclass_ovr_cvx_data_loss(solve_cfg.loss_name, test_scores, y_test)
+        train_objective = float(primal_sum)
+    val_objective = float(val_loss + rho * l1_penalty)
+    test_objective = float(test_loss + rho * l1_penalty)
     gap_val = float(primal_sum - dual_sum) if np.isfinite(dual_sum) else float("nan")
     diag = CvxDiagnostics(
         primal_value=float(primal_sum),
