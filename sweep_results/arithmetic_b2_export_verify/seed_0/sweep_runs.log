@@ -1,0 +1,14 @@
+# seed=0 STE: min(val_loss + beta_path_reg)  CVX: min(val_objective|val_loss)
+# data: train/val/test = independent draws; see data_split in *_sweep_log.json
+[sweep:ste] START lr=0.001 beta=0.01 started_at_utc=2026-04-22T04:45:16.593439+00:00
+[sweep:ste] DONE  lr=0.001 beta=0.01 train_tok=0.535156 val_tok=0.578125 test_tok=0.578125 | train_seq=0.015625 val_seq=0.046875 test_seq=0.015625 | val_loss=0.993696 score=1.003696 wall_s=0.14
+[sweep:ste] START lr=0.001 beta=0.1 started_at_utc=2026-04-22T04:45:16.730360+00:00
+[sweep:ste] DONE  lr=0.001 beta=0.1 train_tok=0.533854 val_tok=0.578125 test_tok=0.578125 | train_seq=0.015625 val_seq=0.046875 test_seq=0.015625 | val_loss=1.016567 score=1.116567 wall_s=0.03
+[sweep:ste] START lr=0.005 beta=0.01 started_at_utc=2026-04-22T04:45:16.758119+00:00
+[sweep:ste] DONE  lr=0.005 beta=0.01 train_tok=0.546875 val_tok=0.570312 test_tok=0.593750 | train_seq=0.039062 val_seq=0.015625 test_seq=0.031250 | val_loss=0.967810 score=0.977810 wall_s=0.03
+[sweep:ste] START lr=0.005 beta=0.1 started_at_utc=2026-04-22T04:45:16.786090+00:00
+[sweep:ste] DONE  lr=0.005 beta=0.1 train_tok=0.540365 val_tok=0.570312 test_tok=0.593750 | train_seq=0.023438 val_seq=0.015625 test_seq=0.031250 | val_loss=0.986762 score=1.086762 wall_s=0.03
+[sweep:cvx] START beta=0.01 lr=0.0 bias=0.0 started_at_utc=2026-04-22T04:45:16.841495+00:00
+[sweep:cvx] DONE  beta=0.01 lr=0.0 bias=0.0 train_tok=0.996094 val_tok=0.890625 test_tok=0.864583 | train_seq=0.976562 val_seq=0.453125 test_seq=0.453125 | val_obj=0.938790 score=0.938790 wall_s=7.44
+[sweep:cvx] START beta=0.1 lr=0.0 bias=0.0 started_at_utc=2026-04-22T04:45:24.277511+00:00
+[sweep:cvx] DONE  beta=0.1 lr=0.0 bias=0.0 train_tok=0.925781 val_tok=0.872396 test_tok=0.843750 | train_seq=0.648438 val_seq=0.406250 test_seq=0.375000 | val_obj=1.091211 score=1.091211 wall_s=5.27

@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Tuple
+from typing import Optional, Tuple
 
 import cvxpy as cp
 import numpy as np
@@ -140,24 +140,253 @@ class LossFunction:
             return LossOutput(name=name, value=cls.squared(y=y, f_x=f_x))
         raise ValueError(f"Unknown loss function: {name}. Expected one of: ce, hinge, hinge_ovr, squared.")
 
+    @staticmethod
+    def bce_token_sequence_binary(y: torch.Tensor, logits: torch.Tensor) -> torch.Tensor:
+        """
+        Token-level binary cross-entropy with logits for shapes (N,T) and (N,T,1).
+        Uses the same all-timestep supervision convention as ``hinge`` / ``ce`` for 3D logits.
+        """
+        if logits.ndim != 3 or logits.shape[-1] != 1:
+            raise ValueError(f"Expected logits (N,T,1), got shape={tuple(logits.shape)}.")
+        if y.ndim != 2:
+            raise ValueError(f"Expected y (N,T), got shape={tuple(y.shape)}.")
+        yf = y.reshape(-1).to(dtype=logits.dtype)
+        z = logits.reshape(-1)
+        return F.binary_cross_entropy_with_logits(z, yf, reduction="mean")
+
+    @staticmethod
+    def ste_carry_tf_sum_loss(
+        sum_logits: torch.Tensor,
+        y_sum: torch.Tensor,
+        *,
+        base: int,
+        loss_name: str,
+    ) -> torch.Tensor:
+        """
+        Sum digit head for carry teacher-forcing: ``loss_name`` is already resolved (no ``auto``).
+        For ``base==2`` the head is a single logit; use ``bce_token_sequence_binary`` for CE.
+        For ``base>2``, use ``ce`` or ``hinge_ovr`` (multiclass margin).
+        """
+        b = int(base)
+        name = str(loss_name)
+        if name == "ce" and b == 2:
+            return LossFunction.bce_token_sequence_binary(y_sum, sum_logits)
+        if name == "hinge" and b == 2:
+            return LossFunction.hinge(y=y_sum, f_x=sum_logits)
+        if name == "ce" and b > 2:
+            return LossFunction.ce(y=y_sum, f_x=sum_logits)
+        if name == "hinge_ovr" and b > 2:
+            return LossFunction.hinge_ovr(y=y_sum, f_x=sum_logits)
+        if name == "hinge" and b > 2:
+            raise ValueError(
+                "Multiclass sum head with loss_name='hinge' is ambiguous; use 'hinge_ovr' for OVR hinge on (N,T,C) logits."
+            )
+        raise ValueError(f"Invalid ste_carry_tf sum loss: loss_name={name!r}, base={b}.")
+
+    @staticmethod
+    def ste_carry_tf_carry_loss(
+        carry_logits: torch.Tensor,
+        y_carry: torch.Tensor,
+        *,
+        loss_name: str,
+    ) -> torch.Tensor:
+        name = str(loss_name)
+        if name == "hinge":
+            return LossFunction.hinge(y=y_carry, f_x=carry_logits)
+        if name == "ce":
+            return LossFunction.bce_token_sequence_binary(y_carry, carry_logits)
+        raise ValueError(f"Invalid carry head loss: {name!r}. Expected 'hinge' or 'ce'.")
+
+    @staticmethod
+    def carry_teacher_forcing_total(
+        l_sum: torch.Tensor,
+        l_carry: torch.Tensor,
+        path_reg: torch.Tensor,
+        *,
+        lambda_sum: float,
+        lambda_carry: float,
+        beta: float,
+        tf_objective: str,
+    ) -> torch.Tensor:
+        """
+        Combined training objective for carry teacher-forcing.
+
+        * ``joint`` (alias ``lambda_weighted``):  λ_s L_s + λ_c L_c + β R — default historic behavior.
+        * ``mean_pair``: (L_s + L_c) / 2 + β R
+        * ``lambda_normalized``: (λ_s L_s + λ_c L_c) / (|λ_s| + |λ_c|) + β R
+        """
+        mode = str(tf_objective)
+        if mode in ("joint", "lambda_weighted"):
+            return float(lambda_sum) * l_sum + float(lambda_carry) * l_carry + float(beta) * path_reg
+        if mode == "mean_pair":
+            return 0.5 * l_sum + 0.5 * l_carry + float(beta) * path_reg
+        if mode == "lambda_normalized":
+            denom = abs(float(lambda_sum)) + abs(float(lambda_carry))
+            if denom < 1e-18:
+                raise ValueError("lambda_sum and lambda_carry cannot both be zero for lambda_normalized.")
+            return (float(lambda_sum) * l_sum + float(lambda_carry) * l_carry) / denom + float(beta) * path_reg
+        raise ValueError(
+            f"Unknown tf_objective={mode!r}. Expected joint|lambda_weighted|mean_pair|lambda_normalized."
+        )
+
+    @staticmethod
+    def carry_time_ramp_alphas(T: int, device: torch.device, dtype: torch.dtype) -> torch.Tensor:
+        """
+        α_t = 2t / (T+1) for timesteps t = 1, …, T (1-based column index in the add sequence).
+        """
+        t = torch.arange(1, int(T) + 1, device=device, dtype=dtype)
+        return 2.0 * t / float(T + 1)
+
+    @staticmethod
+    def _y_pm1_01(y: torch.Tensor) -> torch.Tensor:
+        if y.dtype not in (torch.int32, torch.int64, torch.float32, torch.float64):
+            y = y.long()
+        if torch.equal(torch.unique(y), torch.tensor([0, 1], device=y.device, dtype=y.dtype)):
+            return y * 2 - 1
+        return y.to(dtype=torch.float32)
+
+    @staticmethod
+    def ste_carry_tf_per_timestep_sum(
+        sum_logits: torch.Tensor,
+        y_sum: torch.Tensor,
+        *,
+        base: int,
+        loss_name: str,
+    ) -> torch.Tensor:
+        """
+        Returns ``(T,)`` vector: at each timestep, mean over batch of the token loss
+        (same family as :meth:`ste_carry_tf_sum_loss`, but not reduced over T).
+        """
+        b = int(base)
+        name = str(loss_name)
+        if sum_logits.ndim != 3 or y_sum.ndim != 2:
+            raise ValueError("Expected sum_logits (B,T,·) and y_sum (B,T).")
+        B, T, c_last = sum_logits.shape
+        if c_last < 1:
+            raise ValueError(f"Invalid sum_logits shape: {sum_logits.shape}.")
+
+        if name == "ce" and b == 2:
+            z = sum_logits.reshape(-1)
+            yf = y_sum.reshape(-1).to(dtype=sum_logits.dtype)
+            return F.binary_cross_entropy_with_logits(z, yf, reduction="none").view(B, T).mean(dim=0)
+
+        if name == "hinge" and b == 2:
+
+            def _margin(z: torch.Tensor) -> torch.Tensor:
+                if z.shape[-1] == 1:
+                    return z.squeeze(-1)
+                if z.shape[-1] == 2:
+                    return z[..., 1] - z[..., 0]
+                raise ValueError(f"Binary hinge: bad shape {z.shape}.")
+
+            m = _margin(sum_logits)
+            yp = LossFunction._y_pm1_01(y_sum)
+            h = torch.relu(1.0 - yp * m)
+            return h.mean(dim=0)
+
+        if name == "ce" and b > 2:
+            ce_t = F.cross_entropy(
+                sum_logits.reshape(B * T, c_last),
+                y_sum.reshape(B * T),
+                reduction="none",
+            )
+            return ce_t.view(B, T).mean(dim=0)
+
+        if name == "hinge_ovr" and b > 2:
+            s = sum_logits.reshape(B * T, c_last)
+            yf = y_sum.reshape(B * T)
+            targets = -torch.ones_like(s)
+            targets.scatter_(1, yf.unsqueeze(1), 1.0)
+            row = torch.relu(1.0 - targets * s).mean(dim=1)
+            return row.view(B, T).mean(dim=0)
+
+        if name == "hinge" and b > 2:
+            raise ValueError("Use loss_name='hinge_ovr' for base>2 sum head in per-timewise loss.")
+        raise ValueError(f"Invalid per-timestep sum loss: {name!r}, base={b}.")
+
+    @staticmethod
+    def ste_carry_tf_per_timestep_carry(
+        carry_logits: torch.Tensor,
+        y_carry: torch.Tensor,
+        *,
+        loss_name: str,
+    ) -> torch.Tensor:
+        """``(T,)`` mean-over-batch loss per timestep for the carry head."""
+        if carry_logits.ndim != 3 or y_carry.ndim != 2 or carry_logits.shape[-1] != 1:
+            raise ValueError("Expected carry_logits (B,T,1) and y_carry (B,T).")
+        B, T, _ = carry_logits.shape
+        name = str(loss_name)
+        if name == "hinge":
+            m = carry_logits.squeeze(-1)
+            yp = LossFunction._y_pm1_01(y_carry)
+            h = torch.relu(1.0 - yp * m)
+            return h.mean(dim=0)
+        if name == "ce":
+            z = carry_logits.reshape(-1)
+            yf = y_carry.reshape(-1).to(dtype=carry_logits.dtype)
+            return F.binary_cross_entropy_with_logits(z, yf, reduction="none").view(B, T).mean(dim=0)
+        raise ValueError(f"Invalid carry head loss: {name!r}.")
+
+    @staticmethod
+    def ste_carry_tf_data_losses_scalar(
+        sum_logits: torch.Tensor,
+        y_sum: torch.Tensor,
+        carry_logits: torch.Tensor,
+        y_carry: torch.Tensor,
+        *,
+        base: int,
+        sum_loss_name: str,
+        carry_loss_name: str,
+        ste_time_loss: str,
+    ) -> tuple[torch.Tensor, torch.Tensor]:
+        """
+        Returns scalar ``(l_sum, l_carry)`` for use with :meth:`carry_teacher_forcing_total`.
+        * ``ste_time_loss`` ``uniform`` — mean over all timesteps and batch (unchanged from global reductions).
+        * ``ramp`` —  ``α_t = 2t/(T+1)`` (t=1…T) on per-timestep *batch-mean* losses:
+          L_s = sum_t α_t l_s(t) / sum_t α_t, same for carry.
+        """
+        mode = str(ste_time_loss)
+        l_s_t = LossFunction.ste_carry_tf_per_timestep_sum(
+            sum_logits, y_sum, base=base, loss_name=sum_loss_name
+        )
+        l_c_t = LossFunction.ste_carry_tf_per_timestep_carry(
+            carry_logits, y_carry, loss_name=carry_loss_name
+        )
+        T = int(l_s_t.shape[0])
+        if T < 1:
+            raise ValueError("T must be >=1.")
+        if l_c_t.shape[0] != T:
+            raise ValueError("Sum/carry T mismatch.")
+
+        if mode == "uniform":
+            l_sum = l_s_t.mean()
+            l_carry = l_c_t.mean()
+        elif mode == "ramp":
+            dev = l_s_t.device
+            dt = l_s_t.dtype
+            alpha = LossFunction.carry_time_ramp_alphas(T, dev, dt)
+            z = float(alpha.sum())
+            l_sum = (l_s_t * alpha).sum() / z
+            l_carry = (l_c_t * alpha).sum() / z
+        else:
+            raise ValueError(f"Unknown ste_time_loss={mode!r}. Expected uniform or ramp.")
+        return l_sum, l_carry
+
 
 # ---------------------------------------------------------------------------
 # Convex multiclass softmax CE + elementwise L1 (CVXPY): primal, dual, gap
 # ---------------------------------------------------------------------------
 #
-# Primal (W in R^{p×K}, D in R^{n×p}, rows D_i):
-#   min_W  (1/n) * sum_i ( logsumexp(D_i W) - (D_i W)_{y_i} ) + rho * sum_{j,k} |W_{jk}|
-# Same objective as LossFunction.ce(D @ W, y) (mean) + rho * ||W||_1 in the STE/CVX-SGD head.
+# Row weights  a_i = sw_i / sum sw  (sum a = 1).  Unweighted  <->  a_i = 1/n  (sample_weight=None).
 #
-# Dual (Λ in R^{n×K}), Fenchel conjugate of phi_i(z)=lse(z)-z_{y_i} at -n Λ_i:
-#   phi_i^*(-n λ) = sum_k v_{ik} log v_{ik},  v_i = e_{y_i} - n λ_i  on the simplex.
-#   Since v_k log v_k = -entr(v_k) in CVXPY (entr(x) = -x log x),
-#   -phi_i^*(-n λ_i) = sum_k entr(v_{ik}).
+# Primal  (W  in  R^{p×K}):
+#   min_W  sum_i  a_i * (  logsumexp( D_i W ) - ( D_i W )_{y_i}  )  +  rho  *  |W|_1
 #
-#   max_{Λ}  (1/n) * sum_{i,k} entr( E_{ik} - n Λ_{ik} )
-#   s.t.  E - n Λ >= 0,  sum_k Λ_{ik} = 0  ∀ i,  | (D^T Λ)_{jk} | <= rho  ∀ j,k
-#
-# Reference: composition F(DW)+rho||W||_1; dual -F^*(-Λ) with ||D^T Λ||_inf <= rho.
+# Z-form  dual:  z_i  on  the  (K-1)-simplex  (row  sums  1,  z_{ik}  >=  0),  with  the  Fenchel  couple
+#   Λ  =  a  ⊙  ( E  -  Z )   (E  =  one-hot  labels,  1' Λ_i  =  0,  1'Z_i  =  1)  to  the  line  s = D W.
+#   max_Z  sum_{i,k}  a_i  *  entr( z_{ik} )      (  CVX  entr( x )  =  -x log x,  0*log(0)  = 0  )
+#   s.t.   0  <=  Z,  each  row  sum  1,  and  ( D^T  ( a  ⊙  (E  -  Z) ) )  in  [ -rho,  rho  ]  elementwise
+# (when  a_i=1/n  this  is  the  same  v=E-nΛ  dual;  the  n-averaging  and  1/n  in  a  are  the  only  relabeling).
 
 
 def _solve_cvxpy_with_fallback(
@@ -178,13 +407,31 @@ def _solve_cvxpy_with_fallback(
             return
 
 
+def _a_row_from_sample_weight(
+    n: int,
+    sample_weight: Optional[np.ndarray],
+) -> np.ndarray:
+    if sample_weight is None:
+        return np.full(n, 1.0 / float(n), dtype=np.float64)
+    sw = np.asarray(sample_weight, dtype=np.float64).reshape(-1)
+    if int(sw.shape[0]) != int(n):
+        raise ValueError(f"sample_weight must have length n={n}, got {sw.shape[0]}.")
+    if np.any(sw <= 0.0) or not np.isfinite(sw).all():
+        raise ValueError("sample_weight must be finite and strictly positive for every entry.")
+    return (sw / float(np.sum(sw))).astype(np.float64)
+
+
 def build_softmax_ce_l1_primal_problem(
     D: np.ndarray,
     y: np.ndarray,
     rho: float,
     num_classes: int,
+    sample_weight: Optional[np.ndarray] = None,
 ) -> Tuple[cp.Problem, cp.Variable]:
-    """Primal: mean softmax CE + rho * sum |W|."""
+    """
+    Primal:  sum_i  a_i * CE_i( D W )  +  rho  *  sum |W|,  a_i  =  sw  /  sum( sw  ),
+    or  a_i=1/n  if  sample_weight  is  None  (STE  mean  CE  convention  over  n  flat  rows).
+    """
     n, p = D.shape
     Df = D.astype(np.float64)
     y_i = y.astype(np.int64)
@@ -193,13 +440,18 @@ def build_softmax_ce_l1_primal_problem(
     if num_classes < 2 or int(y_i.min()) < 0 or int(y_i.max()) >= num_classes:
         raise ValueError(f"Invalid labels or num_classes={num_classes}.")
 
+    a = _a_row_from_sample_weight(n, sample_weight)
+    if not np.isclose(float(np.sum(a)), 1.0, rtol=0.0, atol=1e-9):
+        raise ValueError("Internal: row weight vector must sum to 1.")
+
     E = np.zeros((n, num_classes), dtype=np.float64)
     E[np.arange(n), y_i] = 1.0
     W = cp.Variable((p, num_classes))
     scores = Df @ W
     row_lse = cp.log_sum_exp(scores, axis=1, keepdims=False)
     logits_y = cp.sum(cp.multiply(scores, E), axis=1)
-    primal_obj = (1.0 / n) * cp.sum(row_lse - logits_y) + rho * cp.sum(cp.abs(W))
+    row_ce = row_lse - logits_y
+    primal_obj = cp.sum(cp.multiply(a, row_ce)) + rho * cp.sum(cp.abs(W))
     prob = cp.Problem(cp.Minimize(primal_obj))
     return prob, W
 
@@ -209,8 +461,13 @@ def build_softmax_ce_l1_dual_problem(
     y: np.ndarray,
     rho: float,
     num_classes: int,
+    sample_weight: Optional[np.ndarray] = None,
 ) -> Tuple[cp.Problem, cp.Variable]:
-    """Dual of softmax CE + elementwise L1; objective to be maximized."""
+    """
+    Dual:  max  sum_{i,k}  a_i  entr( Z_{ik} )  with  Z  a  (n×K)  simplex  row,  1'Z_i=1,
+    and  D^T( a  ⊙  (E  -  Z) )  in  [ -rho,  rho]  (elementwise,  p×K).
+    See  the  file  block  above  the  Fenchel  form.
+    """
     n, p = D.shape
     Df = D.astype(np.float64)
     y_i = y.astype(np.int64)
@@ -219,20 +476,25 @@ def build_softmax_ce_l1_dual_problem(
     if num_classes < 2 or int(y_i.min()) < 0 or int(y_i.max()) >= num_classes:
         raise ValueError(f"Invalid labels or num_classes={num_classes}.")
 
+    a = _a_row_from_sample_weight(n, sample_weight)
+    if not np.isclose(float(np.sum(a)), 1.0, rtol=0.0, atol=1e-9):
+        raise ValueError("Internal: row weight vector must sum to 1.")
+
     E = np.zeros((n, num_classes), dtype=np.float64)
     E[np.arange(n), y_i] = 1.0
-    Lam = cp.Variable((n, num_classes))
-    v = E - n * Lam
-    DtLam = Df.T @ Lam
-    constraints = [
-        v >= 0.0,
-        cp.sum(Lam, axis=1) == 0.0,
-        DtLam <= rho,
-        DtLam >= -rho,
+    Z = cp.Variable((n, num_classes))
+    a_col = a.reshape(n, 1)
+    M = cp.multiply(a_col, E - Z)
+    DtM = Df.T @ M
+    constraints: list = [
+        Z >= 0.0,
+        cp.sum(Z, axis=1) == 1.0,
+        DtM <= float(rho),
+        DtM >= -float(rho),
     ]
-    dual_obj = (1.0 / n) * cp.sum(cp.entr(v))
+    dual_obj = cp.sum(cp.multiply(a_col, cp.entr(Z)))
     prob = cp.Problem(cp.Maximize(dual_obj), constraints)
-    return prob, Lam
+    return prob, Z
 
 
 def solve_multiclass_softmax_ce_l1_primal_dual(
@@ -241,14 +503,18 @@ def solve_multiclass_softmax_ce_l1_primal_dual(
     rho: float,
     num_classes: int,
     *,
+    sample_weight: Optional[np.ndarray] = None,
     solver_order: Tuple[str, ...] = ("CLARABEL", "SCS"),
 ) -> Tuple[np.ndarray, float, float, float]:
     """
-    Solve primal and dual for softmax CE + L1; return (W, primal_val, dual_val, gap).
+    Weighted  softmax  CE  +  L1  and  the  z-simplex  dual.  If  ``sample_weight  is  None``,
+    uses  a_i=1/n  (mean  over  the  n  flat  training  rows).
 
-    ``gap = primal_val - dual_val`` should be small when strong duality holds.
+    ``gap  =  primal  -  dual``  (numerically  small  at  an  accurate  solution  when  strong  duality  holds).
     """
-    primal_prob, W = build_softmax_ce_l1_primal_problem(D, y, rho, num_classes)
+    primal_prob, W = build_softmax_ce_l1_primal_problem(
+        D, y, rho, num_classes, sample_weight=sample_weight
+    )
     _solve_cvxpy_with_fallback(
         primal_prob,
         has_solution=lambda: W.value is not None,
@@ -261,13 +527,15 @@ def solve_multiclass_softmax_ce_l1_primal_dual(
     if not np.isfinite(w_star).all() or not np.isfinite(primal_val):
         raise FloatingPointError("Non-finite primal solution for softmax CE + L1.")
 
-    dual_prob, Lam = build_softmax_ce_l1_dual_problem(D, y, rho, num_classes)
+    dual_prob, Z = build_softmax_ce_l1_dual_problem(
+        D, y, rho, num_classes, sample_weight=sample_weight
+    )
     _solve_cvxpy_with_fallback(
         dual_prob,
-        has_solution=lambda: Lam.value is not None,
+        has_solution=lambda: Z.value is not None,
         solver_order=solver_order,
     )
-    if Lam.value is None:
+    if Z.value is None:
         raise RuntimeError("Softmax CE + L1 dual solver failed.")
     dual_val = float(dual_prob.value)
     if not np.isfinite(dual_val):

@@ -60,6 +60,9 @@ else:
     from .solvers import ste_parallel_Solve as ste_par
     from .solvers.ste_solve import SNNBaselineSeq, SteModelConfig, SteSolveConfig, SteSolveResult, ste_solve
 
+# K_parallel>1: ste_solve.ste_solve forwards to ste_parallel_Solve, which returns that module's SteSolveResult.
+_STE_SOLVE_RESULT_TYPES = (SteSolveResult, ste_par.SteSolveResult)
+
 
 def _set_seed(seed: int) -> None:
     np.random.seed(seed)
@@ -550,7 +553,7 @@ def _finetune_pipeline_to_simple_style_json(
     br: Dict[str, Any] = pipeline_out["by_readout"][selected_readout]
     pre = br["ste_pretrain"]
     post = br["ste_post"]
-    if not isinstance(pre, SteSolveResult) or not isinstance(post, SteSolveResult):
+    if not isinstance(pre, _STE_SOLVE_RESULT_TYPES) or not isinstance(post, _STE_SOLVE_RESULT_TYPES):
         raise TypeError("Expected SteSolveResult for fine_tune STE stages.")
 
     arithmetic_mode = args.dataset == "arithmetic_seq"
@@ -677,7 +680,7 @@ def _layer_wise_pipeline_to_simple_style_json(
         ste_pre = block["ste_pre"]
         cvx_b = block["cvx"]
         ste_ft = block["ste_finetune"]
-        if not isinstance(ste_pre, SteSolveResult) or not isinstance(ste_ft, SteSolveResult):
+        if not isinstance(ste_pre, _STE_SOLVE_RESULT_TYPES) or not isinstance(ste_ft, _STE_SOLVE_RESULT_TYPES):
             raise TypeError("Expected SteSolveResult in layer_wise block.")
         readout = str(ste_pre.model.last_layer_readout)
         cvx_sel = dict(block["cvx_selected_params"])

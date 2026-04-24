@@ -417,13 +417,30 @@ def solve_binary_l1_primal_dual(
     rho: float,
     loss_name: str,
     solver_order: Tuple[str, ...] = ("CLARABEL", "OSQP", "SCS"),
+    *,
+    sample_weight: np.ndarray | None = None,
 ) -> BinaryCvxSolution:
     """
-    Solve binary convex objective with L1 output regularization:
-      min_w (1/n) * sum_i l(y_i, d_i^T w) + rho * ||w||_1
-    and its Fenchel dual:
-      max_u -F^*(-u) s.t. ||D^T u||_inf <= rho
-    where F(z)=(1/n) sum_i l(y_i,z_i).
+    Solve binary convex objective with L1 output regularization on ``D @ w``:
+
+    * **Unweighted** (``sample_weight is None``):  ``min_w (1/n) * sum_i l(y_i, d_i^T w) + rho * ||w||_1``,
+      which is the same as  ``min_w  sum_i a_i l_i + rho||w||_1`` with  ``a_i = 1/n`` (and ``sum_i a_i = 1``).
+
+    * **Weighted** (``sample_weight`` shape ``(n,)``, all positive):
+      Let  ``a = sample_weight / sum(sample_weight)``  (so  ``sum_i a_i = 1``). Then the primal is
+        ``min_w  sum_i a_i * l(y_i, d_i^T w) + rho * ||w||_1``,
+      with the same L1 on ``w`` as the unweighted case.
+
+    **Dual (Fenchel / Lagrange)**, same conic structure ``||D^T u||_inf <= rho``:
+
+    * **Hinge**  ``l_i = max(0, 1 - y_i z_i)``  with slacks: ``(F(z))_i = xi_i/ (n a_i)`` in the unweighted form, but with weights the slack penalty is  ``a_i * xi_i``; equivalently  ``(1/n) sum xi``  becomes  ``sum a_i xi``  with  ``1 - y z <= xi``:
+      **Dual (weighted):**  maximize  ``sum_i  u_i y_i``  (same as ``sum yu``)  subject to  ``D^T u in [-rho, rho]``  and, with  ``v_i = y_i u_i``,  **``0 <= v_i <= a_i``**  (unweighted: ``a_i = 1/n``  gives  ``0 <= y_i u_i <= 1/n``).
+
+    * **Logistic (``ce``)**, **unweighted**  ``a_i=1/n``: dual uses binary entropy  ``(1/n) sum( entr(n y_i u_i) + entr(1 - n y_i u_i) )``  (CVX `entr`).
+
+    * **Logistic, weighted nontrivial** ``a``: we still solve the **correct weighted primal**; a closed-form dual in the same `entr` shape is not wired here, so  ``dual_obj``  and  ``gap``  are  ``NaN``  (primal  ``w``  is valid).
+
+    * **Squared:** weighted primal uses  ``a_i (d_i'w - y_i)^2``; the dual rewrites similarly (omitted in short form).
     """
     n, p = D.shape
     y = y_pm1.astype(np.float64)
@@ -432,21 +449,40 @@ def solve_binary_l1_primal_dual(
     if loss_name not in ("hinge", "hinge_ovr", "squared", "ce"):
         raise ValueError(f"Unsupported loss_name={loss_name}.")
 
+    if sample_weight is not None:
+        sw = np.asarray(sample_weight, dtype=np.float64).reshape(-1)
+        if sw.shape[0] != n:
+            raise ValueError(f"sample_weight must have shape (n,) with n={n}, got {sw.shape}.")
+        if np.any(sw <= 0.0) or not np.isfinite(sw).all():
+            raise ValueError("sample_weight must be finite and strictly positive on every row.")
+        a = (sw / float(np.sum(sw))).astype(np.float64)
+    else:
+        a = None
+
     # ---------- Primal ----------
     w = cp.Variable(p)
     scores = Df @ w
     if loss_name in ("hinge", "hinge_ovr"):
         xi = cp.Variable(n, nonneg=True)
         margins = cp.multiply(y, scores)
-        primal_obj_expr = (1.0 / n) * cp.sum(xi) + rho * cp.norm1(w)
+        if a is not None:
+            primal_obj_expr = cp.sum(cp.multiply(a, xi)) + rho * cp.norm1(w)
+        else:
+            primal_obj_expr = (1.0 / n) * cp.sum(xi) + rho * cp.norm1(w)
         primal_prob = cp.Problem(cp.Minimize(primal_obj_expr), [margins >= 1.0 - xi])
     elif loss_name == "squared":
         resid = scores - y
-        primal_obj_expr = (1.0 / n) * cp.sum_squares(resid) + rho * cp.norm1(w)
+        if a is not None:
+            primal_obj_expr = cp.sum(cp.multiply(a, cp.square(resid))) + rho * cp.norm1(w)
+        else:
+            primal_obj_expr = (1.0 / n) * cp.sum_squares(resid) + rho * cp.norm1(w)
         primal_prob = cp.Problem(cp.Minimize(primal_obj_expr))
     else:  # ce -> binary logistic
         margins = cp.multiply(y, scores)
-        primal_obj_expr = (1.0 / n) * cp.sum(cp.logistic(-margins)) + rho * cp.norm1(w)
+        if a is not None:
+            primal_obj_expr = cp.sum(cp.multiply(a, cp.logistic(-margins))) + rho * cp.norm1(w)
+        else:
+            primal_obj_expr = (1.0 / n) * cp.sum(cp.logistic(-margins)) + rho * cp.norm1(w)
         primal_prob = cp.Problem(cp.Minimize(primal_obj_expr))
 
     _solve_with_fallback(primal_prob, has_solution=lambda: w.value is not None, solver_order=solver_order)
@@ -460,20 +496,29 @@ def solve_binary_l1_primal_dual(
     # ---------- Dual ----------
     u = cp.Variable(n)
     yu = cp.multiply(y, u)
-    constraints = [Df.T @ u <= rho, Df.T @ u >= -rho]
+    constraints: List[cp.Constraint] = [Df.T @ u <= rho, Df.T @ u >= -rho]
+    dual_ce_weighted_nontrivial = a is not None and loss_name == "ce" and not np.allclose(a, 1.0 / n, rtol=1e-6, atol=0.0)
+    if dual_ce_weighted_nontrivial:
+        return BinaryCvxSolution(
+            w=w_star,
+            primal_obj=primal_val,
+            dual_obj=float("nan"),
+            gap=float("nan"),
+        )
 
     if loss_name in ("hinge", "hinge_ovr"):
-        # y_i u_i in [0, 1/n], objective = sum_i y_i u_i
-        constraints.extend([yu >= 0.0, yu <= 1.0 / n])
+        if a is not None:
+            constraints.extend([yu >= 0.0, yu <= a])
+        else:
+            constraints.extend([yu >= 0.0, yu <= 1.0 / n])
         dual_obj = cp.Maximize(cp.sum(yu))
     elif loss_name == "squared":
-        # -F*(-u) = sum_i (y_i u_i) - (n/4) * ||u||_2^2
+        if a is not None:
+            raise NotImplementedError("Dual for weighted squared loss with L1 is not implemented; use unweighted (sample_weight=None).")
         dual_obj = cp.Maximize(cp.sum(yu) - (n / 4.0) * cp.sum_squares(u))
-    else:  # ce -> binary logistic
-        # l(z)=log(1+exp(-y z)); domain: y_i u_i in [0,1/n]
+    else:  # ce -> binary logistic, unweighted (or a ~ uniform)
         constraints.extend([yu >= 0.0, yu <= 1.0 / n])
         nyu = n * yu
-        # -F*(-u) = (1/n) * sum_i [ entr(n y_i u_i) + entr(1 - n y_i u_i) ]
         dual_obj = cp.Maximize((1.0 / n) * cp.sum(cp.entr(nyu) + cp.entr(1.0 - nyu)))
 
     dual_prob = cp.Problem(dual_obj, constraints)
@@ -483,7 +528,10 @@ def solve_binary_l1_primal_dual(
     dual_val = float(dual_prob.value)
     if not np.isfinite(dual_val):
         raise FloatingPointError("Non-finite dual objective.")
-    return BinaryCvxSolution(w=w_star, primal_obj=primal_val, dual_obj=dual_val, gap=float(primal_val - dual_val))
+    gap_v = float(primal_val - dual_val)
+    if not np.isfinite(gap_v):
+        gap_v = float("nan")
+    return BinaryCvxSolution(w=w_star, primal_obj=primal_val, dual_obj=dual_val, gap=gap_v)
 
 
 def _hinge_ovr_numpy(scores: np.ndarray, y: np.ndarray, margin: float = 1.0) -> float:

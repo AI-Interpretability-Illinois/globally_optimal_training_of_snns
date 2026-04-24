@@ -8,12 +8,16 @@ Provides:
   3. .att file loader (OpenFst AT&T format, for MLRegTest)
   4. MLRegTest data file loader
   5. make_dfa_dataset() matching snn_p2.py interface: → (X, y, num_classes)
+  6. make_dfa_autoregressive_dataset() for (prev_state, input_t) → (next_state, per-step
+     accept) on built-in Tomita, bounded Dyck (``dyck1_d*``), and dynamic random DFAs
+     ``random_{num_states}_{alphabet_size}``; not ``dyck1_unbounded``
 
 Usage from snn_p2.py:
   --task dfa:tomita_3         # built-in DFA
   --task dfa:parity_3         # parity mod 3
   --task dfa:att:/path/to.att # load .att file
   --task dfa:mlregtest:/path/to/langname  # load MLRegTest data files
+  --task dfa:random_6_4         # dynamic random DFA with 6 states, alphabet size 4
 
 Usage standalone:
   python dfa_tasks.py --list                          # list all built-in DFAs
@@ -28,9 +32,21 @@ import os
 import re
 import sys
 from dataclasses import dataclass, field
+from functools import lru_cache
 from typing import Dict, FrozenSet, List, Optional, Set, Tuple
 
 import numpy as np
+
+try:
+    from random_dfa_library import (
+        DFA as RandomDFA,
+        RandomDFASelectionConfig,
+        construct_random_dfa,
+    )
+except Exception:
+    RandomDFA = None  # type: ignore[assignment]
+    RandomDFASelectionConfig = None  # type: ignore[assignment]
+    construct_random_dfa = None  # type: ignore[assignment]
 
 
 # ============================================================
@@ -283,6 +299,87 @@ def load_mlregtest_data(
     alphabet = sorted(alphabet_set)
     return strings, np.array(labels, dtype=np.int64), alphabet
 
+
+
+# ============================================================
+# Dynamic random DFA support
+# ============================================================
+
+_RANDOM_SPEC_RE = re.compile(
+    r"^random_(?P<num_states>\d+)_(?P<alphabet_size>\d+)(?:_seed(?P<seed>\d+))?$"
+)
+
+
+def parse_random_dfa_spec(name: str) -> Optional[Tuple[int, int, int]]:
+    """
+    Parse dynamic random DFA specs of the form:
+        random_{num_states}_{alphabet_size}
+        random_{num_states}_{alphabet_size}_seed{seed}
+
+    Returns
+    -------
+    (num_states, alphabet_size, seed) or None if `name` is not a random spec.
+    """
+    m = _RANDOM_SPEC_RE.fullmatch(str(name))
+    if m is None:
+        return None
+    q = int(m.group("num_states"))
+    a = int(m.group("alphabet_size"))
+    seed = int(m.group("seed")) if m.group("seed") is not None else 0
+    return q, a, seed
+
+
+def _ensure_random_dfa_support() -> None:
+    if construct_random_dfa is None or RandomDFASelectionConfig is None:
+        raise ImportError(
+            "random_dfa_library.py is required for specs like "
+            "'random_{num_states}_{alphabet_size}'."
+        )
+
+
+def _convert_random_dfa_to_string_dfa(rdfa: "RandomDFA", name: str) -> DFA:
+    """
+    Convert the standalone integer-alphabet RandomDFA into this file's string-alphabet DFA.
+    """
+    alphabet = [str(int(a)) for a in rdfa.alphabet]
+    transitions: Dict[Tuple[int, str], int] = {}
+    states = set(range(int(rdfa.num_states)))
+    for q in range(int(rdfa.num_states)):
+        for a in range(int(rdfa.alphabet_size)):
+            transitions[(q, str(a))] = int(rdfa.step(q, a))
+    accept = {q for q, is_acc in enumerate(rdfa.accepting) if bool(is_acc)}
+    return DFA(
+        name=name,
+        states=states,
+        alphabet=alphabet,
+        transitions=transitions,
+        start=int(rdfa.start_state),
+        accept=accept,
+    )
+
+
+@lru_cache(maxsize=256)
+def _cached_random_dfa(name: str) -> DFA:
+    """
+    Construct and cache a random DFA instance keyed by the literal spec string.
+
+    The default constructor enforces non-trivial short-horizon behavior on lengths 5..8,
+    which is the intended train-length regime for these synthetic benchmarks.
+    """
+    parsed = parse_random_dfa_spec(name)
+    if parsed is None:
+        raise KeyError(f"{name!r} is not a random DFA spec.")
+    q, a, seed = parsed
+    _ensure_random_dfa_support()
+    sel_cfg = RandomDFASelectionConfig(lengths=(5, 6, 7, 8))
+    rdfa = construct_random_dfa(
+        num_states=int(q),
+        alphabet_size=int(a),
+        seed=int(seed),
+        selection_cfg=sel_cfg,
+        name=name,
+    )
+    return _convert_random_dfa_to_string_dfa(rdfa, name=name)
 
 # ============================================================
 # Built-in DFA library
@@ -681,9 +778,12 @@ BUILTIN_DFAS = {
 
 
 def get_dfa(name: str) -> DFA:
-    """Get a DFA by name: built-in, .att path, or mlregtest path."""
+    """Get a DFA by name: built-in, dynamic random spec, or .att path."""
     if name in BUILTIN_DFAS:
         return BUILTIN_DFAS[name]()
+
+    if parse_random_dfa_spec(name) is not None:
+        return _cached_random_dfa(name)
 
     if name.startswith("att:"):
         path = name[4:]
@@ -691,6 +791,8 @@ def get_dfa(name: str) -> DFA:
 
     raise KeyError(
         f"Unknown DFA '{name}'. Available: {sorted(BUILTIN_DFAS.keys())}\n"
+        f"Dynamic random specs supported: 'random_{{num_states}}_{{alphabet_size}}' or "
+        f"'random_{{num_states}}_{{alphabet_size}}_seed{{seed}}'.\n"
         f"Or use 'att:/path/to/file.att' for custom DFAs.\n"
         f"Special non-DFA language specs supported in make_dfa_dataset: ['dyck1_unbounded']."
     )
@@ -699,6 +801,128 @@ def get_dfa(name: str) -> DFA:
 # ============================================================
 # Dataset generation (snn_p2.py interface)
 # ============================================================
+
+def autoregressive_dfa_spec_is_supported(dfa_spec: str) -> bool:
+    """
+    Autoregressive (state, input) -> (next state, label) is defined for:
+      - built-in Tomita grammars,
+      - bounded Dyck-1 DFAs,
+      - dynamic random DFA specs ``random_{num_states}_{alphabet_size}``.
+
+    It is not defined for ``dyck1_unbounded``, MLRegTest string files, or generic .att loaders.
+    """
+    s = str(dfa_spec)
+    if s == "dyck1_unbounded" or s.startswith("mlregtest:"):
+        return False
+    if s.startswith("att:"):
+        return False
+    if parse_random_dfa_spec(s) is not None:
+        return True
+    if s in BUILTIN_DFAS and (s.startswith("tomita_") or s.startswith("dyck1_d")):
+        return True
+    return False
+
+
+def _build_state_index_table(dfa: DFA) -> Tuple[Dict[int, int], int]:
+    """
+    Map each reachable DFA state and the dead/undefined state (-1) to 0..K-1.
+    K = |states| + 1 (last index is the dead / undefined -- step returned -1).
+    """
+    ordered = sorted(int(s) for s in dfa.states)
+    m: Dict[int, int] = {s: i for i, s in enumerate(ordered)}
+    dead = len(ordered)
+    m[-1] = dead
+    n_cls = dead + 1
+    return m, n_cls
+
+
+def get_dfa_start_state_index(dfa: DFA) -> int:
+    m, _ = _build_state_index_table(dfa)
+    s = int(dfa.start)
+    if s not in m:
+        raise KeyError(f"Start state {s} not in DFA state index table.")
+    return m[s]
+
+
+def strings_to_autoregressive_tensors(
+    dfa: DFA,
+    strings: List[List[str]],
+    T: int,
+) -> Tuple[np.ndarray, np.ndarray, np.ndarray, int, int]:
+    """
+    For each string (length T, symbols in dfa.alphabet), build timestep inputs
+    (prev_state_onehot, current_symbol_onehot) and targets (next state class,
+    per-step accept of the next state).
+
+    Returns
+    -------
+    X : (n, T, d_in) with d_in = n_state_classes + |alphabet|
+    y_state : (n, T) int64 class index for state after the symbol at t
+    y_label : (n, T) int64 in {0,1} (next state in accept set)
+    n_state_classes, d_in
+    """
+    d_sym = int(len(dfa.alphabet))
+    sym2idx = dfa.sym2idx
+    st2, n_state_cls = _build_state_index_table(dfa)
+    d_in = n_state_cls + d_sym
+    n = len(strings)
+    X = np.zeros((n, T, d_in), dtype=np.float32)
+    y_state = np.zeros((n, T), dtype=np.int64)
+    y_label = np.zeros((n, T), dtype=np.int64)
+    for i, s in enumerate(strings):
+        if len(s) != T:
+            raise ValueError(f"Autoregressive format expects length T={T}, got {len(s)}.")
+        state = int(dfa.start)
+        for t in range(T):
+            sym = s[t]
+            if sym not in sym2idx:
+                raise KeyError(f"Symbol {sym!r} not in alphabet {dfa.alphabet}.")
+            prev_idx = st2[state] if state in st2 else st2[-1]
+            X[i, t, :n_state_cls] = 0.0
+            X[i, t, prev_idx] = 1.0
+            X[i, t, n_state_cls + sym2idx[sym]] = 1.0
+            nxt = dfa.step(state, sym)
+            if nxt == -1:
+                y_state[i, t] = st2[-1]
+                y_label[i, t] = 0
+                state = -1
+            else:
+                y_state[i, t] = st2[nxt]
+                y_label[i, t] = 1 if nxt in dfa.accept else 0
+                state = nxt
+    return X, y_state, y_label, n_state_cls, d_in
+
+
+def make_dfa_autoregressive_dataset(
+    dfa_spec: str,
+    n: int,
+    T: int,
+    seed: int = 0,
+    balanced: bool = True,
+    return_strings: bool = False,
+) -> Tuple[np.ndarray, np.ndarray, np.ndarray, int, int, str, Optional[List[List[str]]]]:
+    """
+    Balanced (or not) DFA strings with (prev_state, symbol) -> (next state, accept bit).
+
+    *Only* built-in ``tomita_*``, ``dyck1_d*`` (bounded Dyck), and dynamic
+    random specs ``random_{num_states}_{alphabet_size}``; raises for
+    ``dyck1_unbounded`` or external file specs.
+
+    Returns
+    -------
+    X, y_state, y_label, n_state_classes, d_in, dfa_spec
+    """
+    if not autoregressive_dfa_spec_is_supported(dfa_spec):
+        raise ValueError(
+            f"autoregressive dataset not supported for dfa_spec={dfa_spec!r}. "
+            "Use a built-in tomita_* / dyck1_d* (bounded) name or a dynamic random spec 'random_{num_states}_{alphabet_size}'."
+        )
+    dfa = get_dfa(dfa_spec)
+    strings, _labels = dfa.generate_strings(T, n, seed=seed, balanced=balanced)
+    X, y_s, y_l, n_sc, d_in = strings_to_autoregressive_tensors(dfa, strings, T)
+    s_out: Optional[List[List[str]]] = strings if return_strings else None
+    return X, y_s, y_l, n_sc, d_in, dfa_spec, s_out
+
 
 def make_dfa_dataset(
     dfa_spec: str,
@@ -712,6 +936,9 @@ def make_dfa_dataset(
 ) -> Tuple[np.ndarray, np.ndarray, int]:
     """
     Generate dataset from a DFA specification.
+
+    For autoregressive (prev state + symbol) supervision, use
+    :func:`make_dfa_autoregressive_dataset` (Tomita and bounded Dyck only).
 
     Parameters
     ----------
@@ -807,7 +1034,7 @@ def main():
     parser.add_argument("--list", action="store_true",
                         help="List all built-in DFAs")
     parser.add_argument("--name", type=str, default=None,
-                        help="Built-in DFA name")
+                        help="Built-in DFA name or dynamic random spec random_{num_states}_{alphabet_size}")
     parser.add_argument("--att", type=str, default=None,
                         help="Path to .att file")
     parser.add_argument("--T", type=int, default=20,
@@ -815,6 +1042,12 @@ def main():
     parser.add_argument("--n", type=int, default=1000,
                         help="Number of samples to generate")
     parser.add_argument("--seed", type=int, default=0)
+    parser.add_argument(
+        "--autoregressive",
+        action="store_true",
+        help="Emit (prev_state, symbol) -> (next_state, accept) sequences for built-in "
+        "tomita_*, dyck1_d* (bounded), and random_{num_states}_{alphabet_size}.",
+    )
     args = parser.parse_args()
 
     if args.list:
@@ -823,6 +1056,24 @@ def main():
             dfa = factory()
             print(f"  {name:<20} {dfa.num_states} states, |Σ|={dfa.num_symbols} "
                   f"Σ={dfa.alphabet}, accept={dfa.accept}")
+        return
+
+    if args.autoregressive:
+        if args.att:
+            raise ValueError("--autoregressive requires --name (built-in tomita_*, dyck1_d*, or random_{q}_{a}), not --att")
+        if not args.name:
+            raise ValueError("--autoregressive requires --name tomita_*, dyck1_d*, or random_{q}_{a}")
+        X, y_state, y_label, n_sc, d_in, spec, _s = make_dfa_autoregressive_dataset(
+            args.name, args.n, args.T, seed=args.seed, balanced=True, return_strings=False
+        )
+        dfa = get_dfa(args.name)
+        print(dfa.summary())
+        print(
+            f"\nAutoregressive (balanced) dataset: spec={spec!r} n_state_classes={n_sc} d_in={d_in}"
+        )
+        print(f"  X shape: {X.shape}  y_state: {y_state.shape}  y_label: {y_label.shape}")
+        for i in range(min(3, X.shape[0])):
+            print(f"  ex{i} y_state row0..2: {y_state[i, : min(3, args.T)]}  y_label: {y_label[i, : min(3, args.T)]}")
         return
 
     # Build DFA

@@ -74,12 +74,41 @@ def _validate_generation_args(op: str, base: int, n_digits: int, n_samples: int)
         raise ValueError(f"n_samples must be >=1, got {n_samples}.")
 
 
-def build_add_sequence_tokens(a: int, b: int, base: int, n_digits: int) -> Tuple[np.ndarray, np.ndarray, str]:
+def _rand_uniform_lt_b_pow_n(rng: np.random.Generator, base: int, n_digits: int) -> int:
+    """
+    Uniform int in [0, base**n_digits) with the same distribution as
+    ``rng.integers(0, base**n_digits)`` when the latter is valid, but without forming
+    ``base**n_digits`` (avoids Python overflow and NumPy's int64 bound on ``high`` for
+    ``Generator.integers`` when n_digits is large, e.g. base=2, n_digits>=64).
+    """
+    a = 0
+    m = 1
+    for _ in range(n_digits):
+        a += int(rng.integers(0, base)) * m
+        m *= base
+    return a
+
+
+def build_add_sequence_tokens(
+    a: int,
+    b: int,
+    base: int,
+    n_digits: int,
+    *,
+    initial_carry: int = 0,
+) -> Tuple[np.ndarray, np.ndarray, str]:
+    """
+    Column addition with LSD-first token rows. ``initial_carry`` is the carry **into** the
+    first digit column (timestep 1 in 1-based indexing, row index 0); for base-2 it must be
+    0 or 1 so the first row's carry-in channel is always a binary digit.
+    """
+    if not (0 <= int(initial_carry) < int(base)):
+        raise ValueError(f"initial_carry must be in [0, base) for add, got {initial_carry} with base={base}.")
     a_ds = digits_lsd(a, base, min_len=n_digits)
     b_ds = digits_lsd(b, base, min_len=n_digits)
     rows: List[List[int]] = []
     out: List[int] = []
-    carry = 0
+    carry = int(initial_carry)
     for t in range(n_digits):
         carry_in = carry
         s = a_ds[t] + b_ds[t] + carry_in
@@ -171,21 +200,34 @@ def verify_sample_seq(sample: ArithmeticTokenSample) -> None:
         b = int(sample.operand2, sample.base)
 
     if sample.op == "add":
-        expected = int_to_base_str(a + b, sample.base)
+        n_d = int(sample.inputs.shape[0] - 1)
+        ic = int(sample.inputs[0, 2])
+        exp_in, exp_tok, exp_res = build_add_sequence_tokens(
+            a, b, sample.base, n_d, initial_carry=ic
+        )
+        if not np.array_equal(sample.inputs, exp_in):
+            raise ValueError("Add inputs do not match recomputation from (a, b) and first-row carry_in.")
+        if not np.array_equal(sample.target_tokens, exp_tok):
+            raise ValueError("Add target_tokens do not match recomputation from (a, b) and first-row carry_in.")
+        if sample.result != exp_res:
+            raise ValueError(f"Add result mismatch: got {sample.result!r}, expected {exp_res!r}.")
     elif sample.op == "sub":
         expected = int_to_base_str(a - b, sample.base)
+        if sample.result != expected:
+            raise ValueError(f"Result mismatch for {sample.op}: got {sample.result}, expected {expected}.")
     elif sample.op == "mul":
         expected = int_to_base_str(a * b, sample.base)
+        if sample.result != expected:
+            raise ValueError(f"Result mismatch for {sample.op}: got {sample.result}, expected {expected}.")
     elif sample.op == "div":
         b_digit = int(sample.operand2, sample.base)
         q = a // b_digit
         r = a % b_digit
         expected = f"{int_to_base_str(q, sample.base)}|r{int_to_base_str(r, sample.base)}"
+        if sample.result != expected:
+            raise ValueError(f"Result mismatch for {sample.op}: got {sample.result}, expected {expected}.")
     else:
         raise ValueError(f"Unsupported op: {sample.op}")
-
-    if sample.result != expected:
-        raise ValueError(f"Result mismatch for {sample.op}: got {sample.result}, expected {expected}.")
     if sample.inputs.shape[0] != sample.target_tokens.shape[0]:
         raise ValueError("Input/target timestep length mismatch.")
 
@@ -198,12 +240,19 @@ def _build_single_sample(
     a: int,
     b: int,
     rng: np.random.Generator,
+    add_initial_carry: str = "random",
 ) -> ArithmeticTokenSample:
     if op == "sub" and a < b:
         a, b = b, a
 
     if op == "add":
-        inputs, target_tokens, result = build_add_sequence_tokens(a, b, base, n_digits)
+        mode = str(add_initial_carry)
+        if mode not in ("zero", "random"):
+            raise ValueError(f"add_initial_carry must be 'zero' or 'random', got {add_initial_carry!r}.")
+        ic = 0
+        if mode == "random":
+            ic = int(rng.integers(0, int(base)))
+        inputs, target_tokens, result = build_add_sequence_tokens(a, b, base, n_digits, initial_carry=ic)
         op2_display = int_to_base_str(b, base)
     elif op == "sub":
         inputs, target_tokens, result = build_sub_sequence_tokens(a, b, base, n_digits)
@@ -235,14 +284,15 @@ def generate_samples_for_op_base_seq(
     n_digits: int,
     n_samples: int,
     seed: int,
+    *,
+    add_initial_carry: str = "random",
 ) -> List[ArithmeticTokenSample]:
     _validate_generation_args(op=op, base=base, n_digits=n_digits, n_samples=n_samples)
     rng = np.random.default_rng(seed)
     samples: List[ArithmeticTokenSample] = []
-    max_val = base ** n_digits
     for _ in range(n_samples):
-        a = int(rng.integers(0, max_val))
-        b = int(rng.integers(0, max_val))
+        a = _rand_uniform_lt_b_pow_n(rng, base, n_digits)
+        b = _rand_uniform_lt_b_pow_n(rng, base, n_digits)
         samples.append(
             _build_single_sample(
                 op=op,
@@ -251,6 +301,7 @@ def generate_samples_for_op_base_seq(
                 a=a,
                 b=b,
                 rng=rng,
+                add_initial_carry=add_initial_carry,
             )
         )
     return samples

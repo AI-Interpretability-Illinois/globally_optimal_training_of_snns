@@ -22,11 +22,11 @@ from run_k_parallel_ablation import _parse_k_list, validate_sub_fixed, validate_
 
 # Match arithmetic hinge K ablation (user runs): sub widths and K grid.
 DEFAULT_K_LIST = "2,16,32,64"
-DEFAULT_P_REC = 128
-DEFAULT_P_LAST = 512
+DEFAULT_P_REC = 1024
+DEFAULT_P_LAST = 2048
 
 # Same n_train progression as run_add_base2_simple_and_ste_parallel.py
-DEFAULT_N_TRAIN_LIST = "2304"
+DEFAULT_N_TRAIN_LIST = "8192,16384"
 N_VAL = 256
 N_TEST = 2048
 
@@ -34,8 +34,8 @@ N_TEST = 2048
 T_DEFAULT = 20
 L_DEFAULT = 3
 # Parsed by simple_testing as dfa_spec=tomita_3 after ``dfa:`` split.
-DATASET_DFA = "dfa:tomita_3"
-DFA_SPEC = "tomita_3"
+DATASET_DFA = "dfa:tomita_6"
+DFA_SPEC = "tomita_6"
 
 
 def _build_simple_testing_cmd(
