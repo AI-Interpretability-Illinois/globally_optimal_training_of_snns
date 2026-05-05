@@ -1,0 +1,457 @@
+{
+  "run_config": {
+    "seeds": [
+      0,
+      1,
+      2
+    ],
+    "arith_base": 2,
+    "n_digits": 5,
+    "T": 6,
+    "n_train_pre": 2304,
+    "n_val_pre": 512,
+    "n_train_ft": 2304,
+    "n_val_ft": 512,
+    "n_test": 1024,
+    "n_test_ood": 1024,
+    "ood_digits": [
+      10,
+      25,
+      50
+    ],
+    "add_initial_carry": "random",
+    "finetune_seed_offset": 1000,
+    "eval_seed_offset": 2000,
+    "L": 10,
+    "P_rec": 256,
+    "P_last": 512,
+    "K_parallel": 2,
+    "ste_last_layer_readout": "spike",
+    "cvx_last_layer_readout": "spike",
+    "optimizer_name": "adam",
+    "ste_pretrain_epochs": 100,
+    "ste_finetune_epochs": 100,
+    "lambda_sum": 1.0,
+    "lambda_carry_grid": [
+      0.125,
+      0.25,
+      0.5,
+      0.75,
+      1.0,
+      1.25,
+      1.5,
+      2.0,
+      4.0,
+      6.0,
+      8.0,
+      10.0
+    ],
+    "ste_lr_grid": [
+      0.001,
+      0.005,
+      0.01,
+      0.1
+    ],
+    "ste_beta_grid": [
+      0.01,
+      0.1,
+      0.5,
+      1.0,
+      5.0,
+      10.0
+    ],
+    "cvx_beta_grid": [
+      0.01,
+      0.1,
+      0.5,
+      1.0,
+      5.0,
+      10.0
+    ],
+    "cvx_bias_grid": [
+      0.0
+    ],
+    "ste_sum_loss": "auto",
+    "ste_carry_loss": "auto",
+    "cvx_sum_loss": "auto",
+    "cvx_carry_loss": "auto",
+    "tf_objective": "joint",
+    "ste_time_loss": "ramp",
+    "cvx_time_loss": "ramp",
+    "cvx_grid_workers": 12,
+    "cvx_ovr_workers": 1,
+    "run_mode": "pretrain_only",
+    "pretrain_variant": "cvx",
+    "finetune_variant": "ste_from_ste",
+    "evaluation_modes_saved_by_default": [
+      "teacher_forcing",
+      "autoregressive"
+    ],
+    "stages": [
+      "cvx_pretrain"
+    ]
+  },
+  "out_root": "/home/azureuser/globally_optimal_training_of_snns/atomic/sweep_results/carry_hybrid_b2_d5_L10",
+  "mode": "pretrain_only",
+  "pretrain_variant": "cvx",
+  "n_saved_weight_files": 36,
+  "seeds": [
+    {
+      "seed": 0,
+      "split_seeds": {
+        "pretrain_train": 11,
+        "pretrain_val": 29,
+        "eval_test": 2047
+      },
+      "pretrain_variant": "cvx",
+      "lambda_sweep": [
+        {
+          "lambda_carry": 0.125,
+          "selected_params": {
+            "beta": 0.01,
+            "bias": 0.0
+          },
+          "weights_path": "/home/azureuser/globally_optimal_training_of_snns/atomic/sweep_results/carry_hybrid_b2_d5_L10/seed_0/pretrain_weights/cvx_lambda_0p125.npz",
+          "weight_tensors_saved": 20
+        },
+        {
+          "lambda_carry": 0.25,
+          "selected_params": {
+            "beta": 0.01,
+            "bias": 0.0
+          },
+          "weights_path": "/home/azureuser/globally_optimal_training_of_snns/atomic/sweep_results/carry_hybrid_b2_d5_L10/seed_0/pretrain_weights/cvx_lambda_0p25.npz",
+          "weight_tensors_saved": 20
+        },
+        {
+          "lambda_carry": 0.5,
+          "selected_params": {
+            "beta": 0.01,
+            "bias": 0.0
+          },
+          "weights_path": "/home/azureuser/globally_optimal_training_of_snns/atomic/sweep_results/carry_hybrid_b2_d5_L10/seed_0/pretrain_weights/cvx_lambda_0p5.npz",
+          "weight_tensors_saved": 20
+        },
+        {
+          "lambda_carry": 0.75,
+          "selected_params": {
+            "beta": 0.01,
+            "bias": 0.0
+          },
+          "weights_path": "/home/azureuser/globally_optimal_training_of_snns/atomic/sweep_results/carry_hybrid_b2_d5_L10/seed_0/pretrain_weights/cvx_lambda_0p75.npz",
+          "weight_tensors_saved": 20
+        },
+        {
+          "lambda_carry": 1.0,
+          "selected_params": {
+            "beta": 0.01,
+            "bias": 0.0
+          },
+          "weights_path": "/home/azureuser/globally_optimal_training_of_snns/atomic/sweep_results/carry_hybrid_b2_d5_L10/seed_0/pretrain_weights/cvx_lambda_1.npz",
+          "weight_tensors_saved": 20
+        },
+        {
+          "lambda_carry": 1.25,
+          "selected_params": {
+            "beta": 0.01,
+            "bias": 0.0
+          },
+          "weights_path": "/home/azureuser/globally_optimal_training_of_snns/atomic/sweep_results/carry_hybrid_b2_d5_L10/seed_0/pretrain_weights/cvx_lambda_1p25.npz",
+          "weight_tensors_saved": 20
+        },
+        {
+          "lambda_carry": 1.5,
+          "selected_params": {
+            "beta": 0.01,
+            "bias": 0.0
+          },
+          "weights_path": "/home/azureuser/globally_optimal_training_of_snns/atomic/sweep_results/carry_hybrid_b2_d5_L10/seed_0/pretrain_weights/cvx_lambda_1p5.npz",
+          "weight_tensors_saved": 20
+        },
+        {
+          "lambda_carry": 2.0,
+          "selected_params": {
+            "beta": 0.01,
+            "bias": 0.0
+          },
+          "weights_path": "/home/azureuser/globally_optimal_training_of_snns/atomic/sweep_results/carry_hybrid_b2_d5_L10/seed_0/pretrain_weights/cvx_lambda_2.npz",
+          "weight_tensors_saved": 20
+        },
+        {
+          "lambda_carry": 4.0,
+          "selected_params": {
+            "beta": 0.01,
+            "bias": 0.0
+          },
+          "weights_path": "/home/azureuser/globally_optimal_training_of_snns/atomic/sweep_results/carry_hybrid_b2_d5_L10/seed_0/pretrain_weights/cvx_lambda_4.npz",
+          "weight_tensors_saved": 20
+        },
+        {
+          "lambda_carry": 6.0,
+          "selected_params": {
+            "beta": 0.01,
+            "bias": 0.0
+          },
+          "weights_path": "/home/azureuser/globally_optimal_training_of_snns/atomic/sweep_results/carry_hybrid_b2_d5_L10/seed_0/pretrain_weights/cvx_lambda_6.npz",
+          "weight_tensors_saved": 20
+        },
+        {
+          "lambda_carry": 8.0,
+          "selected_params": {
+            "beta": 0.01,
+            "bias": 0.0
+          },
+          "weights_path": "/home/azureuser/globally_optimal_training_of_snns/atomic/sweep_results/carry_hybrid_b2_d5_L10/seed_0/pretrain_weights/cvx_lambda_8.npz",
+          "weight_tensors_saved": 20
+        },
+        {
+          "lambda_carry": 10.0,
+          "selected_params": {
+            "beta": 0.01,
+            "bias": 0.0
+          },
+          "weights_path": "/home/azureuser/globally_optimal_training_of_snns/atomic/sweep_results/carry_hybrid_b2_d5_L10/seed_0/pretrain_weights/cvx_lambda_10.npz",
+          "weight_tensors_saved": 20
+        }
+      ]
+    },
+    {
+      "seed": 1,
+      "split_seeds": {
+        "pretrain_train": 12,
+        "pretrain_val": 30,
+        "eval_test": 2048
+      },
+      "pretrain_variant": "cvx",
+      "lambda_sweep": [
+        {
+          "lambda_carry": 0.125,
+          "selected_params": {
+            "beta": 0.01,
+            "bias": 0.0
+          },
+          "weights_path": "/home/azureuser/globally_optimal_training_of_snns/atomic/sweep_results/carry_hybrid_b2_d5_L10/seed_1/pretrain_weights/cvx_lambda_0p125.npz",
+          "weight_tensors_saved": 20
+        },
+        {
+          "lambda_carry": 0.25,
+          "selected_params": {
+            "beta": 0.01,
+            "bias": 0.0
+          },
+          "weights_path": "/home/azureuser/globally_optimal_training_of_snns/atomic/sweep_results/carry_hybrid_b2_d5_L10/seed_1/pretrain_weights/cvx_lambda_0p25.npz",
+          "weight_tensors_saved": 20
+        },
+        {
+          "lambda_carry": 0.5,
+          "selected_params": {
+            "beta": 0.01,
+            "bias": 0.0
+          },
+          "weights_path": "/home/azureuser/globally_optimal_training_of_snns/atomic/sweep_results/carry_hybrid_b2_d5_L10/seed_1/pretrain_weights/cvx_lambda_0p5.npz",
+          "weight_tensors_saved": 20
+        },
+        {
+          "lambda_carry": 0.75,
+          "selected_params": {
+            "beta": 0.01,
+            "bias": 0.0
+          },
+          "weights_path": "/home/azureuser/globally_optimal_training_of_snns/atomic/sweep_results/carry_hybrid_b2_d5_L10/seed_1/pretrain_weights/cvx_lambda_0p75.npz",
+          "weight_tensors_saved": 20
+        },
+        {
+          "lambda_carry": 1.0,
+          "selected_params": {
+            "beta": 0.01,
+            "bias": 0.0
+          },
+          "weights_path": "/home/azureuser/globally_optimal_training_of_snns/atomic/sweep_results/carry_hybrid_b2_d5_L10/seed_1/pretrain_weights/cvx_lambda_1.npz",
+          "weight_tensors_saved": 20
+        },
+        {
+          "lambda_carry": 1.25,
+          "selected_params": {
+            "beta": 0.01,
+            "bias": 0.0
+          },
+          "weights_path": "/home/azureuser/globally_optimal_training_of_snns/atomic/sweep_results/carry_hybrid_b2_d5_L10/seed_1/pretrain_weights/cvx_lambda_1p25.npz",
+          "weight_tensors_saved": 20
+        },
+        {
+          "lambda_carry": 1.5,
+          "selected_params": {
+            "beta": 0.01,
+            "bias": 0.0
+          },
+          "weights_path": "/home/azureuser/globally_optimal_training_of_snns/atomic/sweep_results/carry_hybrid_b2_d5_L10/seed_1/pretrain_weights/cvx_lambda_1p5.npz",
+          "weight_tensors_saved": 20
+        },
+        {
+          "lambda_carry": 2.0,
+          "selected_params": {
+            "beta": 0.01,
+            "bias": 0.0
+          },
+          "weights_path": "/home/azureuser/globally_optimal_training_of_snns/atomic/sweep_results/carry_hybrid_b2_d5_L10/seed_1/pretrain_weights/cvx_lambda_2.npz",
+          "weight_tensors_saved": 20
+        },
+        {
+          "lambda_carry": 4.0,
+          "selected_params": {
+            "beta": 0.01,
+            "bias": 0.0
+          },
+          "weights_path": "/home/azureuser/globally_optimal_training_of_snns/atomic/sweep_results/carry_hybrid_b2_d5_L10/seed_1/pretrain_weights/cvx_lambda_4.npz",
+          "weight_tensors_saved": 20
+        },
+        {
+          "lambda_carry": 6.0,
+          "selected_params": {
+            "beta": 0.01,
+            "bias": 0.0
+          },
+          "weights_path": "/home/azureuser/globally_optimal_training_of_snns/atomic/sweep_results/carry_hybrid_b2_d5_L10/seed_1/pretrain_weights/cvx_lambda_6.npz",
+          "weight_tensors_saved": 20
+        },
+        {
+          "lambda_carry": 8.0,
+          "selected_params": {
+            "beta": 0.01,
+            "bias": 0.0
+          },
+          "weights_path": "/home/azureuser/globally_optimal_training_of_snns/atomic/sweep_results/carry_hybrid_b2_d5_L10/seed_1/pretrain_weights/cvx_lambda_8.npz",
+          "weight_tensors_saved": 20
+        },
+        {
+          "lambda_carry": 10.0,
+          "selected_params": {
+            "beta": 0.01,
+            "bias": 0.0
+          },
+          "weights_path": "/home/azureuser/globally_optimal_training_of_snns/atomic/sweep_results/carry_hybrid_b2_d5_L10/seed_1/pretrain_weights/cvx_lambda_10.npz",
+          "weight_tensors_saved": 20
+        }
+      ]
+    },
+    {
+      "seed": 2,
+      "split_seeds": {
+        "pretrain_train": 13,
+        "pretrain_val": 31,
+        "eval_test": 2049
+      },
+      "pretrain_variant": "cvx",
+      "lambda_sweep": [
+        {
+          "lambda_carry": 0.125,
+          "selected_params": {
+            "beta": 0.01,
+            "bias": 0.0
+          },
+          "weights_path": "/home/azureuser/globally_optimal_training_of_snns/atomic/sweep_results/carry_hybrid_b2_d5_L10/seed_2/pretrain_weights/cvx_lambda_0p125.npz",
+          "weight_tensors_saved": 20
+        },
+        {
+          "lambda_carry": 0.25,
+          "selected_params": {
+            "beta": 0.01,
+            "bias": 0.0
+          },
+          "weights_path": "/home/azureuser/globally_optimal_training_of_snns/atomic/sweep_results/carry_hybrid_b2_d5_L10/seed_2/pretrain_weights/cvx_lambda_0p25.npz",
+          "weight_tensors_saved": 20
+        },
+        {
+          "lambda_carry": 0.5,
+          "selected_params": {
+            "beta": 0.01,
+            "bias": 0.0
+          },
+          "weights_path": "/home/azureuser/globally_optimal_training_of_snns/atomic/sweep_results/carry_hybrid_b2_d5_L10/seed_2/pretrain_weights/cvx_lambda_0p5.npz",
+          "weight_tensors_saved": 20
+        },
+        {
+          "lambda_carry": 0.75,
+          "selected_params": {
+            "beta": 0.01,
+            "bias": 0.0
+          },
+          "weights_path": "/home/azureuser/globally_optimal_training_of_snns/atomic/sweep_results/carry_hybrid_b2_d5_L10/seed_2/pretrain_weights/cvx_lambda_0p75.npz",
+          "weight_tensors_saved": 20
+        },
+        {
+          "lambda_carry": 1.0,
+          "selected_params": {
+            "beta": 0.01,
+            "bias": 0.0
+          },
+          "weights_path": "/home/azureuser/globally_optimal_training_of_snns/atomic/sweep_results/carry_hybrid_b2_d5_L10/seed_2/pretrain_weights/cvx_lambda_1.npz",
+          "weight_tensors_saved": 20
+        },
+        {
+          "lambda_carry": 1.25,
+          "selected_params": {
+            "beta": 0.01,
+            "bias": 0.0
+          },
+          "weights_path": "/home/azureuser/globally_optimal_training_of_snns/atomic/sweep_results/carry_hybrid_b2_d5_L10/seed_2/pretrain_weights/cvx_lambda_1p25.npz",
+          "weight_tensors_saved": 20
+        },
+        {
+          "lambda_carry": 1.5,
+          "selected_params": {
+            "beta": 0.01,
+            "bias": 0.0
+          },
+          "weights_path": "/home/azureuser/globally_optimal_training_of_snns/atomic/sweep_results/carry_hybrid_b2_d5_L10/seed_2/pretrain_weights/cvx_lambda_1p5.npz",
+          "weight_tensors_saved": 20
+        },
+        {
+          "lambda_carry": 2.0,
+          "selected_params": {
+            "beta": 0.01,
+            "bias": 0.0
+          },
+          "weights_path": "/home/azureuser/globally_optimal_training_of_snns/atomic/sweep_results/carry_hybrid_b2_d5_L10/seed_2/pretrain_weights/cvx_lambda_2.npz",
+          "weight_tensors_saved": 20
+        },
+        {
+          "lambda_carry": 4.0,
+          "selected_params": {
+            "beta": 0.01,
+            "bias": 0.0
+          },
+          "weights_path": "/home/azureuser/globally_optimal_training_of_snns/atomic/sweep_results/carry_hybrid_b2_d5_L10/seed_2/pretrain_weights/cvx_lambda_4.npz",
+          "weight_tensors_saved": 20
+        },
+        {
+          "lambda_carry": 6.0,
+          "selected_params": {
+            "beta": 0.01,
+            "bias": 0.0
+          },
+          "weights_path": "/home/azureuser/globally_optimal_training_of_snns/atomic/sweep_results/carry_hybrid_b2_d5_L10/seed_2/pretrain_weights/cvx_lambda_6.npz",
+          "weight_tensors_saved": 20
+        },
+        {
+          "lambda_carry": 8.0,
+          "selected_params": {
+            "beta": 0.01,
+            "bias": 0.0
+          },
+          "weights_path": "/home/azureuser/globally_optimal_training_of_snns/atomic/sweep_results/carry_hybrid_b2_d5_L10/seed_2/pretrain_weights/cvx_lambda_8.npz",
+          "weight_tensors_saved": 20
+        },
+        {
+          "lambda_carry": 10.0,
+          "selected_params": {
+            "beta": 0.01,
+            "bias": 0.0
+          },
+          "weights_path": "/home/azureuser/globally_optimal_training_of_snns/atomic/sweep_results/carry_hybrid_b2_d5_L10/seed_2/pretrain_weights/cvx_lambda_10.npz",
+          "weight_tensors_saved": 20
+        }
+      ]
+    }
+  ]
+}
