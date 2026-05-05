@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import argparse
 import importlib.util
+import os
 import json
 import sys
 from dataclasses import asdict, dataclass
@@ -75,6 +76,19 @@ def _load_arith_carry_module() -> Any:
 
 
 ARITH = _load_arith_carry_module()
+
+
+def _apply_blas_threads(blas_threads: Optional[int]) -> None:
+    """Set OpenMP / BLAS thread env in this process (call early in ``main``)."""
+    if blas_threads is None:
+        return
+    if int(blas_threads) < 1:
+        raise ValueError(f"blas_threads must be >= 1, got {blas_threads}.")
+    s = str(int(blas_threads))
+    os.environ["OMP_NUM_THREADS"] = s
+    os.environ["OPENBLAS_NUM_THREADS"] = s
+    os.environ["MKL_NUM_THREADS"] = s
+    os.environ["VECLIB_MAXIMUM_THREADS"] = s
 
 
 # ---------------------------------------------------------------------------#
@@ -532,10 +546,44 @@ def main() -> None:
     )
     ap.add_argument("--ste_time_loss", choices=["uniform", "ramp"], default="ramp")
     ap.add_argument("--cvx_time_loss", choices=["uniform", "ramp"], default="ramp")
+    ap.add_argument(
+        "--cvx_grid_workers",
+        type=int,
+        default=1,
+        help=(
+            "Parallel (beta,bias) CVX grid evaluations inside cvx_fit_shared_two_head_init "
+            "(same knob as run_arithmetic_add_carry_finetune_bench)."
+        ),
+    )
+    ap.add_argument(
+        "--cvx_ovr_workers",
+        type=int,
+        default=1,
+        help=(
+            "Parallel OVR classwise solves per CVX candidate (hinge_ovr / OVR paths); "
+            "typically 1 for joint CE solves."
+        ),
+    )
+    ap.add_argument(
+        "--blas_threads",
+        type=int,
+        default=None,
+        metavar="N",
+        help=(
+            "If set, assign OMP/MKL/OpenBLAS/Accelerate thread counts for this process at startup "
+            "(after parse). Prefer exporting these in the shell before launch if BLAS is already initialized."
+        ),
+    )
 
     ap.add_argument("--out_root", type=str, default="")
     ap.add_argument("--output_json", type=str, default="")
     args = ap.parse_args()
+
+    if int(args.cvx_grid_workers) <= 0:
+        raise ValueError(f"cvx_grid_workers must be >= 1, got {args.cvx_grid_workers}.")
+    if int(args.cvx_ovr_workers) <= 0:
+        raise ValueError(f"cvx_ovr_workers must be >= 1, got {args.cvx_ovr_workers}.")
+    _apply_blas_threads(args.blas_threads)
 
     if not args.lambda_sum_grid:
         raise ValueError("lambda_sum_grid must be non-empty.")
@@ -627,6 +675,9 @@ def main() -> None:
         "tf_objective": str(args.tf_objective),
         "ste_time_loss": str(args.ste_time_loss),
         "cvx_time_loss": str(args.cvx_time_loss),
+        "cvx_grid_workers": int(args.cvx_grid_workers),
+        "cvx_ovr_workers": int(args.cvx_ovr_workers),
+        "blas_threads": int(args.blas_threads) if args.blas_threads is not None else None,
         "max_train_samples": int(mtr),
         "max_val_samples": int(mva),
         "max_test_samples": int(mte),
@@ -732,6 +783,8 @@ def main() -> None:
                 cvx_time_loss=str(args.cvx_time_loss),
                 init_mode="pretraining",
                 pretrained_weights=ste_pre_weights,
+                cvx_grid_workers=int(args.cvx_grid_workers),
+                cvx_ovr_workers=int(args.cvx_ovr_workers),
             )
             _print_dfa_hybrid_train_ok(
                 base_seed=base_seed, lambda_sum=lambda_sum, stage_key="cvx_from_ste_pretrain"
@@ -784,6 +837,8 @@ def main() -> None:
                 cvx_time_loss=str(args.cvx_time_loss),
                 init_mode="gaussian",
                 pretrained_weights=None,
+                cvx_grid_workers=int(args.cvx_grid_workers),
+                cvx_ovr_workers=int(args.cvx_ovr_workers),
             )
             cvx_pre_weights = ARITH._cvx_bundle_to_carry_weights(
                 bundle=cvx_pre_bundle,

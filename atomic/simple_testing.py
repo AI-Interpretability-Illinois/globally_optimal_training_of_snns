@@ -5,11 +5,12 @@ import io
 import json
 import re
 import sys
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from contextlib import redirect_stdout
 from dataclasses import asdict
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, List, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 
 import numpy as np
 import torch
@@ -35,6 +36,7 @@ if __package__ in (None, ""):
         _prepare_sequence_targets,
         cvx_solve,
     )
+    from solvers import cvx_parallel_Solve as cvx_par
     from solvers import ste_parallel_Solve as ste_par
     from solvers.ste_solve import SNNBaselineSeq, SteModelConfig, SteSolveConfig, SteSolveResult, ste_solve
 else:
@@ -58,6 +60,7 @@ else:
         _prepare_sequence_targets,
         cvx_solve,
     )
+    from .solvers import cvx_parallel_Solve as cvx_par
     from .solvers import ste_parallel_Solve as ste_par
     from .solvers.ste_solve import SNNBaselineSeq, SteModelConfig, SteSolveConfig, SteSolveResult, ste_solve
 
@@ -1065,105 +1068,191 @@ def _run_simple_mode(args: argparse.Namespace, data: Dict[str, Any]) -> Tuple[Di
     if run_cvx:
         best_cvx_score = float("inf")
         cvx_lr_eff = cvx_lr_sweep_values(args.cvx_method, LR_GRID_DEFAULT)
-        cvx_grid_total = len(BETA_GRID_DEFAULT) * len(cvx_lr_eff) * len(bias_grid)
-        cvx_grid_trial = 0
+        candidates: List[Tuple[int, int, float, float, float]] = []
+        beta_total = len(BETA_GRID_DEFAULT)
         for beta_i, cvx_beta in enumerate(BETA_GRID_DEFAULT, start=1):
             for cvx_lr in cvx_lr_eff:
                 for cvx_bias in bias_grid:
-                    cvx_grid_trial += 1
-                    print(
-                        (
-                            f"[simple-cvx-grid] trial {cvx_grid_trial}/{cvx_grid_total} "
-                            f"beta_index {beta_i}/{len(BETA_GRID_DEFAULT)} "
-                            f"beta={cvx_beta} lr={cvx_lr} bias={cvx_bias}"
-                        ),
-                        file=sys.stderr,
-                        flush=True,
+                    candidates.append(
+                        (len(candidates) + 1, int(beta_i), float(cvx_beta), float(cvx_lr), float(cvx_bias))
                     )
-                    _set_seed(args.seed)
-                    if init_weights is not None:
-                        init_cfg = InitializationConfig(
-                            mode="pretraining",
-                            seed=args.seed,
-                            L=args.L,
-                            P_rec=args.P_rec,
-                            P_last=args.P_last,
-                            K_parallel=int(args.K_parallel),
-                            feature_count=args.P_last,
-                            last_layer_readout=args.last_layer_readout,
-                            bias=float(cvx_bias),
-                            pretrained_weights=init_weights,
-                        )
-                    else:
-                        init_cfg = InitializationConfig(
-                            mode="gaussian",
-                            seed=args.seed,
-                            L=args.L,
-                            P_rec=args.P_rec,
-                            P_last=args.P_last,
-                            K_parallel=int(args.K_parallel),
-                            feature_count=args.P_last,
-                            last_layer_readout=args.last_layer_readout,
-                            bias=float(cvx_bias),
-                        )
-                    out, _ = _capture_solver_stdout(
-                        cvx_solve,
-                        x_train=x_train,
-                        y_train=y_train,
-                        x_val=x_val,
-                        y_val=y_val,
-                        x_test=x_test,
-                        y_test=y_test,
-                        init_cfg=init_cfg,
-                        solve_cfg=SolveConfig(
-                            method=args.cvx_method,
-                            loss_name=args.loss_type,
-                            beta=float(cvx_beta),
-                            lr=float(cvx_lr),
-                            optimizer_name=args.optimizer_name,
-                            epochs=args.cvx_epochs,
-                            batch_size=None if args.batch_size == -1 else int(args.batch_size),
-                            log_every=0,
-                            compute_ce_dual=bool(args.cvx_ce_dual),
-                            cvx_ovr_workers=int(args.cvx_ovr_workers),
-                        ),
-                        device=cvx_device,
-                    )
-                    score = float(out.final_losses.get("val_objective", out.final_losses["val_loss"]))
-                    if score < best_cvx_score:
-                        best_cvx_score = score
-                        best_cvx_params = {
-                            "lr": None if args.cvx_method == "cvx" else float(cvx_lr),
-                            "beta": float(cvx_beta),
-                            "bias": float(cvx_bias),
-                        }
-        if best_cvx_params is not None:
-            _set_seed(args.seed)
+        cvx_grid_total = len(candidates)
+        grid_workers = max(1, int(getattr(args, "cvx_grid_workers", 1)))
+        if grid_workers <= 0:
+            raise ValueError(f"cvx_grid_workers must be >= 1, got {grid_workers}.")
+
+        # Seed once; candidate solves are independent of global numpy/torch RNG state
+        # because feature builds are seeded via init_cfg.seed (=args.seed) and CVXPY
+        # solves are deterministic. Calling _set_seed inside concurrent workers would
+        # race on the global RNG.
+        _set_seed(args.seed)
+
+        # Cache LIF features per unique bias: features depend on init_cfg only, and the
+        # only thing that varies across candidates is bias. With BETA_GRID x bias_grid,
+        # this saves (len(BETA_GRID)-1) LIF forward passes per bias.
+        supervise_all_timesteps = y_train.ndim == 2
+        unique_biases: List[float] = list(dict.fromkeys(float(b) for b in bias_grid))
+        K_parallel_eff = int(args.K_parallel)
+        feature_cache: Dict[float, Tuple[Tuple[np.ndarray, np.ndarray, np.ndarray], Optional[List[Tuple[int, int]]], InitializationConfig]] = {}
+
+        def _make_init_cfg(cvx_bias: float) -> InitializationConfig:
             if init_weights is not None:
-                best_init = InitializationConfig(
+                return InitializationConfig(
                     mode="pretraining",
                     seed=args.seed,
                     L=args.L,
                     P_rec=args.P_rec,
                     P_last=args.P_last,
-                    K_parallel=int(args.K_parallel),
+                    K_parallel=K_parallel_eff,
                     feature_count=args.P_last,
                     last_layer_readout=args.last_layer_readout,
-                    bias=float(best_cvx_params["bias"]),
+                    bias=float(cvx_bias),
                     pretrained_weights=init_weights,
                 )
-            else:
-                best_init = InitializationConfig(
-                    mode="gaussian",
-                    seed=args.seed,
-                    L=args.L,
-                    P_rec=args.P_rec,
-                    P_last=args.P_last,
-                    K_parallel=int(args.K_parallel),
-                    feature_count=args.P_last,
-                    last_layer_readout=args.last_layer_readout,
-                    bias=float(best_cvx_params["bias"]),
+            return InitializationConfig(
+                mode="gaussian",
+                seed=args.seed,
+                L=args.L,
+                P_rec=args.P_rec,
+                P_last=args.P_last,
+                K_parallel=K_parallel_eff,
+                feature_count=args.P_last,
+                last_layer_readout=args.last_layer_readout,
+                bias=float(cvx_bias),
+            )
+
+        for cvx_bias in unique_biases:
+            init_cfg_cached = _make_init_cfg(float(cvx_bias))
+            t_build_start = datetime.now()
+            if K_parallel_eff > 1:
+                par_init_cfg = cvx_par.InitializationConfig(
+                    mode=init_cfg_cached.mode,
+                    variant=init_cfg_cached.variant,
+                    seed=init_cfg_cached.seed,
+                    feature_count=init_cfg_cached.feature_count,
+                    bias=init_cfg_cached.bias,
+                    pretrained_weights=init_cfg_cached.pretrained_weights,
+                    L=init_cfg_cached.L,
+                    P_rec=init_cfg_cached.P_rec,
+                    P_last=init_cfg_cached.P_last,
+                    K_parallel=init_cfg_cached.K_parallel,
+                    beta_leak=init_cfg_cached.beta_leak,
+                    threshold=init_cfg_cached.threshold,
+                    last_layer_readout=init_cfg_cached.last_layer_readout,
                 )
+                d_train_b, d_val_b, d_test_b, meta_b = cvx_par._build_feature_map(
+                    x_train=x_train,
+                    x_val=x_val,
+                    x_test=x_test,
+                    init_cfg=par_init_cfg,
+                    all_timesteps=supervise_all_timesteps,
+                )
+                bs_arr = np.asarray(meta_b.get("branch_slices", np.zeros((0, 2), dtype=np.int64)))
+                branch_slices: Optional[List[Tuple[int, int]]] = (
+                    [(int(a), int(b)) for a, b in bs_arr] if bs_arr.shape[0] > 0 else None
+                )
+            else:
+                d_train_b, d_val_b, d_test_b, _ = _build_feature_map(
+                    x_train=x_train,
+                    x_val=x_val,
+                    x_test=x_test,
+                    init_cfg=init_cfg_cached,
+                    all_timesteps=supervise_all_timesteps,
+                )
+                branch_slices = None
+            t_build_ms = (datetime.now() - t_build_start).total_seconds() * 1000.0
+            print(
+                (
+                    f"[simple-cvx-cache] built LIF features bias={cvx_bias:.6g} "
+                    f"K_parallel={K_parallel_eff} d_train={d_train_b.shape} "
+                    f"d_val={d_val_b.shape} d_test={d_test_b.shape} build_ms={t_build_ms:.0f}"
+                ),
+                file=sys.stderr,
+                flush=True,
+            )
+            feature_cache[float(cvx_bias)] = (
+                (d_train_b, d_val_b, d_test_b),
+                branch_slices,
+                init_cfg_cached,
+            )
+
+        def _eval_cvx_candidate(
+            trial: int, beta_i: int, cvx_beta: float, cvx_lr: float, cvx_bias: float
+        ) -> Tuple[float, Dict[str, Any]]:
+            print(
+                (
+                    f"[simple-cvx-grid] trial {trial}/{cvx_grid_total} "
+                    f"beta_index {beta_i}/{beta_total} "
+                    f"beta={cvx_beta} lr={cvx_lr} bias={cvx_bias}"
+                ),
+                file=sys.stderr,
+                flush=True,
+            )
+            (d_tr, d_va, d_te), branch_slices_b, init_cfg_b = feature_cache[float(cvx_bias)]
+            solve_cfg = SolveConfig(
+                method=args.cvx_method,
+                loss_name=args.loss_type,
+                beta=float(cvx_beta),
+                lr=float(cvx_lr),
+                optimizer_name=args.optimizer_name,
+                epochs=args.cvx_epochs,
+                batch_size=None if args.batch_size == -1 else int(args.batch_size),
+                log_every=0,
+                compute_ce_dual=bool(args.cvx_ce_dual),
+                cvx_ovr_workers=int(args.cvx_ovr_workers),
+            )
+            cvx_kwargs = dict(
+                x_train=x_train,
+                y_train=y_train,
+                x_val=x_val,
+                y_val=y_val,
+                x_test=x_test,
+                y_test=y_test,
+                init_cfg=init_cfg_b,
+                solve_cfg=solve_cfg,
+                device=cvx_device,
+                precomputed_features=(d_tr, d_va, d_te),
+                precomputed_branch_slices=branch_slices_b,
+            )
+            if grid_workers == 1:
+                out, _ = _capture_solver_stdout(cvx_solve, **cvx_kwargs)
+            else:
+                # contextlib.redirect_stdout is process-global and not thread-safe;
+                # let solver lines stream interleaved when running in parallel.
+                out = cvx_solve(**cvx_kwargs)
+            score = float(out.final_losses.get("val_objective", out.final_losses["val_loss"]))
+            params = {
+                "lr": None if args.cvx_method == "cvx" else float(cvx_lr),
+                "beta": float(cvx_beta),
+                "bias": float(cvx_bias),
+            }
+            return score, params
+
+        if grid_workers == 1 or cvx_grid_total == 1:
+            for trial, beta_i, cvx_beta, cvx_lr, cvx_bias in candidates:
+                score, params = _eval_cvx_candidate(trial, beta_i, cvx_beta, cvx_lr, cvx_bias)
+                if score < best_cvx_score:
+                    best_cvx_score = score
+                    best_cvx_params = params
+        else:
+            print(
+                f"[simple-cvx-grid] running {cvx_grid_total} candidates with grid_workers={grid_workers}",
+                file=sys.stderr,
+                flush=True,
+            )
+            with ThreadPoolExecutor(max_workers=min(int(grid_workers), cvx_grid_total)) as ex:
+                futures = [
+                    ex.submit(_eval_cvx_candidate, trial, beta_i, cvx_beta, cvx_lr, cvx_bias)
+                    for trial, beta_i, cvx_beta, cvx_lr, cvx_bias in candidates
+                ]
+                for fut in as_completed(futures):
+                    score, params = fut.result()
+                    if score < best_cvx_score:
+                        best_cvx_score = score
+                        best_cvx_params = params
+        if best_cvx_params is not None:
+            _set_seed(args.seed)
+            (best_d_tr, best_d_va, best_d_te), best_branch_slices, best_init = feature_cache[float(best_cvx_params["bias"])]
             best_cvx, cvx_log_text = _capture_solver_stdout(
                 cvx_solve,
                 x_train=x_train,
@@ -1185,6 +1274,8 @@ def _run_simple_mode(args: argparse.Namespace, data: Dict[str, Any]) -> Tuple[Di
                     cvx_ovr_workers=int(args.cvx_ovr_workers),
                 ),
                 device=cvx_device,
+                precomputed_features=(best_d_tr, best_d_va, best_d_te),
+                precomputed_branch_slices=best_branch_slices,
             )
             print(cvx_log_text, end="")
             best_cvx_curve = _extract_cvx_curve(cvx_log_text)
@@ -1392,6 +1483,16 @@ def parse_args() -> argparse.Namespace:
         type=int,
         default=1,
         help="For CVX OVR objectives (hinge/hinge_ovr/squared), number of parallel classwise CVXPY solves.",
+    )
+    parser.add_argument(
+        "--cvx_grid_workers",
+        type=int,
+        default=1,
+        help=(
+            "Number of parallel CVX (beta, lr, bias) candidates evaluated concurrently in --mode simple. "
+            "Each worker runs an independent cvx_solve call (CVXPY solver releases the GIL). "
+            "Set to total_cores // (BLAS threads per solve) and pair with shell OMP_NUM_THREADS."
+        ),
     )
     ce_dual = parser.add_mutually_exclusive_group()
     ce_dual.add_argument(

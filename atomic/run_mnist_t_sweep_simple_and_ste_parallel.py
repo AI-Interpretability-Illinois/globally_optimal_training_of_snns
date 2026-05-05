@@ -48,6 +48,7 @@ def _build_cmd(
     t: int,
     seed: int,
     cvx_ovr_workers: int,
+    cvx_grid_workers: int,
     include_bias_grid: bool,
 ) -> list[str]:
     cmd = [
@@ -72,6 +73,7 @@ def _build_cmd(
         "--ste_epochs", "200",
         "--last_layer_readout", "membrane",
         "--cvx_ovr_workers", str(cvx_ovr_workers),
+        "--cvx_grid_workers", str(cvx_grid_workers),
     ]
     if include_bias_grid:
         cmd.extend(["--bias_grid", *[str(b) for b in CVX_BIAS_GRID]])
@@ -115,8 +117,20 @@ def parse_args() -> argparse.Namespace:
         help=(
             "Number of parallel classwise CVXPY solves inside each simple_testing run "
             "(passed through as --cvx_ovr_workers to simple_testing). "
+            "Only meaningful for OVR-style losses (hinge/hinge_ovr/squared); ignored for ce. "
             "For --parallel, each subprocess already runs concurrently, so set this "
             "to total_cores // n_parallel_jobs."
+        ),
+    )
+    parser.add_argument(
+        "--cvx_grid_workers",
+        type=int,
+        default=1,
+        help=(
+            "Number of parallel CVX (beta, lr, bias) candidates per simple_testing run. "
+            "For --loss_type ce + --cvx_method cvx this is the main lever for using all cores: "
+            "with the default 6 betas x 5 biases = 30 candidates, e.g. --cvx_grid_workers 8 keeps "
+            "8 CVXPY solves running concurrently. Pair with --blas_threads ~ total_cores / cvx_grid_workers."
         ),
     )
     return parser.parse_args()
@@ -136,6 +150,7 @@ def main() -> None:
             t=t,
             seed=seed,
             cvx_ovr_workers=int(args.cvx_ovr_workers),
+            cvx_grid_workers=int(args.cvx_grid_workers),
             include_bias_grid=include_bias,
         )
         for k_par in K_PARALLEL_LIST

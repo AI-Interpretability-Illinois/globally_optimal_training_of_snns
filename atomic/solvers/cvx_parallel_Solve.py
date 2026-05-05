@@ -891,6 +891,8 @@ def cvx_solve(
     init_cfg: InitializationConfig,
     solve_cfg: SolveConfig,
     device: Optional[torch.device] = None,
+    precomputed_features: Optional[Tuple[np.ndarray, np.ndarray, np.ndarray]] = None,
+    precomputed_branch_slices: Optional[Sequence[Tuple[int, int]]] = None,
 ) -> CvxSolveResult:
     supervise_all_timesteps = y_train.ndim == 2
     if supervise_all_timesteps and (y_val.ndim != 2 or y_test.ndim != 2):
@@ -905,13 +907,38 @@ def cvx_solve(
         ytr = _prepare_sequence_targets(y_train)
         yva = _prepare_sequence_targets(y_val)
         yte = _prepare_sequence_targets(y_test)
-    d_train, d_val, d_test, meta = _build_feature_map(
-        x_train=x_train,
-        x_val=x_val,
-        x_test=x_test,
-        init_cfg=init_cfg,
-        all_timesteps=supervise_all_timesteps,
-    )
+    if precomputed_features is not None:
+        if precomputed_branch_slices is None:
+            raise ValueError(
+                "K_parallel>1 cvx_solve requires precomputed_branch_slices alongside precomputed_features."
+            )
+        d_train, d_val, d_test = precomputed_features
+        if d_train.ndim != 2 or d_val.ndim != 2 or d_test.ndim != 2:
+            raise ValueError(
+                "precomputed_features arrays must be 2-D (N*T, P) or (N, P)."
+            )
+        if d_train.shape[1] != d_val.shape[1] or d_train.shape[1] != d_test.shape[1]:
+            raise ValueError(
+                "precomputed_features train/val/test feature dim mismatch: "
+                f"train={d_train.shape[1]}, val={d_val.shape[1]}, test={d_test.shape[1]}."
+            )
+        if d_train.shape[0] != ytr.shape[0]:
+            raise ValueError(
+                f"precomputed d_train rows={d_train.shape[0]} disagree with y_train flat rows={ytr.shape[0]}."
+            )
+        meta = {
+            "branch_slices": np.asarray(
+                [[int(a), int(b)] for (a, b) in precomputed_branch_slices], dtype=np.int64
+            ),
+        }
+    else:
+        d_train, d_val, d_test, meta = _build_feature_map(
+            x_train=x_train,
+            x_val=x_val,
+            x_test=x_test,
+            init_cfg=init_cfg,
+            all_timesteps=supervise_all_timesteps,
+        )
     if solve_cfg.method == "cvx":
         out = _run_cvx_method(
             d_train=d_train,
