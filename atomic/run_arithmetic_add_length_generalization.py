@@ -27,7 +27,7 @@ import json
 from dataclasses import asdict
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, List, Sequence, Tuple
+from typing import Any, Dict, List, Optional, Sequence, Tuple
 
 import numpy as np
 import torch
@@ -35,6 +35,7 @@ import torch
 if __package__ in (None, ""):
     from data_loaders.arithmetic_data_loader import (
         SUPPORTED_BASES,
+        _build_split,
         _stack,
         generate_samples_for_op_base_seq,
         load_arithmetic_dataset,
@@ -49,6 +50,7 @@ if __package__ in (None, ""):
 else:
     from .data_loaders.arithmetic_data_loader import (
         SUPPORTED_BASES,
+        _build_split,
         _stack,
         generate_samples_for_op_base_seq,
         load_arithmetic_dataset,
@@ -109,6 +111,61 @@ def _make_test_xy(
     for i in range(vc):
         verify_sample_seq(samples[i])
     return _stack(samples, base)
+
+
+def _mask_carry_inputs(x: np.ndarray) -> np.ndarray:
+    """Zero out channel 2 (carry-in) of input tensors with shape (N, T, d_in).
+
+    Channels 0/1 are operand digits; channel 2 is the **true carry-in** at column t
+    (and at the final extra row, the **MSD carry-out** target). Masking forces the
+    model to track the carry chain itself rather than reading it from the input.
+    Channel 2 at the final timestep also makes the MSD carry-out target trivially
+    copyable from the input — masking removes that, too.
+    """
+    if x.ndim != 3:
+        raise ValueError(f"Expected x of shape (N, T, d_in), got {x.shape}.")
+    if x.shape[2] < 3:
+        raise ValueError(
+            f"Expected d_in>=3 to mask carry-in channel, got d_in={x.shape[2]}."
+        )
+    out = np.array(x, copy=True)
+    out[:, :, 2] = 0.0
+    return out
+
+
+def _build_lengthgen_split(
+    *,
+    op: str,
+    base: int,
+    n_digits: int,
+    n_samples: int,
+    seed: int,
+    verify_count: int,
+    mask_carry: bool,
+) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """Wrap the data loader's ``_build_split`` and apply optional carry masking.
+
+    Returns ``(x_for_model, x_unmasked, y)``:
+    - ``x_for_model`` has channel 2 zeroed iff ``mask_carry`` is True; that's what gets
+      fed to STE/CVX training and prediction.
+    - ``x_unmasked`` is always the raw 3-channel input from the data builder; that's what
+      ``add_rule_context_diagnostics`` needs (to read the **true** carry-in column at t=0
+      and reconstruct the per-step carry chain for the per-context analysis). Keeping
+      both lets us mask the model's view without breaking the diagnostic.
+
+    When ``mask_carry`` is False the two arrays are the same (no extra memory cost: same
+    underlying buffer).
+    """
+    x_unmasked, y = _build_split(
+        op=op,
+        base=base,
+        n_digits=n_digits,
+        n_samples=n_samples,
+        seed=seed,
+        verify_count=verify_count,
+    )
+    x_for_model = _mask_carry_inputs(x_unmasked) if mask_carry else x_unmasked
+    return x_for_model, x_unmasked, y
 
 
 def _detailed_arithmetic_metrics(
@@ -485,7 +542,11 @@ def _run_ste_sweep_and_best(
     seed: int,
     ste_lr_grid: Sequence[float],
     ste_beta_grid: Sequence[float],
+    pretrained_weights: Optional[List[np.ndarray]] = None,
 ) -> Tuple[object, Dict[str, float]]:
+    """Run STE (lr × beta) sweep and refit best. ``pretrained_weights`` is forwarded to
+    ``ste_solve`` on every call (sweep + refit), so finetune-style runs warm-start from
+    the same initialization across the grid before training."""
     best_score = float("inf")
     best_params: Dict[str, float] | None = None
     for ste_lr in ste_lr_grid:
@@ -517,6 +578,7 @@ def _run_ste_sweep_and_best(
                     weight_decay=0.0,
                     beta_path_reg=float(ste_beta),
                 ),
+                pretrained_weights=pretrained_weights,
             )
             score = float(out.best_losses["val_loss"]) + float(ste_beta)
             print(
@@ -561,6 +623,7 @@ def _run_ste_sweep_and_best(
             weight_decay=0.0,
             beta_path_reg=float(best_params["beta"]),
         ),
+        pretrained_weights=pretrained_weights,
     )
     return best_out, best_params
 
@@ -588,7 +651,21 @@ def _run_cvx_sweep_and_best(
     bias_grid: Sequence[float],
     cvx_lr_grid: Sequence[float],
     cvx_device: torch.device | None,
+    init_mode: str = "gaussian",
+    pretrained_weights: Optional[List[np.ndarray]] = None,
+    compute_ce_dual: bool = False,
 ) -> Tuple[object, InitializationConfig, Dict[str, float | None]]:
+    """Run CVX (beta × bias [× lr if sgd]) sweep with the chosen ``init_mode``.
+
+    ``init_mode='gaussian'`` (default) builds LIF features from a fresh seeded init.
+    ``init_mode='pretraining'`` requires ``pretrained_weights`` (a list of hidden-layer
+    weight tensors in branch-major order, optionally with a trailing classifier head
+    that the CVX feature builder ignores) — same convention as the hybrid bench.
+    """
+    if str(init_mode) not in ("gaussian", "pretraining"):
+        raise ValueError(f"init_mode must be 'gaussian' or 'pretraining', got {init_mode!r}.")
+    if init_mode == "pretraining" and (pretrained_weights is None or len(pretrained_weights) == 0):
+        raise ValueError("init_mode='pretraining' requires non-empty pretrained_weights.")
     cvx_lr_eff = cvx_lr_sweep_values(cvx_method, tuple(float(x) for x in cvx_lr_grid))
     best_score = float("inf")
     best_params: Dict[str, float | None] | None = None
@@ -597,7 +674,7 @@ def _run_cvx_sweep_and_best(
             for cvx_bias in bias_grid:
                 _set_seed(seed)
                 init_cfg = InitializationConfig(
-                    mode="gaussian",
+                    mode=str(init_mode),
                     seed=seed,
                     L=L,
                     P_rec=P_rec,
@@ -606,6 +683,7 @@ def _run_cvx_sweep_and_best(
                     feature_count=P_last,
                     last_layer_readout=last_layer_readout,
                     bias=float(cvx_bias),
+                    pretrained_weights=pretrained_weights,
                 )
                 out = cvx_solve(
                     x_train=x_train,
@@ -624,14 +702,22 @@ def _run_cvx_sweep_and_best(
                         epochs=cvx_epochs,
                         batch_size=None if batch_size == -1 else int(batch_size),
                         log_every=0,
+                        compute_ce_dual=bool(compute_ce_dual),
                     ),
                     device=cvx_device,
                 )
                 val_obj = float(out.final_losses["val_objective"])
                 d = out.diagnostics
+                if bool(compute_ce_dual):
+                    diag_str = (
+                        f"primal={float(d.primal_value):.8g} dual={float(d.dual_value):.8g} "
+                        f"gap={float(d.gap):.8g}"
+                    )
+                else:
+                    diag_str = f"primal={float(d.primal_value):.8g} dual=skipped gap=skipped"
                 print(
                     f"  [cvx sweep] beta={cvx_beta} lr={cvx_lr} bias={cvx_bias} val_objective={val_obj:.6f} "
-                    f"primal={float(d.primal_value):.8g} dual={float(d.dual_value):.8g} gap={float(d.gap):.8g}",
+                    + diag_str,
                     flush=True,
                 )
                 if val_obj < best_score:
@@ -646,12 +732,12 @@ def _run_cvx_sweep_and_best(
     lr_note = best_params["lr"] if best_params["lr"] is not None else 0.0
     print(
         f"[cvx] selected beta={best_params['beta']:.6g} bias={best_params['bias']:.6g} "
-        f"lr={lr_note} (val_objective={best_score:.6f}, method={cvx_method})",
+        f"lr={lr_note} (val_objective={best_score:.6f}, method={cvx_method}, init={init_mode})",
         flush=True,
     )
     _set_seed(seed)
     best_init = InitializationConfig(
-        mode="gaussian",
+        mode=str(init_mode),
         seed=seed,
         L=L,
         P_rec=P_rec,
@@ -660,6 +746,7 @@ def _run_cvx_sweep_and_best(
         feature_count=P_last,
         last_layer_readout=last_layer_readout,
         bias=float(best_params["bias"]),
+        pretrained_weights=pretrained_weights,
     )
     best_out = cvx_solve(
         x_train=x_train,
@@ -678,11 +765,125 @@ def _run_cvx_sweep_and_best(
             epochs=cvx_epochs,
             batch_size=None if batch_size == -1 else int(batch_size),
             log_every=0,
+            compute_ce_dual=bool(compute_ce_dual),
         ),
         device=cvx_device,
     )
     _print_cvx_diagnostics("[cvx] best model (after retrain)", best_out)
     return best_out, best_init, best_params
+
+
+def _gaussian_lif_hidden_weights_out_in(
+    *,
+    d_in: int,
+    L: int,
+    P_rec: int,
+    P_last: int,
+    K_parallel: int,
+    seed: int,
+    variant: str = "standard",
+) -> List[np.ndarray]:
+    """Same Gaussian LIF init that ``cvx_parallel_Solve._build_feature_map`` produces in
+    ``mode='gaussian'``, returned in PyTorch ``nn.Linear`` (out, in) layout so it can be
+    handed to ``ste_solve(pretrained_weights=...)`` as the hidden stack.
+    """
+    k = int(K_parallel)
+    sub_p_rec = cvx_par._parallel_branch_width(int(P_rec), k, "P_rec")
+    sub_p_last = cvx_par._parallel_branch_width(int(P_last), k, "P_last")
+    branch_hidden_dims = cvx_par._hidden_dims_like_snn_p2(int(L), int(sub_p_rec), int(sub_p_last))
+    rng = np.random.default_rng(int(seed))
+    out: List[np.ndarray] = []
+    for _ in range(k):
+        in_dim = int(d_in)
+        for h in branch_hidden_dims:
+            w_in_out = cvx_par._sample_weight_matrix(rng, in_dim, int(h), str(variant))
+            out.append(np.asarray(w_in_out.T, dtype=np.float64))
+            in_dim = int(h)
+    return out
+
+
+def _ste_pretrained_from_cvx_bundle(
+    *,
+    d_in: int,
+    L: int,
+    P_rec: int,
+    P_last: int,
+    K_parallel: int,
+    seed: int,
+    cvx_classifier_w_p_last_x_classes: np.ndarray,
+    variant: str = "standard",
+) -> List[np.ndarray]:
+    """Build an STE-loadable weight list from a CVX-pretrain Gaussian bundle.
+
+    The CVX path uses Gaussian-init LIF features (deterministic from ``seed``) and fits a
+    linear convex classifier whose weights have shape ``(P_last, num_classes)``. To
+    initialize an STE model with this exact starting point, we regenerate the Gaussian
+    hidden weights (transposed to ``(out, in)``) and append the CVX classifier weights
+    transposed to ``(num_classes, P_last)`` — the layout ``ste_solve`` expects.
+    """
+    if cvx_classifier_w_p_last_x_classes.ndim != 2:
+        raise ValueError(
+            f"Expected CVX classifier weight shape (P_last, num_classes); got "
+            f"{cvx_classifier_w_p_last_x_classes.shape}."
+        )
+    if int(cvx_classifier_w_p_last_x_classes.shape[0]) != int(P_last):
+        raise ValueError(
+            f"CVX classifier rows {cvx_classifier_w_p_last_x_classes.shape[0]} != P_last={P_last}."
+        )
+    hidden = _gaussian_lif_hidden_weights_out_in(
+        d_in=d_in, L=L, P_rec=P_rec, P_last=P_last, K_parallel=K_parallel, seed=seed, variant=variant
+    )
+    head_out_in = np.asarray(cvx_classifier_w_p_last_x_classes.T, dtype=np.float64)
+    return [*hidden, head_out_in]
+
+
+def _ste_predict_and_full_metrics(
+    *,
+    ste_model: torch.nn.Module,
+    x: np.ndarray,
+    y: np.ndarray,
+    base: int,
+    n_digits: int,
+    block_size: int,
+    x_for_rule_context: Optional[np.ndarray] = None,
+) -> Dict[str, Any]:
+    """Run STE prediction on ``x`` (which may be masked), then compute detailed and
+    rule-context metrics. ``x_for_rule_context`` overrides the input fed to
+    ``add_rule_context_diagnostics`` — pass an **unmasked** copy when ``x`` was masked,
+    so the per-context analysis can still read the true carry chain. Defaults to ``x``
+    (correct when no masking is applied).
+    """
+    pred = _ste_predict_all_tokens(ste_model, x)
+    detail = _detailed_arithmetic_metrics(pred, y, block_size=block_size)
+    x_rule = x if x_for_rule_context is None else x_for_rule_context
+    rule = add_rule_context_diagnostics(pred, y, x_rule, int(base), int(n_digits), block_size=block_size)
+    return {**detail, "rule_context": rule}
+
+
+def _cvx_predict_and_full_metrics(
+    *,
+    w: np.ndarray,
+    x_train: np.ndarray,
+    x_val: np.ndarray,
+    x_eval: np.ndarray,
+    y_eval: np.ndarray,
+    init_cfg: InitializationConfig,
+    base: int,
+    n_digits: int,
+    block_size: int,
+    x_eval_for_rule_context: Optional[np.ndarray] = None,
+) -> Dict[str, Any]:
+    """Like :func:`_ste_predict_and_full_metrics`, but for the CVX path. Features are
+    rebuilt from ``x_train, x_val, x_eval`` (which may all be masked); pass
+    ``x_eval_for_rule_context`` (unmasked) to keep the per-context analysis valid.
+    """
+    pred = _cvx_predict_all_tokens(
+        w=w, x_train=x_train, x_val=x_val, x_ood=x_eval, y_ood=y_eval, init_cfg=init_cfg
+    )
+    detail = _detailed_arithmetic_metrics(pred, y_eval, block_size=block_size)
+    x_rule = x_eval if x_eval_for_rule_context is None else x_eval_for_rule_context
+    rule = add_rule_context_diagnostics(pred, y_eval, x_rule, int(base), int(n_digits), block_size=block_size)
+    return {**detail, "rule_context": rule}
 
 
 def _print_cvx_diagnostics(prefix: str, out: object) -> None:
@@ -732,6 +933,91 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--n_train", type=int, default=8192)
     p.add_argument("--n_val", type=int, default=2000, help="Val samples for training n_digits only.")
     p.add_argument("--n_test", type=int, default=2000, help="Test samples per OOD digit width.")
+    p.add_argument(
+        "--variants",
+        choices=("minimal", "full5"),
+        default="full5",
+        help=(
+            "minimal: 2 variants (STE-from-scratch + CVX-from-Gaussian) — original behavior. "
+            "full5: 5 variants mirroring the carry/state hybrid bench — "
+            "ste_pretrain (split A), cvx_from_ste_pretrain, ste_finetune_from_ste_pretrain (split B), "
+            "cvx_pretrain (Gaussian), ste_finetune_from_cvx_pretrain (split B). Default: full5."
+        ),
+    )
+    p.add_argument(
+        "--n_train_pre",
+        type=int,
+        default=None,
+        help="Pretrain (split A) training samples; default = --n_train.",
+    )
+    p.add_argument(
+        "--n_train_ft",
+        type=int,
+        default=None,
+        help="Finetune (split B) training samples; default = --n_train.",
+    )
+    p.add_argument(
+        "--n_val_pre",
+        type=int,
+        default=None,
+        help="Pretrain (split A) val samples; default = --n_val.",
+    )
+    p.add_argument(
+        "--n_val_ft",
+        type=int,
+        default=None,
+        help="Finetune (split B) val samples; default = --n_val.",
+    )
+    p.add_argument(
+        "--finetune_seed_offset",
+        type=int,
+        default=1000,
+        help="Split-B seed offset (added to base seed for finetune dataset).",
+    )
+    p.add_argument(
+        "--eval_seed_offset",
+        type=int,
+        default=2000,
+        help="Test-split seed offset (eval_seed=base_seed+offset; used for ID test seeded as eval_seed+47).",
+    )
+    mask_grp = p.add_mutually_exclusive_group()
+    mask_grp.add_argument(
+        "--mask_carry_in",
+        dest="mask_carry_in",
+        action="store_true",
+        help=(
+            "Zero out input channel 2 (true carry-in column) in train/val/test/OOD. "
+            "Default ON — forces the model to track the carry chain itself, comparable "
+            "to hybrid AR mode."
+        ),
+    )
+    mask_grp.add_argument(
+        "--no_mask_carry_in",
+        dest="mask_carry_in",
+        action="store_false",
+        help=(
+            "Keep the true carry-in column in input channel 2 (turn off masking). "
+            "This is the hybrid TF analogue (model reads the true carry every step)."
+        ),
+    )
+    p.set_defaults(mask_carry_in=True)
+    cvx_dual_grp = p.add_mutually_exclusive_group()
+    cvx_dual_grp.add_argument(
+        "--cvx_ce_dual",
+        dest="cvx_ce_dual",
+        action="store_true",
+        help=(
+            "With --cvx_method cvx and --loss_type ce: also run the conic dual after the "
+            "primal solve (slower; populates dual_value/gap diagnostics). Default OFF."
+        ),
+    )
+    cvx_dual_grp.add_argument(
+        "--no_cvx_ce_dual",
+        dest="cvx_ce_dual",
+        action="store_false",
+        help="Silence the CE dual solve (default). Diagnostics dual/gap will be NaN.",
+    )
+    p.set_defaults(cvx_ce_dual=False)
     p.add_argument("--L", type=int, default=3)
     p.add_argument("--P_rec", type=int, default=256)
     p.add_argument("--P_last", type=int, default=512)
@@ -827,6 +1113,13 @@ def main() -> None:
     save_metrics = not bool(args.no_save_metrics)
     save_weights = bool(args.save_weights)
 
+    n_train_pre = int(args.n_train_pre) if args.n_train_pre is not None else int(args.n_train)
+    n_train_ft = int(args.n_train_ft) if args.n_train_ft is not None else int(args.n_train)
+    n_val_pre = int(args.n_val_pre) if args.n_val_pre is not None else int(args.n_val)
+    n_val_ft = int(args.n_val_ft) if args.n_val_ft is not None else int(args.n_val)
+    if str(args.variants) not in ("minimal", "full5"):
+        raise ValueError(f"Unknown --variants={args.variants!r}")
+
     config_dump = {
         "seeds": list(args.seeds),
         "arith_op": "add",
@@ -838,6 +1131,15 @@ def main() -> None:
         "n_train": args.n_train,
         "n_val": args.n_val,
         "n_test_per_ood": args.n_test,
+        "n_train_pre": n_train_pre,
+        "n_train_ft": n_train_ft,
+        "n_val_pre": n_val_pre,
+        "n_val_ft": n_val_ft,
+        "finetune_seed_offset": int(args.finetune_seed_offset),
+        "eval_seed_offset": int(args.eval_seed_offset),
+        "mask_carry_in": bool(args.mask_carry_in),
+        "cvx_ce_dual": bool(args.cvx_ce_dual),
+        "variants": str(args.variants),
         "L": args.L,
         "P_rec": args.P_rec,
         "P_last": args.P_last,
@@ -861,6 +1163,13 @@ def main() -> None:
             "add_rule_context_diagnostics": True,
             "where": "in-distribution `X_test` split and each OOD `n_digits` (context-conditioned local-rule analysis on sum positions)",
         },
+        "stages_full5": [
+            "ste_pretrain",
+            "cvx_from_ste_pretrain",
+            "ste_finetune_from_ste_pretrain_new_train",
+            "cvx_pretrain",
+            "ste_finetune_from_cvx_pretrain_new_train",
+        ],
     }
     (out_root / "run_config.json").write_text(json.dumps(config_dump, indent=2) + "\n")
 
@@ -879,35 +1188,57 @@ def main() -> None:
 
     for seed in args.seeds:
         print("\n" + "=" * 100, flush=True)
-        print(f"SEED {seed}", flush=True)
+        print(f"SEED {seed} (variants={args.variants}, mask_carry_in={bool(args.mask_carry_in)})", flush=True)
         print("=" * 100, flush=True)
-
-        ds = load_arithmetic_dataset(
-            op="add",
-            base=args.arith_base,
-            n_digits=args.n_digits_train,
-            n_train=args.n_train,
-            n_val=args.n_val,
-            n_test=args.n_test,
-            seed=seed,
-            debug_verify_samples=args.verify_samples,
-        )
-        if int(ds.X_train.shape[1]) != T_expect:
-            raise ValueError(
-                f"Train T={ds.X_train.shape[1]} != expected {T_expect} for n_digits={args.n_digits_train} add."
-            )
-        d_in = int(ds.X_train.shape[2])
-        num_classes = ds.num_classes
-
-        x_train, y_train = ds.X_train, ds.y_train
-        x_val, y_val = ds.X_val, ds.y_val
-        x_test, y_test = ds.X_test, ds.y_test
 
         seed_dir = out_root / f"seed_{seed}"
         seed_dir.mkdir(parents=True, exist_ok=True)
 
+        # Build train / val / test splits. For variants=full5 we use independent seeds
+        # for the pretrain and finetune training splits but share the test split via
+        # ``eval_seed_offset``, mirroring the carry/state hybrid bench.
+        pre_seed = int(seed)
+        ft_seed = int(seed) + int(args.finetune_seed_offset)
+        eval_seed = int(seed) + int(args.eval_seed_offset)
+        x_train, x_train_unmasked, y_train = _build_lengthgen_split(
+            op="add",
+            base=int(args.arith_base),
+            n_digits=int(args.n_digits_train),
+            n_samples=n_train_pre,
+            seed=pre_seed + 11,
+            verify_count=int(args.verify_samples),
+            mask_carry=bool(args.mask_carry_in),
+        )
+        x_val, x_val_unmasked, y_val = _build_lengthgen_split(
+            op="add",
+            base=int(args.arith_base),
+            n_digits=int(args.n_digits_train),
+            n_samples=n_val_pre,
+            seed=pre_seed + 29,
+            verify_count=int(args.verify_samples),
+            mask_carry=bool(args.mask_carry_in),
+        )
+        x_test, x_test_unmasked, y_test = _build_lengthgen_split(
+            op="add",
+            base=int(args.arith_base),
+            n_digits=int(args.n_digits_train),
+            n_samples=int(args.n_test),
+            seed=eval_seed + 47,
+            verify_count=int(args.verify_samples),
+            mask_carry=bool(args.mask_carry_in),
+        )
+        if int(x_train.shape[1]) != T_expect:
+            raise ValueError(
+                f"Train T={x_train.shape[1]} != expected {T_expect} for n_digits={args.n_digits_train} add."
+            )
+        d_in = int(x_train.shape[2])
+        # Number of token classes is base for sum positions; the MSD carry-out also takes values in [0, base).
+        num_classes = int(args.arith_base)
+
+        # Stage 1: STE pretrain on split A. (Same training that the original "minimal"
+        # variant runs.)
         print(
-            f"[phase] STE sweep + best train (last_layer_readout={args.ste_last_layer_readout})...",
+            f"[phase] STE pretrain (split A, last_layer_readout={args.ste_last_layer_readout})...",
             flush=True,
         )
         ste_res, ste_sel = _run_ste_sweep_and_best(
@@ -928,7 +1259,7 @@ def main() -> None:
             optimizer_name=args.optimizer_name,
             ste_epochs=args.ste_epochs,
             batch_size=args.batch_size,
-            seed=seed,
+            seed=pre_seed,
             ste_lr_grid=ste_lr_grid,
             ste_beta_grid=ste_beta_grid,
         )
@@ -937,7 +1268,7 @@ def main() -> None:
             raise TypeError(f"Unexpected STE model type {type(ste_model)}")
 
         print(
-            "[ste] train done. token_acc="
+            "[ste_pretrain] train done. token_acc="
             f"{ste_res.best_losses.get('train_token_acc')} "
             f"val={ste_res.best_losses.get('val_token_acc')} "
             f"test={ste_res.best_losses.get('test_token_acc')} "
@@ -945,12 +1276,13 @@ def main() -> None:
             flush=True,
         )
         if save_weights:
-            seed_dir.mkdir(parents=True, exist_ok=True)
             _save_ste_npz(seed_dir / "ste_best.npz", ste_model)
             print(f"[saved] {seed_dir / 'ste_best.npz'}", flush=True)
+        ste_pretrain_weights = _extract_weight_list(ste_model)
 
+        # Stage 4: CVX pretrain (Gaussian) on split A.
         print(
-            f"[phase] CVX sweep + best train (last_layer_readout={args.cvx_last_layer_readout})...",
+            f"[phase] CVX pretrain (Gaussian, last_layer_readout={args.cvx_last_layer_readout})...",
             flush=True,
         )
         cvx_res, cvx_init, cvx_sel = _run_cvx_sweep_and_best(
@@ -970,25 +1302,216 @@ def main() -> None:
             cvx_method=args.cvx_method,
             cvx_epochs=args.cvx_epochs,
             batch_size=args.batch_size,
-            seed=seed,
+            seed=pre_seed,
             beta_grid=cvx_beta_grid,
             bias_grid=cvx_bias_grid,
             cvx_lr_grid=ste_lr_grid,
             cvx_device=cvx_dev,
+            init_mode="gaussian",
+            pretrained_weights=None,
+            compute_ce_dual=bool(args.cvx_ce_dual),
         )
         print(
-            "[cvx] train done. token_acc="
+            "[cvx_pretrain] train done. token_acc="
             f"{cvx_res.final_losses.get('test_token_acc')} "
             f"seq_acc test={cvx_res.final_losses.get('test_seq_acc')}",
             flush=True,
         )
         if save_weights:
-            seed_dir.mkdir(parents=True, exist_ok=True)
             _save_cvx_npz(seed_dir / "cvx_best.npz", cvx_res.trained_model)
             print(f"[saved] {seed_dir / 'cvx_best.npz'}", flush=True)
 
         w_cvx = cvx_res.trained_model["weights"]
 
+        # Extra stages (variants=full5): build the finetune-split data first, then run
+        # the 3 additional models — CVX-from-STE-pretrain (split A), STE-finetune-from-STE
+        # (split B), and STE-finetune-from-CVX (split B). Each stage has its own param
+        # selection and weights, and each is evaluated independently below.
+        stage_results: Dict[str, Dict[str, Any]] = {
+            "ste_pretrain": {
+                "kind": "ste",
+                "model": ste_model,
+                "init_cfg": None,
+                "fit_x_train": x_train,
+                "fit_x_val": x_val,
+                "selected_params": ste_sel,
+            },
+            "cvx_pretrain": {
+                "kind": "cvx",
+                "w": w_cvx,
+                "init_cfg": cvx_init,
+                "fit_x_train": x_train,
+                "fit_x_val": x_val,
+                "selected_params": {
+                    k: (float(v) if v is not None else None) for k, v in cvx_sel.items()
+                },
+                "diagnostics": asdict(cvx_res.diagnostics),
+                "train_final_losses": {
+                    k: float(v) for k, v in cvx_res.final_losses.items() if isinstance(v, (float, int))
+                },
+            },
+        }
+        if str(args.variants) == "full5":
+            print(
+                f"[phase] CVX from STE pretrain (split A, last_layer_readout={args.cvx_last_layer_readout})...",
+                flush=True,
+            )
+            cvx_from_ste_res, cvx_from_ste_init, cvx_from_ste_sel = _run_cvx_sweep_and_best(
+                x_train=x_train,
+                y_train=y_train,
+                x_val=x_val,
+                y_val=y_val,
+                x_test=x_test,
+                y_test=y_test,
+                L=args.L,
+                P_rec=args.P_rec,
+                P_last=args.P_last,
+                K_parallel=args.K_parallel,
+                last_layer_readout=str(args.cvx_last_layer_readout),
+                loss_type=args.loss_type,
+                optimizer_name=args.optimizer_name,
+                cvx_method=args.cvx_method,
+                cvx_epochs=args.cvx_epochs,
+                batch_size=args.batch_size,
+                seed=pre_seed,
+                beta_grid=cvx_beta_grid,
+                bias_grid=cvx_bias_grid,
+                cvx_lr_grid=ste_lr_grid,
+                cvx_device=cvx_dev,
+                init_mode="pretraining",
+                pretrained_weights=ste_pretrain_weights,
+                compute_ce_dual=bool(args.cvx_ce_dual),
+            )
+            w_cvx_from_ste = cvx_from_ste_res.trained_model["weights"]
+            stage_results["cvx_from_ste_pretrain"] = {
+                "kind": "cvx",
+                "w": w_cvx_from_ste,
+                "init_cfg": cvx_from_ste_init,
+                "fit_x_train": x_train,
+                "fit_x_val": x_val,
+                "selected_params": {
+                    k: (float(v) if v is not None else None) for k, v in cvx_from_ste_sel.items()
+                },
+                "diagnostics": asdict(cvx_from_ste_res.diagnostics),
+                "train_final_losses": {
+                    k: float(v) for k, v in cvx_from_ste_res.final_losses.items() if isinstance(v, (float, int))
+                },
+            }
+
+            # Build the finetune split (split B). Same digit length as pretrain.
+            x_train_ft, _x_train_ft_unmasked, y_train_ft = _build_lengthgen_split(
+                op="add",
+                base=int(args.arith_base),
+                n_digits=int(args.n_digits_train),
+                n_samples=n_train_ft,
+                seed=ft_seed + 11,
+                verify_count=int(args.verify_samples),
+                mask_carry=bool(args.mask_carry_in),
+            )
+            x_val_ft, _x_val_ft_unmasked, y_val_ft = _build_lengthgen_split(
+                op="add",
+                base=int(args.arith_base),
+                n_digits=int(args.n_digits_train),
+                n_samples=n_val_ft,
+                seed=ft_seed + 29,
+                verify_count=int(args.verify_samples),
+                mask_carry=bool(args.mask_carry_in),
+            )
+
+            print(
+                f"[phase] STE finetune from STE pretrain (split B, last_layer_readout={args.ste_last_layer_readout})...",
+                flush=True,
+            )
+            ste_ft_from_ste_res, ste_ft_from_ste_sel = _run_ste_sweep_and_best(
+                x_train=x_train_ft,
+                y_train=y_train_ft,
+                x_val=x_val_ft,
+                y_val=y_val_ft,
+                x_test=x_test,
+                y_test=y_test,
+                num_classes=num_classes,
+                d_in=d_in,
+                L=args.L,
+                P_rec=args.P_rec,
+                P_last=args.P_last,
+                K_parallel=args.K_parallel,
+                last_layer_readout=str(args.ste_last_layer_readout),
+                loss_type=args.loss_type,
+                optimizer_name=args.optimizer_name,
+                ste_epochs=args.ste_epochs,
+                batch_size=args.batch_size,
+                seed=ft_seed,
+                ste_lr_grid=ste_lr_grid,
+                ste_beta_grid=ste_beta_grid,
+                pretrained_weights=ste_pretrain_weights,
+            )
+            ste_ft_from_ste_model = ste_ft_from_ste_res.model
+            stage_results["ste_finetune_from_ste_pretrain_new_train"] = {
+                "kind": "ste",
+                "model": ste_ft_from_ste_model,
+                "init_cfg": None,
+                "fit_x_train": x_train_ft,
+                "fit_x_val": x_val_ft,
+                "selected_params": ste_ft_from_ste_sel,
+                "train_final_losses": {
+                    k: float(v) for k, v in ste_ft_from_ste_res.best_losses.items() if isinstance(v, (float, int))
+                },
+            }
+
+            # STE-from-CVX-pretrain handoff: rebuild the Gaussian LIF init that the CVX
+            # path used, append the CVX-fit linear classifier transposed to (out, in),
+            # and feed both to ste_solve via pretrained_weights.
+            ste_pretrained_from_cvx = _ste_pretrained_from_cvx_bundle(
+                d_in=d_in,
+                L=int(args.L),
+                P_rec=int(args.P_rec),
+                P_last=int(args.P_last),
+                K_parallel=int(args.K_parallel),
+                seed=pre_seed,
+                cvx_classifier_w_p_last_x_classes=w_cvx,
+            )
+            print(
+                f"[phase] STE finetune from CVX pretrain (split B, last_layer_readout={args.ste_last_layer_readout})...",
+                flush=True,
+            )
+            ste_ft_from_cvx_res, ste_ft_from_cvx_sel = _run_ste_sweep_and_best(
+                x_train=x_train_ft,
+                y_train=y_train_ft,
+                x_val=x_val_ft,
+                y_val=y_val_ft,
+                x_test=x_test,
+                y_test=y_test,
+                num_classes=num_classes,
+                d_in=d_in,
+                L=args.L,
+                P_rec=args.P_rec,
+                P_last=args.P_last,
+                K_parallel=args.K_parallel,
+                last_layer_readout=str(args.ste_last_layer_readout),
+                loss_type=args.loss_type,
+                optimizer_name=args.optimizer_name,
+                ste_epochs=args.ste_epochs,
+                batch_size=args.batch_size,
+                seed=ft_seed,
+                ste_lr_grid=ste_lr_grid,
+                ste_beta_grid=ste_beta_grid,
+                pretrained_weights=ste_pretrained_from_cvx,
+            )
+            ste_ft_from_cvx_model = ste_ft_from_cvx_res.model
+            stage_results["ste_finetune_from_cvx_pretrain_new_train"] = {
+                "kind": "ste",
+                "model": ste_ft_from_cvx_model,
+                "init_cfg": None,
+                "fit_x_train": x_train_ft,
+                "fit_x_val": x_val_ft,
+                "selected_params": ste_ft_from_cvx_sel,
+                "train_final_losses": {
+                    k: float(v) for k, v in ste_ft_from_cvx_res.best_losses.items() if isinstance(v, (float, int))
+                },
+            }
+
+        # ID-test rule-context (always reported) for ste_pretrain + cvx_pretrain (legacy
+        # back-compat keys).
         pred_ste_id = _ste_predict_all_tokens(ste_model, x_test)
         pred_cvx_id = _cvx_predict_all_tokens(
             w=w_cvx,
@@ -1004,7 +1527,7 @@ def main() -> None:
             "ste": add_rule_context_diagnostics(
                 pred_ste_id,
                 y_test,
-                x_test,
+                x_test_unmasked,
                 int(args.arith_base),
                 nd_id,
                 block_size=int(args.ood_block_size),
@@ -1012,7 +1535,7 @@ def main() -> None:
             "cvx": add_rule_context_diagnostics(
                 pred_cvx_id,
                 y_test,
-                x_test,
+                x_test_unmasked,
                 int(args.arith_base),
                 nd_id,
                 block_size=int(args.ood_block_size),
@@ -1025,10 +1548,39 @@ def main() -> None:
             f"[in-dist test] rule_context  n_digits={nd_id}  CVX", rule_context_in_dist["cvx"]
         )
 
+        # Per-stage ID metrics (TF-style — true carry-in input unless --mask_carry_in).
+        stage_id_metrics: Dict[str, Dict[str, Any]] = {}
+        for stage_key, sr in stage_results.items():
+            ood_bs = int(args.ood_block_size)
+            if sr["kind"] == "ste":
+                m = _ste_predict_and_full_metrics(
+                    ste_model=sr["model"],
+                    x=x_test,
+                    y=y_test,
+                    base=int(args.arith_base),
+                    n_digits=nd_id,
+                    block_size=ood_bs,
+                    x_for_rule_context=x_test_unmasked,
+                )
+            else:
+                m = _cvx_predict_and_full_metrics(
+                    w=sr["w"],
+                    x_train=sr["fit_x_train"],
+                    x_val=sr["fit_x_val"],
+                    x_eval=x_test,
+                    y_eval=y_test,
+                    init_cfg=sr["init_cfg"],
+                    base=int(args.arith_base),
+                    n_digits=nd_id,
+                    block_size=ood_bs,
+                    x_eval_for_rule_context=x_test_unmasked,
+                )
+            stage_id_metrics[stage_key] = m
+
         ood_report: Dict[str, Any] = {}
         for nd in args.ood_digits:
             te_seed = seed + 10_000 + int(nd) * 97
-            x_ood, y_ood = _make_test_xy(
+            x_ood_unmasked, y_ood = _make_test_xy(
                 op="add",
                 base=args.arith_base,
                 n_digits=nd,
@@ -1036,6 +1588,7 @@ def main() -> None:
                 seed=te_seed,
                 verify_count=args.verify_samples,
             )
+            x_ood = _mask_carry_inputs(x_ood_unmasked) if bool(args.mask_carry_in) else x_ood_unmasked
             T_ood = _add_timesteps(nd)
             if x_ood.shape[1] != T_ood:
                 raise ValueError(f"OOD T mismatch for nd={nd}: got {x_ood.shape[1]}, expect {T_ood}")
@@ -1071,51 +1624,94 @@ def main() -> None:
                 int(nd),
                 block_size=ood_bs,
             )
-            ood_report[f"n_digits_{nd}"] = {
-                "ste": {**ste_m, "rule_context": ste_rule},
-                "cvx": {**cvx_m, "rule_context": cvx_rule},
-            }
+            # Per-OOD all-stage eval: legacy ``ste``/``cvx`` keys map to ste_pretrain /
+            # cvx_pretrain; full5 adds the other 3 stage keys.
+            ood_bs = int(args.ood_block_size)
+            ood_report[f"n_digits_{nd}"] = {}
+            for stage_key, sr in stage_results.items():
+                if sr["kind"] == "ste":
+                    sm = _ste_predict_and_full_metrics(
+                        ste_model=sr["model"],
+                        x=x_ood,
+                        y=y_ood,
+                        base=int(args.arith_base),
+                        n_digits=int(nd),
+                        block_size=ood_bs,
+                        x_for_rule_context=x_ood_unmasked,
+                    )
+                else:
+                    sm = _cvx_predict_and_full_metrics(
+                        w=sr["w"],
+                        x_train=sr["fit_x_train"],
+                        x_val=sr["fit_x_val"],
+                        x_eval=x_ood,
+                        y_eval=y_ood,
+                        init_cfg=sr["init_cfg"],
+                        base=int(args.arith_base),
+                        n_digits=int(nd),
+                        block_size=ood_bs,
+                        x_eval_for_rule_context=x_ood_unmasked,
+                    )
+                ood_report[f"n_digits_{nd}"][stage_key] = sm
+            ood_report[f"n_digits_{nd}"]["ste"] = ood_report[f"n_digits_{nd}"]["ste_pretrain"]
+            ood_report[f"n_digits_{nd}"]["cvx"] = ood_report[f"n_digits_{nd}"]["cvx_pretrain"]
 
+            ste_m = ood_report[f"n_digits_{nd}"]["ste_pretrain"]
+            cvx_m = ood_report[f"n_digits_{nd}"]["cvx_pretrain"]
             print(
-                f"[ood] n_digits={nd}  STE full  token_acc={ste_m['token_acc']:.4f} "
+                f"[ood] n_digits={nd}  STE-pretrain  token_acc={ste_m['token_acc']:.4f} "
                 f"seq_acc={ste_m['seq_acc']:.4f} "
                 f"mean_first_wrong(among wrong)={ste_m['mean_first_wrong_timestep_among_wrong']:.4f}",
                 flush=True,
             )
-            _print_rule_context_summary("      STE rule_context", ste_rule)
+            _print_rule_context_summary("      STE-pretrain rule_context", ste_m["rule_context"])
             print(
-                f"[ood] n_digits={nd}  CVX full  token_acc={cvx_m['token_acc']:.4f} seq_acc={cvx_m['seq_acc']:.4f} "
+                f"[ood] n_digits={nd}  CVX-Gauss     token_acc={cvx_m['token_acc']:.4f} seq_acc={cvx_m['seq_acc']:.4f} "
                 f"mean_first_wrong(among wrong)={cvx_m['mean_first_wrong_timestep_among_wrong']:.4f}",
                 flush=True,
             )
-            _print_rule_context_summary("      CVX rule_context", cvx_rule)
-            print("      [STE] per-block (full sequence vs y):", flush=True)
-            for blk in ste_m["per_five_timestep_blocks"]:
-                t1a = int(blk["timestep_start_1based"])
-                t1b = int(blk["timestep_end_1based_inclusive"])
-                msd = blk["includes_msd_carry_out_token"]
-                print(
-                    f"         block {blk['block_index']} 1-based T={t1a}..{t1b}  "
-                    f"token_acc={blk['token_acc']:.4f} seq_acc={blk['seq_acc']:.4f}  "
-                    f"token_loss={blk['token_loss']:.4f} seq_loss={blk['seq_loss']:.4f}  "
-                    f"msd_carry_in_block={msd}",
-                    flush=True,
-                )
-            print("      [CVX] per-block (full sequence vs y):", flush=True)
-            for blk in cvx_m["per_five_timestep_blocks"]:
-                t1a = int(blk["timestep_start_1based"])
-                t1b = int(blk["timestep_end_1based_inclusive"])
-                msd = blk["includes_msd_carry_out_token"]
-                print(
-                    f"         block {blk['block_index']} 1-based T={t1a}..{t1b}  "
-                    f"token_acc={blk['token_acc']:.4f} seq_acc={blk['seq_acc']:.4f}  "
-                    f"token_loss={blk['token_loss']:.4f} seq_loss={blk['seq_loss']:.4f}  "
-                    f"msd_carry_in_block={msd}",
-                    flush=True,
-                )
+            _print_rule_context_summary("      CVX-Gauss rule_context", cvx_m["rule_context"])
+            if str(args.variants) == "full5":
+                for stage_key in (
+                    "cvx_from_ste_pretrain",
+                    "ste_finetune_from_ste_pretrain_new_train",
+                    "ste_finetune_from_cvx_pretrain_new_train",
+                ):
+                    sm = ood_report[f"n_digits_{nd}"][stage_key]
+                    print(
+                        f"[ood] n_digits={nd}  {stage_key:<48}  token_acc={sm['token_acc']:.4f} "
+                        f"seq_acc={sm['seq_acc']:.4f}",
+                        flush=True,
+                    )
+
+        # Per-stage payload (selected_params, id_metrics, ood_eval) for full5 reporting.
+        stages_payload: Dict[str, Any] = {}
+        for stage_key, sr in stage_results.items():
+            stage_id = stage_id_metrics[stage_key]
+            stage_ood = {
+                k: ood_report[k][stage_key] for k in ood_report.keys()
+            }
+            stages_payload[stage_key] = {
+                "selected_params": sr["selected_params"],
+                "id_metrics": stage_id,
+                "ood_eval": stage_ood,
+            }
+            if "diagnostics" in sr:
+                stages_payload[stage_key]["diagnostics"] = sr["diagnostics"]
+            if "train_final_losses" in sr:
+                stages_payload[stage_key]["train_final_losses"] = sr["train_final_losses"]
 
         seed_payload: Dict[str, Any] = {
             "seed": seed,
+            "variants": str(args.variants),
+            "mask_carry_in": bool(args.mask_carry_in),
+            "split_seeds": {
+                "pretrain_train": pre_seed + 11,
+                "pretrain_val": pre_seed + 29,
+                "finetune_train": ft_seed + 11,
+                "finetune_val": ft_seed + 29,
+                "eval_test": eval_seed + 47,
+            },
             "add_rule_context_in_dist_test": rule_context_in_dist,
             "ste_last_layer_readout": str(args.ste_last_layer_readout),
             "cvx_last_layer_readout": str(args.cvx_last_layer_readout),
@@ -1124,6 +1720,7 @@ def main() -> None:
             "cvx_selected_params": {k: (float(v) if v is not None else None) for k, v in cvx_sel.items()},
             "cvx_diagnostics_best": asdict(cvx_res.diagnostics),
             "cvx_train_final_losses": {k: float(v) for k, v in cvx_res.final_losses.items() if isinstance(v, (float, int))},
+            "stages": stages_payload,
             "ood_eval": ood_report,
             "artifacts": (
                 {
@@ -1142,7 +1739,15 @@ def main() -> None:
             _flush_root_metrics()
             print(f"[saved] {seed_dir / 'metrics.json'}", flush=True)
             print(f"[saved] {out_root / 'metrics.json'} (aggregate, {len(all_seeds_payloads)} seed(s))", flush=True)
-        all_seeds_summary.append({"seed": seed, "ood_eval": ood_report, "ste_sel": ste_sel, "cvx_sel": cvx_sel})
+        all_seeds_summary.append({
+            "seed": seed,
+            "variants": str(args.variants),
+            "mask_carry_in": bool(args.mask_carry_in),
+            "ood_eval": ood_report,
+            "ste_sel": ste_sel,
+            "cvx_sel": cvx_sel,
+            "stages": stages_payload,
+        })
 
     if save_metrics:
         (out_root / "summary_all_seeds.json").write_text(json.dumps(all_seeds_summary, indent=2, default=str) + "\n")

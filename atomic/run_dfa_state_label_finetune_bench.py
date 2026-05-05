@@ -467,6 +467,382 @@ def _aggregate_dfa_lambda_sweep(seed_payloads: List[Dict[str, Any]]) -> List[Dic
     return out
 
 
+def _dfa_pretrain_weights_path(
+    out_root: Path, *, variant: str, seed: int, lambda_sum: float
+) -> Path:
+    """Mirror ARITH._pretrain_weights_path but key the filename by lambda_sum (state head)."""
+    if str(variant) not in ("ste", "cvx"):
+        raise ValueError(f"Unknown DFA pretrain variant={variant!r}.")
+    return (
+        out_root
+        / f"seed_{int(seed)}"
+        / "pretrain_weights"
+        / f"{variant}_lambda_{ARITH._lambda_tag(float(lambda_sum))}.npz"
+    )
+
+
+def _run_dfa_pretrain_only(
+    args: argparse.Namespace,
+    *,
+    out_root: Path,
+    cvx_device: Optional[torch.device],
+    n_tr: int,
+    n_vap: int,
+    n_te: int,
+    s_pre: int,
+    config_dump: Dict[str, Any],
+) -> Dict[str, Any]:
+    """Train requested pretrain variant per (seed, lambda_sum) and save weights to disk.
+    No eval is performed (mirrors arithmetic ``_run_pretrain_only``)."""
+    seed_payloads: List[Dict[str, Any]] = []
+    total_saved = 0
+
+    for base_seed in args.seeds:
+        pre_seed = int(base_seed)
+        eval_seed = int(base_seed) + int(args.eval_seed_offset)
+        ds_pre, _meta_pre = build_dfa_carry_augmented_dataset_from_seeds(
+            dfa_spec=str(args.dfa_spec),
+            T=int(args.T),
+            n_train=n_tr,
+            n_val=n_vap,
+            n_test=n_te,
+            seed_train=pre_seed + 11,
+            seed_val=pre_seed + 29,
+            seed_test=eval_seed + 47,
+            verify_count=int(args.verify_samples),
+        )
+        b_sc = int(ds_pre.num_sum_classes)
+        d_in = int(ds_pre.d_in)
+        lambda_payloads: List[Dict[str, Any]] = []
+
+        for lambda_sum in [float(x) for x in args.lambda_sum_grid]:
+            _set_seed(pre_seed)
+            print(
+                f"[dfa_hybrid] pretrain_only start seed={int(base_seed)} "
+                f"variant={str(args.pretrain_variant)} lambda_sum={float(lambda_sum):.8g}",
+                flush=True,
+            )
+            if str(args.pretrain_variant) == "ste":
+                ste_pre_model, ste_pre_sel, _ = ARITH.ste_sweep_and_train_init(
+                    ds=ds_pre,
+                    L=int(args.L),
+                    P_rec=int(args.P_rec),
+                    P_last=int(args.P_last),
+                    K_parallel=int(args.K_parallel),
+                    ste_last_layer_readout=str(args.ste_last_layer_readout),
+                    ste_epochs=s_pre,
+                    batch_size=int(args.batch_size),
+                    optimizer_name=str(args.optimizer_name),
+                    beta_leak=float(args.beta_leak),
+                    threshold=float(args.threshold),
+                    seed=pre_seed,
+                    ste_lr_grid=args.ste_lr_grid,
+                    ste_beta_grid=args.ste_beta_grid,
+                    lambda_sum=float(lambda_sum),
+                    lambda_carry=float(args.lambda_carry),
+                    ste_sum_loss=str(args.ste_sum_loss),
+                    ste_carry_loss=str(args.ste_carry_loss),
+                    tf_objective=str(args.tf_objective),
+                    ste_time_loss=str(args.ste_time_loss),
+                    pretrained_weights=None,
+                )
+                weights = ARITH._extract_carry_weight_list(ste_pre_model)
+                selected_params = ste_pre_sel
+            elif str(args.pretrain_variant) == "cvx":
+                cvx_pre_bundle, cvx_pre_sel, _ = ARITH.cvx_fit_shared_two_head_init(
+                    ds=ds_pre,
+                    L=int(args.L),
+                    P_rec=int(args.P_rec),
+                    P_last=int(args.P_last),
+                    K_parallel=int(args.K_parallel),
+                    cvx_last_layer_readout=str(args.cvx_last_layer_readout),
+                    seed=pre_seed,
+                    beta_grid=args.cvx_beta_grid,
+                    bias_grid=args.cvx_bias_grid,
+                    lambda_sum=float(lambda_sum),
+                    lambda_carry=float(args.lambda_carry),
+                    cvx_device=cvx_device,
+                    cvx_sum_loss=str(args.cvx_sum_loss),
+                    cvx_carry_loss=str(args.cvx_carry_loss),
+                    cvx_time_loss=str(args.cvx_time_loss),
+                    init_mode="gaussian",
+                    pretrained_weights=None,
+                    cvx_grid_workers=int(args.cvx_grid_workers),
+                    cvx_ovr_workers=int(args.cvx_ovr_workers),
+                )
+                weights = ARITH._cvx_bundle_to_carry_weights(
+                    bundle=cvx_pre_bundle,
+                    d_in=d_in,
+                    L=int(args.L),
+                    P_rec=int(args.P_rec),
+                    P_last=int(args.P_last),
+                    K_parallel=int(args.K_parallel),
+                    base=b_sc,
+                )
+                selected_params = cvx_pre_sel
+            else:
+                raise ValueError(f"Unknown pretrain_variant={args.pretrain_variant!r}")
+
+            weights_path = _dfa_pretrain_weights_path(
+                out_root,
+                variant=str(args.pretrain_variant),
+                seed=int(base_seed),
+                lambda_sum=float(lambda_sum),
+            )
+            metadata = {
+                "seed": int(base_seed),
+                "lambda_sum": float(lambda_sum),
+                "lambda_carry": float(args.lambda_carry),
+                "pretrain_variant": str(args.pretrain_variant),
+                "selected_params": selected_params,
+                "dfa_spec": str(args.dfa_spec),
+                "T": int(args.T),
+                "L": int(args.L),
+                "P_rec": int(args.P_rec),
+                "P_last": int(args.P_last),
+                "K_parallel": int(args.K_parallel),
+                "n_state_classes": b_sc,
+                "d_in": d_in,
+            }
+            ARITH._save_weight_list_npz(weights_path, weights=weights, metadata=metadata)
+            total_saved += 1
+            lambda_payloads.append(
+                {
+                    "lambda_sum": float(lambda_sum),
+                    "lambda_carry": float(args.lambda_carry),
+                    "selected_params": selected_params,
+                    "weights_path": str(weights_path),
+                    "weight_tensors_saved": int(len(weights)),
+                }
+            )
+
+        seed_payload = {
+            "seed": int(base_seed),
+            "split_seeds": {
+                "pretrain_train": pre_seed + 11,
+                "pretrain_val": pre_seed + 29,
+                "eval_test": eval_seed + 47,
+            },
+            "pretrain_variant": str(args.pretrain_variant),
+            "lambda_sweep": lambda_payloads,
+        }
+        seed_payloads.append(seed_payload)
+        sdir = out_root / f"seed_{int(base_seed)}"
+        sdir.mkdir(parents=True, exist_ok=True)
+        (sdir / "metrics_pretrain_only.json").write_text(
+            json.dumps(seed_payload, indent=2, default=str) + "\n"
+        )
+
+    root_payload = {
+        "run_config": config_dump,
+        "out_root": str(out_root),
+        "mode": "pretrain_only",
+        "pretrain_variant": str(args.pretrain_variant),
+        "n_saved_weight_files": int(total_saved),
+        "seeds": seed_payloads,
+    }
+    (out_root / "metrics_pretrain_only.json").write_text(
+        json.dumps(root_payload, indent=2, default=str) + "\n"
+    )
+    return root_payload
+
+
+def _aggregate_dfa_finetune_only_lambda_sweep(
+    seed_payloads: List[Dict[str, Any]],
+) -> List[Dict[str, Any]]:
+    """Aggregate ``pretrain_eval`` + ``ste_finetune`` across seeds for finetune_only."""
+    if not seed_payloads:
+        return []
+    base_grid = [float(e["lambda_sum"]) for e in seed_payloads[0]["lambda_sweep"]]
+    for sp in seed_payloads[1:]:
+        if [float(e["lambda_sum"]) for e in sp["lambda_sweep"]] != base_grid:
+            raise ValueError("lambda_sum sweep order differs across seeds")
+    out: List[Dict[str, Any]] = []
+    for idx, ls in enumerate(base_grid):
+        ft_entries = [sp["lambda_sweep"][idx]["ste_finetune"] for sp in seed_payloads]
+        pre_entries = [sp["lambda_sweep"][idx]["pretrain_eval"] for sp in seed_payloads]
+        out.append(
+            {
+                "lambda_sum": float(ls),
+                "lambda_carry_fixed": float(seed_payloads[0]["lambda_sweep"][idx].get("lambda_carry", 0.0)),
+                "pretrain_eval": _aggregate_dfa_stage(pre_entries),
+                "ste_finetune": _aggregate_dfa_stage(ft_entries),
+            }
+        )
+    return out
+
+
+def _run_dfa_finetune_only(
+    args: argparse.Namespace,
+    *,
+    out_root: Path,
+    n_trf: int,
+    n_vaf: int,
+    n_te: int,
+    n_ood: int,
+    s_ft: int,
+    config_dump: Dict[str, Any],
+) -> Dict[str, Any]:
+    """Load saved pretrain weights, evaluate them, run STE finetune, evaluate it, save both."""
+    if str(args.finetune_variant) == "ste_from_ste":
+        src_variant = "ste"
+        pretrain_readout = str(args.ste_last_layer_readout)
+    elif str(args.finetune_variant) == "ste_from_cvx":
+        src_variant = "cvx"
+        pretrain_readout = str(args.cvx_last_layer_readout)
+    else:
+        raise ValueError(f"Unknown finetune_variant={args.finetune_variant!r}")
+
+    seed_payloads: List[Dict[str, Any]] = []
+    for base_seed in args.seeds:
+        pre_seed = int(base_seed)
+        ft_seed = int(base_seed) + int(args.finetune_seed_offset)
+        eval_seed = int(base_seed) + int(args.eval_seed_offset)
+        ds_ft, meta_ft = build_dfa_carry_augmented_dataset_from_seeds(
+            dfa_spec=str(args.dfa_spec),
+            T=int(args.T),
+            n_train=n_trf,
+            n_val=n_vaf,
+            n_test=n_te,
+            seed_train=ft_seed + 11,
+            seed_val=ft_seed + 29,
+            seed_test=eval_seed + 47,
+            verify_count=int(args.verify_samples),
+        )
+        b_sc = int(ds_ft.num_sum_classes)
+        d_in = int(ds_ft.d_in)
+        st_0 = int(meta_ft.start_state_index)
+        lambda_payloads: List[Dict[str, Any]] = []
+
+        for lambda_sum in [float(x) for x in args.lambda_sum_grid]:
+            weights_path = _dfa_pretrain_weights_path(
+                out_root,
+                variant=src_variant,
+                seed=int(base_seed),
+                lambda_sum=float(lambda_sum),
+            )
+            pretrained_weights, pretrain_metadata = ARITH._load_weight_list_npz(weights_path)
+
+            # Evaluate the loaded pretrain model BEFORE fine-tuning. We rebuild the carry
+            # SNN, copy weights in (works for both ste and cvx pretrain because
+            # _cvx_bundle_to_carry_weights wrote the npz in carry layout), and run the same
+            # teacher-forcing + autoregressive ID/OOD eval used for the finetune stage.
+            pretrain_model = ste_cts.CarryAugmentedSNN(
+                d_in=d_in,
+                base=b_sc,
+                L=int(args.L),
+                P_rec=int(args.P_rec),
+                P_last=int(args.P_last),
+                K_parallel=int(args.K_parallel),
+                beta_leak=float(args.beta_leak),
+                threshold=float(args.threshold),
+                last_layer_readout=pretrain_readout,
+            )
+            ARITH._load_carry_weights_(pretrain_model, pretrained_weights)
+            common_eval_kwargs = dict(
+                ood_T_multipliers=args.ood_T_multipliers,
+                n_test_ood=int(n_ood),
+                dfa_spec=str(args.dfa_spec),
+                eval_seed=eval_seed,
+                n_state_classes=b_sc,
+                d_in=d_in,
+                start_state_index=st_0,
+            )
+            pretrain_eval = _eval_dfa_all_modes(
+                ds_fit=ds_ft, ds_eval=ds_ft, ste_model=pretrain_model, **common_eval_kwargs
+            )
+            _print_dfa_hybrid_eval_ok(
+                base_seed=base_seed, lambda_sum=lambda_sum, stage_key=f"pretrain_eval[{src_variant}]"
+            )
+
+            ste_ft_model, ste_ft_sel, _ = ARITH.ste_sweep_and_train_init(
+                ds=ds_ft,
+                L=int(args.L),
+                P_rec=int(args.P_rec),
+                P_last=int(args.P_last),
+                K_parallel=int(args.K_parallel),
+                ste_last_layer_readout=str(args.ste_last_layer_readout),
+                ste_epochs=s_ft,
+                batch_size=int(args.batch_size),
+                optimizer_name=str(args.optimizer_name),
+                beta_leak=float(args.beta_leak),
+                threshold=float(args.threshold),
+                seed=ft_seed,
+                ste_lr_grid=args.ste_lr_grid,
+                ste_beta_grid=args.ste_beta_grid,
+                lambda_sum=float(lambda_sum),
+                lambda_carry=float(args.lambda_carry),
+                ste_sum_loss=str(args.ste_sum_loss),
+                ste_carry_loss=str(args.ste_carry_loss),
+                tf_objective=str(args.tf_objective),
+                ste_time_loss=str(args.ste_time_loss),
+                pretrained_weights=pretrained_weights,
+            )
+            ste_ft_eval = _eval_dfa_all_modes(
+                ds_fit=ds_ft, ds_eval=ds_ft, ste_model=ste_ft_model, **common_eval_kwargs
+            )
+            _print_dfa_hybrid_eval_ok(
+                base_seed=base_seed, lambda_sum=lambda_sum, stage_key="ste_finetune"
+            )
+
+            lambda_payloads.append(
+                {
+                    "lambda_sum": float(lambda_sum),
+                    "lambda_carry": float(args.lambda_carry),
+                    "loaded_pretrain_variant": src_variant,
+                    "loaded_weights_path": str(weights_path),
+                    "loaded_weights_metadata": pretrain_metadata,
+                    "pretrain_eval": {
+                        "pretrain_variant": src_variant,
+                        "pretrain_last_layer_readout": pretrain_readout,
+                        "selected_params": pretrain_metadata.get("selected_params"),
+                        **pretrain_eval,
+                    },
+                    "ste_finetune": {
+                        "selected_params": ste_ft_sel,
+                        **ste_ft_eval,
+                    },
+                }
+            )
+
+        seed_payload = {
+            "seed": int(base_seed),
+            "split_seeds": {
+                "expected_pretrain_train": pre_seed + 11,
+                "expected_pretrain_val": pre_seed + 29,
+                "finetune_train": ft_seed + 11,
+                "finetune_val": ft_seed + 29,
+                "eval_test": eval_seed + 47,
+            },
+            "finetune_variant": str(args.finetune_variant),
+            "lambda_sweep": lambda_payloads,
+        }
+        seed_payloads.append(seed_payload)
+        sdir = out_root / f"seed_{int(base_seed)}"
+        sdir.mkdir(parents=True, exist_ok=True)
+        (sdir / "metrics_finetune_only.json").write_text(
+            json.dumps(seed_payload, indent=2, default=str) + "\n"
+        )
+
+    aggregate = {
+        "n_seeds": int(len(seed_payloads)),
+        "lambda_sweep": _aggregate_dfa_finetune_only_lambda_sweep(seed_payloads),
+    }
+    root_payload = {
+        "run_config": config_dump,
+        "out_root": str(out_root),
+        "mode": "finetune_only",
+        "finetune_variant": str(args.finetune_variant),
+        "loaded_pretrain_variant": src_variant,
+        "seeds": seed_payloads,
+        "aggregate": aggregate,
+    }
+    (out_root / "metrics_finetune_only.json").write_text(
+        json.dumps(root_payload, indent=2, default=str) + "\n"
+    )
+    return root_payload
+
+
 def main() -> None:
     ap = argparse.ArgumentParser(
         description="DFA autoregressive hybrid (same 5 stages as add carry bench). "
@@ -575,6 +951,30 @@ def main() -> None:
         ),
     )
 
+    ap.add_argument(
+        "--run_mode",
+        choices=["full", "pretrain_only", "finetune_only"],
+        default="full",
+        help=(
+            "full: run all five stages and evaluate each (default). "
+            "pretrain_only: train requested pretrain_variant per (seed, lambda_sum), save weights to disk, no eval. "
+            "finetune_only: load saved pretrain weights, evaluate the pretrain model, run STE fine-tune, "
+            "evaluate the finetune model. requires --out_root pointing at the pretrain_only output dir."
+        ),
+    )
+    ap.add_argument(
+        "--pretrain_variant",
+        choices=["ste", "cvx"],
+        default="ste",
+        help="Used in run_mode=pretrain_only: which pretrain head produces the saved weights.",
+    )
+    ap.add_argument(
+        "--finetune_variant",
+        choices=["ste_from_ste", "ste_from_cvx"],
+        default="ste_from_ste",
+        help="Used in run_mode=finetune_only: which saved variant to load before STE finetune.",
+    )
+
     ap.add_argument("--out_root", type=str, default="")
     ap.add_argument("--output_json", type=str, default="")
     args = ap.parse_args()
@@ -583,6 +983,10 @@ def main() -> None:
         raise ValueError(f"cvx_grid_workers must be >= 1, got {args.cvx_grid_workers}.")
     if int(args.cvx_ovr_workers) <= 0:
         raise ValueError(f"cvx_ovr_workers must be >= 1, got {args.cvx_ovr_workers}.")
+    if str(args.run_mode) != "full" and not str(args.out_root).strip():
+        raise ValueError(
+            "For run_mode=pretrain_only or finetune_only, --out_root must be set explicitly."
+        )
     _apply_blas_threads(args.blas_threads)
 
     if not args.lambda_sum_grid:
@@ -692,9 +1096,57 @@ def main() -> None:
             "cvx_pretrain",
             "ste_finetune_from_cvx_pretrain_new_train",
         ],
+        "run_mode": str(args.run_mode),
+        "pretrain_variant": str(args.pretrain_variant),
+        "finetune_variant": str(args.finetune_variant),
         "debug": bool(args.debug),
     }
     (out_root / "run_config.json").write_text(json.dumps(config_dump, indent=2) + "\n")
+
+    if str(args.run_mode) == "pretrain_only":
+        root_payload = _run_dfa_pretrain_only(
+            args,
+            out_root=out_root,
+            cvx_device=cvx_device,
+            n_tr=n_tr,
+            n_vap=n_vap,
+            n_te=n_te,
+            s_pre=s_pre,
+            config_dump=config_dump,
+        )
+        oj = str(args.output_json).strip()
+        if oj:
+            Path(oj).expanduser().write_text(json.dumps(root_payload, indent=2, default=str) + "\n")
+        print(json.dumps({"out_root": str(out_root), "mode": "pretrain_only"}, indent=2, default=str), flush=True)
+        return
+
+    if str(args.run_mode) == "finetune_only":
+        root_payload = _run_dfa_finetune_only(
+            args,
+            out_root=out_root,
+            n_trf=n_trf,
+            n_vaf=n_vaf,
+            n_te=n_te,
+            n_ood=n_ood,
+            s_ft=s_ft,
+            config_dump=config_dump,
+        )
+        oj = str(args.output_json).strip()
+        if oj:
+            Path(oj).expanduser().write_text(json.dumps(root_payload, indent=2, default=str) + "\n")
+        print(
+            json.dumps(
+                {
+                    "out_root": str(out_root),
+                    "mode": "finetune_only",
+                    "aggregate": root_payload["aggregate"],
+                },
+                indent=2,
+                default=str,
+            ),
+            flush=True,
+        )
+        return
 
     seed_payloads: List[Dict[str, Any]] = []
 

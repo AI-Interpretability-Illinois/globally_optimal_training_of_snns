@@ -1145,10 +1145,12 @@ def _aggregate_finetune_only(seed_payloads: List[Dict[str, Any]]) -> List[Dict[s
             raise ValueError('lambda_carry sweep order differs across seeds')
     out: List[Dict[str, Any]] = []
     for idx, lc in enumerate(base_grid):
-        entries = [sp['lambda_sweep'][idx]['ste_finetune'] for sp in seed_payloads]
+        ft_entries = [sp['lambda_sweep'][idx]['ste_finetune'] for sp in seed_payloads]
+        pre_entries = [sp['lambda_sweep'][idx]['pretrain_eval'] for sp in seed_payloads]
         out.append({
             'lambda_carry': float(lc),
-            'ste_finetune': _aggregate_stage(entries),
+            'pretrain_eval': _aggregate_stage(pre_entries),
+            'ste_finetune': _aggregate_stage(ft_entries),
         })
     return out
 
@@ -1177,6 +1179,41 @@ def _run_finetune_only(args: argparse.Namespace, *, out_root: Path, config_dump:
                 lambda_carry=float(lambda_carry),
             )
             pretrained_weights, pretrain_metadata = _load_weight_list_npz(weights_path)
+
+            # Evaluate the loaded pretrain model BEFORE fine-tuning. We rebuild the carry
+            # SNN, copy weights in (works for both ste and cvx pretrain because
+            # _cvx_bundle_to_carry_weights wrote the npz in carry layout), and run the same
+            # teacher-forcing + autoregressive ID/OOD eval used for finetune. The readout
+            # matches the pretrain variant so this measures what the pretrain model actually
+            # does, not what an STE retraining would do.
+            pretrain_readout = (
+                str(args.cvx_last_layer_readout)
+                if src_variant == 'cvx'
+                else str(args.ste_last_layer_readout)
+            )
+            pretrain_model = ste_cts.CarryAugmentedSNN(
+                d_in=ds_ft.d_in,
+                base=ds_ft.num_sum_classes,
+                L=int(args.L),
+                P_rec=int(args.P_rec),
+                P_last=int(args.P_last),
+                K_parallel=int(args.K_parallel),
+                beta_leak=float(args.beta_leak),
+                threshold=float(args.threshold),
+                last_layer_readout=pretrain_readout,
+            )
+            _load_carry_weights_(pretrain_model, pretrained_weights)
+            pretrain_eval = _eval_stage_all_modes(
+                ds_fit=ds_ft,
+                ds_eval=ds_ft,
+                ste_model=pretrain_model,
+                ood_digits=args.ood_digits,
+                n_test_ood=int(args.n_test_ood),
+                arith_base=int(args.arith_base),
+                eval_seed=eval_seed,
+                verify_count=int(args.verify_samples),
+                add_initial_carry=str(args.add_initial_carry),
+            )
 
             ste_ft_model, ste_ft_sel, _ = ste_sweep_and_train_init(
                 ds=ds_ft,
@@ -1217,6 +1254,12 @@ def _run_finetune_only(args: argparse.Namespace, *, out_root: Path, config_dump:
                 'loaded_pretrain_variant': src_variant,
                 'loaded_weights_path': str(weights_path),
                 'loaded_weights_metadata': pretrain_metadata,
+                'pretrain_eval': {
+                    'pretrain_variant': src_variant,
+                    'pretrain_last_layer_readout': pretrain_readout,
+                    'selected_params': pretrain_metadata.get('selected_params'),
+                    **pretrain_eval,
+                },
                 'ste_finetune': {
                     'selected_params': ste_ft_sel,
                     **ste_ft_eval,
