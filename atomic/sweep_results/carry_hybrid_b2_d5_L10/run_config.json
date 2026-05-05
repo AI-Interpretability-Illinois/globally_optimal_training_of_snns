@@ -1,0 +1,92 @@
+{
+  "seeds": [
+    0,
+    1,
+    2
+  ],
+  "arith_base": 3,
+  "n_digits": 5,
+  "T": 6,
+  "n_train_pre": 2304,
+  "n_val_pre": 512,
+  "n_train_ft": 2304,
+  "n_val_ft": 512,
+  "n_test": 1024,
+  "n_test_ood": 1024,
+  "ood_digits": [
+    10,
+    25,
+    50
+  ],
+  "add_initial_carry": "random",
+  "finetune_seed_offset": 1000,
+  "eval_seed_offset": 2000,
+  "L": 10,
+  "P_rec": 256,
+  "P_last": 512,
+  "K_parallel": 2,
+  "ste_last_layer_readout": "spike",
+  "cvx_last_layer_readout": "spike",
+  "optimizer_name": "adam",
+  "ste_pretrain_epochs": 100,
+  "ste_finetune_epochs": 100,
+  "lambda_sum": 1.0,
+  "lambda_carry_grid": [
+    0.125,
+    0.25,
+    0.5,
+    0.75,
+    1.0,
+    1.25,
+    1.5,
+    2.0,
+    4.0,
+    6.0,
+    8.0,
+    10.0
+  ],
+  "ste_lr_grid": [
+    0.001,
+    0.005,
+    0.01,
+    0.1
+  ],
+  "ste_beta_grid": [
+    0.01,
+    0.1,
+    0.5,
+    1.0,
+    5.0,
+    10.0
+  ],
+  "cvx_beta_grid": [
+    0.01,
+    0.1,
+    0.5,
+    1.0,
+    5.0,
+    10.0
+  ],
+  "cvx_bias_grid": [
+    0.0
+  ],
+  "ste_sum_loss": "auto",
+  "ste_carry_loss": "auto",
+  "cvx_sum_loss": "auto",
+  "cvx_carry_loss": "auto",
+  "tf_objective": "joint",
+  "ste_time_loss": "ramp",
+  "cvx_time_loss": "ramp",
+  "cvx_grid_workers": 12,
+  "cvx_ovr_workers": 1,
+  "run_mode": "pretrain_only",
+  "pretrain_variant": "cvx",
+  "finetune_variant": "ste_from_ste",
+  "evaluation_modes_saved_by_default": [
+    "teacher_forcing",
+    "autoregressive"
+  ],
+  "stages": [
+    "cvx_pretrain"
+  ]
+}
