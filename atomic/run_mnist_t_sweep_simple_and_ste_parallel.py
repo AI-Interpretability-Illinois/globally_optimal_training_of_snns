@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+from re import L
 import subprocess
 import sys
 from pathlib import Path
@@ -111,8 +112,8 @@ def main() -> None:
             include_bias_grid=include_bias,
         )
         for k_par in K_PARALLEL_LIST
-        for l in L_LIST
         for t in T_LIST
+        for l in L_LIST
         for seed in SEEDS
     ]
 
