@@ -460,8 +460,8 @@ def main() -> None:
         "Sweep is over lambda_sum (state); lambda_carry is fixed."
     )
     ap.add_argument("--seeds", type=int, nargs="*", default=[0, 1, 2])
-    ap.add_argument("--dfa_spec", type=str, default="random_4_2")
-    ap.add_argument("--T", type=int, default=5)
+    ap.add_argument("--dfa_spec", type=str, default="tomita_6")
+    ap.add_argument("--T", type=int, default=10)
     ap.add_argument("--n_train_pre", type=int, default=2304)
     ap.add_argument("--n_val_pre", type=int, default=512)
     ap.add_argument("--n_train_ft", type=int, default=2304)
@@ -515,7 +515,7 @@ def main() -> None:
         "--lambda_sum_grid",
         type=float,
         nargs="*",
-        default=[0.125, 0.25, 0.5, 0.75, 1.0, 1.25, 1.5, 2.0, 4.0, 6.0, 8.0, 10.0],
+        default=[0.125, 0.75, 1.0, 4.0],
         help="Swept weight on the sum head = next-state (CE). This is the state / lambda_sum grid.",
     )
     ap.add_argument("--ste_lr_grid", type=float, nargs="*", default=list(LR_GRID_DEFAULT))

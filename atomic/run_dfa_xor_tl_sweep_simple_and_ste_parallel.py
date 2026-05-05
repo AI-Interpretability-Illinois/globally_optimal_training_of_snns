@@ -6,23 +6,23 @@ import sys
 from pathlib import Path
 
 
-T_LIST = [2, 4, 7, 14, 28, 56, 196, 784]
-L_LIST = [3, 5, 10, 15, 20, 30, 50, 80, 120]
-SEEDS = [0, 1, 2]
+T_LIST = [6,8,11,14]
+L_LIST = [5,15]
+SEEDS = [0,1,2]
 XOR_SPECS = ["first_last_xor"]
 CVX_BIAS_GRID = [0.0]
-K_PARALLEL_LIST = [50, 100, 500, 1000, 2000]
+K_PARALLEL_LIST = [2]
 
 # P_rec and P_last must be divisible by every K_parallel in K_PARALLEL_LIST.
 COMMON = {
     "dataset": "dfa",
-    "P_rec": 10000,
-    "P_last": 12000,
-    "n_train": 10000,
+    "P_rec": 500,
+    "P_last": 1000,
+    "n_train": 2000,
     "n_val": 2000,
-    "n_test": 2000,
-    "cvx_method": "sgd",
-    "loss_type": "hinge_ovr",
+    "n_test": 4000,
+    "cvx_method": "cvx",
+    "loss_type": "hinge",
 }
 
 
@@ -101,6 +101,8 @@ def main() -> None:
                             "200",
                             "--ste_epochs",
                             "200",
+                            "--last_layer_readout",
+                            "membrane",
                         ]
                         if args.side in ("both", "cvx_only"):
                             cmd.extend(["--bias_grid", *[str(b) for b in CVX_BIAS_GRID]])

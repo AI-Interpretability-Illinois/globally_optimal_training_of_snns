@@ -398,9 +398,9 @@ def _solve_cvxpy_with_fallback(
         if s == "CLARABEL":
             problem.solve(solver=cp.CLARABEL, verbose=False)
         elif s == "OSQP":
-            problem.solve(solver=cp.OSQP, verbose=False, eps_abs=1e-8, eps_rel=1e-8, max_iter=200000)
+            problem.solve(solver=cp.OSQP, verbose=False, eps_abs=1e-8, eps_rel=1e-8)
         elif s == "SCS":
-            problem.solve(solver=cp.SCS, verbose=False, eps=1e-5, max_iters=50000)
+            problem.solve(solver=cp.SCS, verbose=False, eps=1e-5)
         else:
             raise ValueError(f"Unsupported solver token={s}")
         if has_solution():
@@ -505,12 +505,15 @@ def solve_multiclass_softmax_ce_l1_primal_dual(
     *,
     sample_weight: Optional[np.ndarray] = None,
     solver_order: Tuple[str, ...] = ("CLARABEL", "SCS"),
+    compute_dual: bool = True,
 ) -> Tuple[np.ndarray, float, float, float]:
     """
     Weighted  softmax  CE  +  L1  and  the  z-simplex  dual.  If  ``sample_weight  is  None``,
     uses  a_i=1/n  (mean  over  the  n  flat  training  rows).
 
     ``gap  =  primal  -  dual``  (numerically  small  at  an  accurate  solution  when  strong  duality  holds).
+
+    If ``compute_dual`` is False, skips the second conic solve; ``dual_val`` and ``gap`` are NaN (faster).
     """
     primal_prob, W = build_softmax_ce_l1_primal_problem(
         D, y, rho, num_classes, sample_weight=sample_weight
@@ -526,6 +529,9 @@ def solve_multiclass_softmax_ce_l1_primal_dual(
     primal_val = float(primal_prob.value)
     if not np.isfinite(w_star).all() or not np.isfinite(primal_val):
         raise FloatingPointError("Non-finite primal solution for softmax CE + L1.")
+
+    if not compute_dual:
+        return w_star, primal_val, float("nan"), float("nan")
 
     dual_prob, Z = build_softmax_ce_l1_dual_problem(
         D, y, rho, num_classes, sample_weight=sample_weight

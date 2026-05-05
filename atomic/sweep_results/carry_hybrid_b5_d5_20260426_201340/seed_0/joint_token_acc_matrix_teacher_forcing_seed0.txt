@@ -1,0 +1,128 @@
+# TEACHER FORCING TABLE
+
+**seed 0** — source: `metrics.json` in this folder. Each table is **joint token accuracy**.
+
+**ID** = in-distribution test. **OOD-10 / OOD-25 / OOD-50** = out-of-distribution with that many decimal digits per operand.
+
+---
+
+### λ_carry = 0.125
+
+| Method | ID | OOD-10 | OOD-25 | OOD-50 |
+|:--|--:|--:|--:|--:|
+| STE Pretrain | 0.111 | 0.127 | 0.133 | 0.136 |
+| **CVX from STE Pretrain** | 0.235 | 0.191 | 0.162 | 0.152 |
+| STE Finetune (from STE) | 0.109 | 0.129 | 0.132 | 0.132 |
+| CVX Pretrain | 0.150 | 0.100 | 0.070 | 0.064 |
+| STE Finetune (from CVX) | 0.153 | 0.153 | 0.145 | 0.144 |
+
+### λ_carry = 0.25
+
+| Method | ID | OOD-10 | OOD-25 | OOD-50 |
+|:--|--:|--:|--:|--:|
+| STE Pretrain | 0.126 | 0.137 | 0.137 | 0.138 |
+| **CVX from STE Pretrain** | 0.211 | 0.184 | 0.170 | 0.166 |
+| STE Finetune (from STE) | 0.119 | 0.127 | 0.134 | 0.139 |
+| CVX Pretrain | 0.180 | 0.144 | 0.137 | 0.140 |
+| STE Finetune (from CVX) | 0.154 | 0.154 | 0.147 | 0.144 |
+
+### λ_carry = 0.5
+
+| Method | ID | OOD-10 | OOD-25 | OOD-50 |
+|:--|--:|--:|--:|--:|
+| STE Pretrain | 0.130 | 0.133 | 0.136 | 0.137 |
+| **CVX from STE Pretrain** | 0.194 | 0.151 | 0.126 | 0.119 |
+| STE Finetune (from STE) | 0.149 | 0.146 | 0.144 | 0.144 |
+| CVX Pretrain | 0.182 | 0.145 | 0.138 | 0.140 |
+| STE Finetune (from CVX) | 0.170 | 0.161 | 0.150 | 0.146 |
+
+### λ_carry = 0.75
+
+| Method | ID | OOD-10 | OOD-25 | OOD-50 |
+|:--|--:|--:|--:|--:|
+| STE Pretrain | 0.129 | 0.135 | 0.136 | 0.137 |
+| **CVX from STE Pretrain** | 0.216 | 0.162 | 0.146 | 0.143 |
+| STE Finetune (from STE) | 0.115 | 0.135 | 0.136 | 0.140 |
+| CVX Pretrain | 0.201 | 0.159 | 0.144 | 0.146 |
+| STE Finetune (from CVX) | 0.164 | 0.157 | 0.148 | 0.145 |
+
+### λ_carry = 1.0
+
+| Method | ID | OOD-10 | OOD-25 | OOD-50 |
+|:--|--:|--:|--:|--:|
+| STE Pretrain | 0.134 | 0.138 | 0.137 | 0.137 |
+| **CVX from STE Pretrain** | 0.217 | 0.163 | 0.139 | 0.130 |
+| STE Finetune (from STE) | 0.153 | 0.151 | 0.146 | 0.145 |
+| CVX Pretrain | 0.208 | 0.162 | 0.140 | 0.137 |
+| STE Finetune (from CVX) | 0.168 | 0.159 | 0.149 | 0.146 |
+
+### λ_carry = 1.25
+
+| Method | ID | OOD-10 | OOD-25 | OOD-50 |
+|:--|--:|--:|--:|--:|
+| STE Pretrain | 0.151 | 0.153 | 0.142 | 0.140 |
+| **CVX from STE Pretrain** | 0.219 | 0.147 | 0.102 | 0.090 |
+| STE Finetune (from STE) | 0.161 | 0.153 | 0.149 | 0.148 |
+| CVX Pretrain | 0.213 | 0.163 | 0.137 | 0.130 |
+| STE Finetune (from CVX) | 0.162 | 0.155 | 0.147 | 0.144 |
+
+### λ_carry = 1.5
+
+| Method | ID | OOD-10 | OOD-25 | OOD-50 |
+|:--|--:|--:|--:|--:|
+| STE Pretrain | 0.135 | 0.140 | 0.138 | 0.138 |
+| **CVX from STE Pretrain** | 0.232 | 0.193 | 0.177 | 0.175 |
+| STE Finetune (from STE) | 0.125 | 0.129 | 0.136 | 0.137 |
+| CVX Pretrain | 0.216 | 0.164 | 0.132 | 0.124 |
+| STE Finetune (from CVX) | 0.169 | 0.160 | 0.149 | 0.147 |
+
+### λ_carry = 2.0
+
+| Method | ID | OOD-10 | OOD-25 | OOD-50 |
+|:--|--:|--:|--:|--:|
+| STE Pretrain | 0.162 | 0.150 | 0.143 | 0.141 |
+| **CVX from STE Pretrain** | 0.200 | 0.173 | 0.157 | 0.153 |
+| STE Finetune (from STE) | 0.151 | 0.147 | 0.145 | 0.140 |
+| CVX Pretrain | 0.221 | 0.166 | 0.130 | 0.119 |
+| STE Finetune (from CVX) | 0.174 | 0.160 | 0.149 | 0.145 |
+
+### λ_carry = 4.0
+
+| Method | ID | OOD-10 | OOD-25 | OOD-50 |
+|:--|--:|--:|--:|--:|
+| STE Pretrain | 0.159 | 0.147 | 0.142 | 0.141 |
+| **CVX from STE Pretrain** | 0.211 | 0.175 | 0.153 | 0.148 |
+| STE Finetune (from STE) | 0.188 | 0.171 | 0.159 | 0.156 |
+| CVX Pretrain | 0.224 | 0.170 | 0.127 | 0.112 |
+| STE Finetune (from CVX) | 0.164 | 0.159 | 0.148 | 0.144 |
+
+### λ_carry = 6.0
+
+| Method | ID | OOD-10 | OOD-25 | OOD-50 |
+|:--|--:|--:|--:|--:|
+| STE Pretrain | 0.142 | 0.145 | 0.143 | 0.144 |
+| **CVX from STE Pretrain** | 0.214 | 0.160 | 0.134 | 0.126 |
+| STE Finetune (from STE) | 0.177 | 0.167 | 0.151 | 0.147 |
+| CVX Pretrain | 0.225 | 0.170 | 0.126 | 0.111 |
+| STE Finetune (from CVX) | 0.169 | 0.159 | 0.150 | 0.146 |
+
+### λ_carry = 8.0
+
+| Method | ID | OOD-10 | OOD-25 | OOD-50 |
+|:--|--:|--:|--:|--:|
+| STE Pretrain | 0.147 | 0.141 | 0.142 | 0.141 |
+| **CVX from STE Pretrain** | 0.220 | 0.179 | 0.156 | 0.151 |
+| STE Finetune (from STE) | 0.175 | 0.160 | 0.150 | 0.149 |
+| CVX Pretrain | 0.229 | 0.172 | 0.126 | 0.112 |
+| STE Finetune (from CVX) | 0.127 | 0.134 | 0.138 | 0.140 |
+
+### λ_carry = 10.0
+
+| Method | ID | OOD-10 | OOD-25 | OOD-50 |
+|:--|--:|--:|--:|--:|
+| STE Pretrain | 0.154 | 0.148 | 0.143 | 0.145 |
+| **CVX from STE Pretrain** | 0.229 | 0.188 | 0.168 | 0.164 |
+| STE Finetune (from STE) | 0.190 | 0.178 | 0.160 | 0.154 |
+| CVX Pretrain | 0.229 | 0.171 | 0.126 | 0.112 |
+| STE Finetune (from CVX) | 0.130 | 0.134 | 0.137 | 0.140 |
+

@@ -404,11 +404,11 @@ def _solve_with_fallback(
 ) -> None:
     for s in solver_order:
         if s == "CLARABEL":
-            problem.solve(solver=cp.CLARABEL, verbose=False, max_iter=50000)
+            problem.solve(solver=cp.CLARABEL, verbose=False)
         elif s == "OSQP":
-            problem.solve(solver=cp.OSQP, verbose=False, eps_abs=1e-8, eps_rel=1e-8, max_iter=50000)
+            problem.solve(solver=cp.OSQP, verbose=False, eps_abs=1e-8, eps_rel=1e-8)
         elif s == "SCS":
-            problem.solve(solver=cp.SCS, verbose=False, eps=1e-5, max_iters=50000)
+            problem.solve(solver=cp.SCS, verbose=False, eps=1e-5)
         else:
             raise ValueError(f"Unsupported solver token={s}")
         if has_solution():
