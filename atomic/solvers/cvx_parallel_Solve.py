@@ -50,7 +50,7 @@ class SolveConfig:
     epochs: int = 100
     batch_size: Optional[int] = None
     log_every: int = 10
-    compute_ce_dual: bool = True
+    compute_ce_dual: bool = False
     cvx_ovr_workers: int = 1
 
 

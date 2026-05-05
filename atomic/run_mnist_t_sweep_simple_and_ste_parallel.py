@@ -6,21 +6,21 @@ import sys
 from pathlib import Path
 
 
-T_LIST = [2]
-L_LIST = [3,5]
-SEEDS = [0]
-CVX_BIAS_GRID = [0.0]
+T_LIST = [2,14,28,56]
+L_LIST = [3,5,10,15]
+SEEDS = [0,1]
+CVX_BIAS_GRID = [-1.0, -0.5, 0.0, 0.5, 1.0]
 K_PARALLEL_LIST = [2]
 
 # Requested fixed MNIST configuration.
 # P_rec and P_last must be divisible by every K_parallel in K_PARALLEL_LIST.
 COMMON = {
     "dataset": "mnist_seq",
-    "P_rec": 10000,
-    "P_last": 12000,
-    "n_train": 10000,
-    "n_val": 3000,
-    "n_test": 3000,
+    "P_rec": 4000,
+    "P_last": 7000,
+    "n_train": 6000,
+    "n_val": 2000,
+    "n_test": 2000,
 }
 
 
@@ -32,7 +32,7 @@ def _build_cmd(
     t: int,
     seed: int,
     cvx_ovr_workers: int,
-    include_bias_and_no_dual: bool,
+    include_bias_grid: bool,
 ) -> list[str]:
     cmd = [
         "python3",
@@ -57,9 +57,8 @@ def _build_cmd(
         "--last_layer_readout", "membrane",
         "--cvx_ovr_workers", str(cvx_ovr_workers),
     ]
-    if include_bias_and_no_dual:
+    if include_bias_grid:
         cmd.extend(["--bias_grid", *[str(b) for b in CVX_BIAS_GRID]])
-        cmd.append("--no_cvx_ce_dual")
     return cmd
 
 
@@ -109,7 +108,7 @@ def main() -> None:
             t=t,
             seed=seed,
             cvx_ovr_workers=int(args.cvx_ovr_workers),
-            include_bias_and_no_dual=include_bias,
+            include_bias_grid=include_bias,
         )
         for k_par in K_PARALLEL_LIST
         for l in L_LIST

@@ -375,7 +375,7 @@ def _experiment_hyperparameters(
             hp["init_weights_variant"] = str(args.init_weights_variant)
         if args.bias_grid is not None:
             hp["bias_grid_cli"] = [float(x) for x in args.bias_grid]
-        hp["cvx_compute_ce_dual"] = not bool(getattr(args, "no_cvx_ce_dual", False))
+        hp["cvx_compute_ce_dual"] = bool(getattr(args, "cvx_ce_dual", False))
     elif args.mode == "fine_tune":
         hp["ste_pretrain_epochs"] = int(args.ste_pretrain_epochs)
         hp["ste_post_epochs"] = int(args.ste_post_epochs)
@@ -1124,7 +1124,7 @@ def _run_simple_mode(args: argparse.Namespace, data: Dict[str, Any]) -> Tuple[Di
                             epochs=args.cvx_epochs,
                             batch_size=None if args.batch_size == -1 else int(args.batch_size),
                             log_every=0,
-                            compute_ce_dual=not args.no_cvx_ce_dual,
+                            compute_ce_dual=bool(args.cvx_ce_dual),
                             cvx_ovr_workers=int(args.cvx_ovr_workers),
                         ),
                         device=cvx_device,
@@ -1181,7 +1181,7 @@ def _run_simple_mode(args: argparse.Namespace, data: Dict[str, Any]) -> Tuple[Di
                     optimizer_name=args.optimizer_name,
                     epochs=args.cvx_epochs,
                     batch_size=None if args.batch_size == -1 else int(args.batch_size),
-                    compute_ce_dual=not args.no_cvx_ce_dual,
+                    compute_ce_dual=bool(args.cvx_ce_dual),
                     cvx_ovr_workers=int(args.cvx_ovr_workers),
                 ),
                 device=cvx_device,
@@ -1393,14 +1393,23 @@ def parse_args() -> argparse.Namespace:
         default=1,
         help="For CVX OVR objectives (hinge/hinge_ovr/squared), number of parallel classwise CVXPY solves.",
     )
-    parser.add_argument(
-        "--no_cvx_ce_dual",
+    ce_dual = parser.add_mutually_exclusive_group()
+    ce_dual.add_argument(
+        "--cvx_ce_dual",
+        dest="cvx_ce_dual",
         action="store_true",
         help=(
-            "With --cvx_method cvx and --loss_type ce: skip the softmax-CE+L1 dual conic solve after the primal. "
-            "Faster; diagnostics dual_value and gap are NaN (weights unchanged vs full primal+dual)."
+            "With --cvx_method cvx and --loss_type ce: run the softmax-CE+L1 dual solve after the primal "
+            "(slower). Default is primal-only (dual_value and gap are NaN)."
         ),
     )
+    ce_dual.add_argument(
+        "--no_cvx_ce_dual",
+        dest="cvx_ce_dual",
+        action="store_false",
+        help="Skip CE dual solve (default). Kept for backward compatibility with older scripts.",
+    )
+    parser.set_defaults(cvx_ce_dual=False)
     parser.add_argument("--ste_pretrain_epochs", type=int, default=80)
     parser.add_argument("--ste_post_epochs", type=int, default=100)
     parser.add_argument("--ste_epochs", type=int, default=200, help="Used only in --mode simple.")

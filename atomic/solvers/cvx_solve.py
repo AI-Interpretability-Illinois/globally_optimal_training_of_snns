@@ -50,8 +50,8 @@ class SolveConfig:
     epochs: int = 100
     batch_size: Optional[int] = None
     log_every: int = 10
-    # When method=cvx and loss_name=ce, solve dual conic problem for gap/dual_obj (skip for speed).
-    compute_ce_dual: bool = True
+    # When method=cvx and loss_name=ce, solve dual conic problem for gap/dual_obj (default off for speed).
+    compute_ce_dual: bool = False
     cvx_ovr_workers: int = 1
 
 
