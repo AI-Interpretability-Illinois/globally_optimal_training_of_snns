@@ -4,6 +4,7 @@ import argparse
 import io
 import json
 import re
+import sys
 from contextlib import redirect_stdout
 from dataclasses import asdict
 from datetime import datetime
@@ -368,11 +369,13 @@ def _experiment_hyperparameters(
         hp["simple_side"] = str(args.simple_side)
         hp["ste_epochs"] = int(args.ste_epochs)
         hp["cvx_device"] = str(args.cvx_device)
+        hp["cvx_ovr_workers"] = int(args.cvx_ovr_workers)
         hp["used_pretrained_weight_init"] = bool(str(getattr(args, "init_weights_dir", "") or "").strip())
         if hp["used_pretrained_weight_init"]:
             hp["init_weights_variant"] = str(args.init_weights_variant)
         if args.bias_grid is not None:
             hp["bias_grid_cli"] = [float(x) for x in args.bias_grid]
+        hp["cvx_compute_ce_dual"] = not bool(getattr(args, "no_cvx_ce_dual", False))
     elif args.mode == "fine_tune":
         hp["ste_pretrain_epochs"] = int(args.ste_pretrain_epochs)
         hp["ste_post_epochs"] = int(args.ste_post_epochs)
@@ -1062,9 +1065,21 @@ def _run_simple_mode(args: argparse.Namespace, data: Dict[str, Any]) -> Tuple[Di
     if run_cvx:
         best_cvx_score = float("inf")
         cvx_lr_eff = cvx_lr_sweep_values(args.cvx_method, LR_GRID_DEFAULT)
-        for cvx_beta in BETA_GRID_DEFAULT:
+        cvx_grid_total = len(BETA_GRID_DEFAULT) * len(cvx_lr_eff) * len(bias_grid)
+        cvx_grid_trial = 0
+        for beta_i, cvx_beta in enumerate(BETA_GRID_DEFAULT, start=1):
             for cvx_lr in cvx_lr_eff:
                 for cvx_bias in bias_grid:
+                    cvx_grid_trial += 1
+                    print(
+                        (
+                            f"[simple-cvx-grid] trial {cvx_grid_trial}/{cvx_grid_total} "
+                            f"beta_index {beta_i}/{len(BETA_GRID_DEFAULT)} "
+                            f"beta={cvx_beta} lr={cvx_lr} bias={cvx_bias}"
+                        ),
+                        file=sys.stderr,
+                        flush=True,
+                    )
                     _set_seed(args.seed)
                     if init_weights is not None:
                         init_cfg = InitializationConfig(
@@ -1109,6 +1124,8 @@ def _run_simple_mode(args: argparse.Namespace, data: Dict[str, Any]) -> Tuple[Di
                             epochs=args.cvx_epochs,
                             batch_size=None if args.batch_size == -1 else int(args.batch_size),
                             log_every=0,
+                            compute_ce_dual=not args.no_cvx_ce_dual,
+                            cvx_ovr_workers=int(args.cvx_ovr_workers),
                         ),
                         device=cvx_device,
                     )
@@ -1164,6 +1181,8 @@ def _run_simple_mode(args: argparse.Namespace, data: Dict[str, Any]) -> Tuple[Di
                     optimizer_name=args.optimizer_name,
                     epochs=args.cvx_epochs,
                     batch_size=None if args.batch_size == -1 else int(args.batch_size),
+                    compute_ce_dual=not args.no_cvx_ce_dual,
+                    cvx_ovr_workers=int(args.cvx_ovr_workers),
                 ),
                 device=cvx_device,
             )
@@ -1368,6 +1387,20 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument("--batch_size", type=int, default=-1)
     parser.add_argument("--cvx_epochs", type=int, default=200)
+    parser.add_argument(
+        "--cvx_ovr_workers",
+        type=int,
+        default=1,
+        help="For CVX OVR objectives (hinge/hinge_ovr/squared), number of parallel classwise CVXPY solves.",
+    )
+    parser.add_argument(
+        "--no_cvx_ce_dual",
+        action="store_true",
+        help=(
+            "With --cvx_method cvx and --loss_type ce: skip the softmax-CE+L1 dual conic solve after the primal. "
+            "Faster; diagnostics dual_value and gap are NaN (weights unchanged vs full primal+dual)."
+        ),
+    )
     parser.add_argument("--ste_pretrain_epochs", type=int, default=80)
     parser.add_argument("--ste_post_epochs", type=int, default=100)
     parser.add_argument("--ste_epochs", type=int, default=200, help="Used only in --mode simple.")

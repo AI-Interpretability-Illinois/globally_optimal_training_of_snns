@@ -17,7 +17,9 @@ For every stage, the script reports and saves by default:
 - autoregressive ID / OOD metrics
 - CVX diagnostics when applicable
 
-No weights are saved.
+By default (run_mode=full), no weights are saved.
+For run_mode=pretrain_only, the script saves pretrain weights and exits.
+For run_mode=finetune_only, the script only runs fine-tuning from saved pretrain weights.
 """
 
 import argparse
@@ -269,6 +271,45 @@ def _cvx_bundle_to_carry_weights(
     return hidden + [sum_head, carry_head]
 
 
+def _lambda_tag(value: float) -> str:
+    raw = np.format_float_positional(float(value), trim='-')
+    return raw.replace('.', 'p').replace('-', 'm')
+
+
+def _pretrain_weights_path(out_root: Path, *, variant: str, seed: int, lambda_carry: float) -> Path:
+    if str(variant) not in ('ste', 'cvx'):
+        raise ValueError(f'Unknown pretrain variant={variant!r}.')
+    return out_root / f'seed_{int(seed)}' / 'pretrain_weights' / f'{variant}_lambda_{_lambda_tag(float(lambda_carry))}.npz'
+
+
+def _save_weight_list_npz(path: Path, *, weights: Sequence[np.ndarray], metadata: Dict[str, Any]) -> None:
+    if not weights:
+        raise ValueError('Cannot save empty weight list.')
+    path.parent.mkdir(parents=True, exist_ok=True)
+    payload: Dict[str, Any] = {}
+    for i, w in enumerate(weights):
+        payload[f'w_{i:03d}'] = np.asarray(w, dtype=np.float64)
+    payload['metadata_json'] = np.array(json.dumps(metadata), dtype=np.str_)
+    np.savez(path, **payload)
+
+
+def _load_weight_list_npz(path: Path) -> Tuple[List[np.ndarray], Dict[str, Any]]:
+    if not path.exists():
+        raise FileNotFoundError(f'Pretrained weights not found: {path}')
+    with np.load(path, allow_pickle=False) as data:
+        keys = sorted([k for k in data.files if k.startswith('w_')])
+        if not keys:
+            raise ValueError(f'No weight tensors found in: {path}')
+        weights = [np.asarray(data[k], dtype=np.float64).copy() for k in keys]
+        metadata: Dict[str, Any] = {}
+        if 'metadata_json' in data.files:
+            metadata_raw = data['metadata_json']
+            if metadata_raw.shape != ():
+                raise ValueError(f'Expected scalar metadata_json in: {path}')
+            metadata = json.loads(str(metadata_raw.item()))
+    return weights, metadata
+
+
 # ------------------------------------------------------------
 # training / cvx fit
 # ------------------------------------------------------------
@@ -454,6 +495,8 @@ def cvx_fit_shared_two_head_init(
     cvx_time_loss: str = 'ramp',
     init_mode: str = 'gaussian',
     pretrained_weights: Optional[Sequence[np.ndarray]] = None,
+    cvx_grid_workers: int = 1,
+    cvx_ovr_workers: int = 1,
 ) -> Tuple[Dict[str, Any], Dict[str, float], Dict[str, float]]:
     _ = cvx_device
     best_score = float('inf')
@@ -483,92 +526,88 @@ def cvx_fit_shared_two_head_init(
         sw_train = None
         a_val = None
 
-    for beta in beta_grid:
-        for bias in bias_grid:
-            _set_seed(seed)
-            init_cfg = InitializationConfig(
-                mode=str(init_mode),
-                seed=seed,
-                L=L,
-                P_rec=P_rec,
-                P_last=P_last,
-                K_parallel=K_parallel,
-                feature_count=P_last,
-                last_layer_readout=cvx_last_layer_readout,
-                bias=float(bias),
-                pretrained_weights=None if pretrained_weights is None else [np.asarray(w, dtype=np.float64) for w in pretrained_weights],
-            )
-            d_train, d_val, d_test = cvx_cts._build_cvx_features_for_all_timesteps(ds.X_train, ds.X_val, ds.X_test, init_cfg)
+    grid_workers = int(cvx_grid_workers)
+    ovr_workers = int(cvx_ovr_workers)
+    if grid_workers <= 0:
+        raise ValueError(f'cvx_grid_workers must be >= 1, got {grid_workers}.')
+    if ovr_workers <= 0:
+        raise ValueError(f'cvx_ovr_workers must be >= 1, got {ovr_workers}.')
 
-            rho_sum = float(beta) / max(float(lambda_sum), 1e-12)
-            rho_carry = float(beta) / max(float(lambda_carry), 1e-12)
+    # Build features once per unique bias value — LIF forward pass is deterministic in bias,
+    # not in beta, so recomputing it per-beta is pure waste.
+    unique_biases = list(dict.fromkeys(float(b) for b in bias_grid))
+    _pretrained_w = None if pretrained_weights is None else [np.asarray(w, dtype=np.float64) for w in pretrained_weights]
+    bias_to_features: Dict[float, Tuple[np.ndarray, np.ndarray, InitializationConfig]] = {}
+    for bias in unique_biases:
+        init_cfg = InitializationConfig(
+            mode=str(init_mode),
+            seed=seed,
+            L=L,
+            P_rec=P_rec,
+            P_last=P_last,
+            K_parallel=K_parallel,
+            feature_count=P_last,
+            last_layer_readout=cvx_last_layer_readout,
+            bias=float(bias),
+            pretrained_weights=_pretrained_w,
+        )
+        d_train, d_val, _ = cvx_cts._build_cvx_features_for_all_timesteps(ds.X_train, ds.X_val, ds.X_test, init_cfg)
+        bias_to_features[float(bias)] = (d_train, d_val, init_cfg)
 
-            if ds.num_sum_classes == 2:
-                if sum_n not in ('hinge', 'ce'):
-                    raise ValueError('For binary sum, cvx_sum_loss must resolve to hinge or ce.')
-                y_pm1 = np.where(y_sum_tr == 1, 1.0, -1.0).astype(np.float64)
-                sol = cvx_cts.solve_binary_l1_primal_dual(
-                    d_train,
-                    y_pm1,
-                    rho_sum,
-                    'hinge' if sum_n == 'hinge' else 'ce',
-                    sample_weight=sw_train,
-                )
-                w_sum = sol.w
-                p_sum, d_sum, g_sum = sol.primal_obj, sol.dual_obj, sol.gap
-                sum_scores_val = d_val @ w_sum
-                if sum_n == 'hinge':
-                    sum_val_loss = cvx_cts._binary_hinge_val_loss(sum_scores_val, y_sum_va) if a_val is None else cvx_cts._ramped_binary_val_loss(sum_scores_val, y_sum_va, n_va, T, kind='hinge')
-                else:
-                    sum_val_loss = cvx_cts._binary_logistic_val_loss(sum_scores_val, y_sum_va) if a_val is None else cvx_cts._ramped_binary_val_loss(sum_scores_val, y_sum_va, n_va, T, kind='logistic')
-            else:
-                if sum_n == 'ce':
-                    w_sum, p_sum, d_sum, g_sum = cvx_cts.solve_multiclass_softmax_ce_l1_primal_dual(
-                        d_train,
-                        y_sum_tr,
-                        rho_sum,
-                        int(ds.num_sum_classes),
-                        sample_weight=sw_train,
-                    )
-                    sum_scores_val = d_val @ w_sum
-                    sum_val_loss = cvx_cts.multiclass_ovr_cvx_data_loss('ce', sum_scores_val, y_sum_va) if a_val is None else cvx_cts._ramped_multiclass_ce_val(sum_scores_val, y_sum_va, n_va, T)
-                elif sum_n == 'hinge_ovr':
-                    w_sum, p_sum, d_sum, g_sum = cvx_cts._ovr_hinge_solve(d_train, y_sum_tr, rho_sum, ds.num_sum_classes, sample_weight=sw_train)
-                    sum_scores_val = d_val @ w_sum
-                    sum_val_loss = cvx_cts.multiclass_ovr_cvx_data_loss('hinge_ovr', sum_scores_val, y_sum_va) if a_val is None else cvx_cts._ramped_ovr_hinge_val(sum_scores_val, y_sum_va, a_val)
-                else:
-                    raise ValueError('For base>2, cvx_sum_loss must resolve to ce or hinge_ovr.')
+    # Now all candidates are pure CVXPY solves — no serial LIF bottleneck inside.
+    candidate_pairs = [(float(beta), float(bias)) for beta in beta_grid for bias in bias_grid]
 
-            sol_carry = cvx_cts.solve_binary_l1_primal_dual(
-                d_train,
-                np.where(y_carry_tr == 1, 1.0, -1.0).astype(np.float64),
-                rho_carry,
-                'hinge' if carry_n == 'hinge' else 'ce',
-                sample_weight=sw_train,
-            )
-            w_carry = sol_carry.w
-            p_carry, d_carry, g_carry = sol_carry.primal_obj, sol_carry.dual_obj, sol_carry.gap
-            carry_scores_val = d_val @ w_carry
-            if carry_n == 'hinge':
-                carry_val_loss = cvx_cts._binary_hinge_val_loss(carry_scores_val, y_carry_va) if a_val is None else cvx_cts._ramped_binary_val_loss(carry_scores_val, y_carry_va, n_va, T, kind='hinge')
-            else:
-                carry_val_loss = cvx_cts._binary_logistic_val_loss(carry_scores_val, y_carry_va) if a_val is None else cvx_cts._ramped_binary_val_loss(carry_scores_val, y_carry_va, n_va, T, kind='logistic')
+    def _evaluate_candidate(beta: float, bias: float) -> Dict[str, Any]:
+        d_train, d_val, init_cfg = bias_to_features[float(bias)]
+        eval_payload = _eval_cvx_candidate_on_features(
+            beta=float(beta),
+            d_train=d_train,
+            d_val=d_val,
+            y_sum_tr=y_sum_tr,
+            y_sum_va=y_sum_va,
+            y_carry_tr=y_carry_tr,
+            y_carry_va=y_carry_va,
+            sum_n=str(sum_n),
+            carry_n=str(carry_n),
+            num_sum_classes=int(ds.num_sum_classes),
+            n_va=int(n_va),
+            T=int(T),
+            sw_train=sw_train,
+            a_val=a_val,
+            lambda_sum=float(lambda_sum),
+            lambda_carry=float(lambda_carry),
+            ovr_workers=int(ovr_workers),
+        )
+        eval_payload['init_cfg'] = init_cfg
+        eval_payload['bias'] = float(bias)
+        return eval_payload
 
-            score = float(lambda_sum) * float(sum_val_loss) + float(lambda_carry) * float(carry_val_loss)
-            if score < best_score:
-                best_score = score
-                best_params = {'beta': float(beta), 'bias': float(bias)}
-                best_bundle = {
-                    'init_cfg': init_cfg,
-                    'sum_weights': w_sum,
-                    'carry_weights': w_carry,
-                    'primal_value': float(lambda_sum) * float(p_sum) + float(lambda_carry) * float(p_carry),
-                    'dual_value': float(lambda_sum) * float(d_sum) + float(lambda_carry) * float(d_carry),
-                    'gap': float(lambda_sum) * float(g_sum) + float(lambda_carry) * float(g_carry),
-                    'cvx_sum_loss': sum_n,
-                    'cvx_carry_loss': carry_n,
-                    'cvx_time_loss': ctl,
-                }
+    if grid_workers == 1 or len(candidate_pairs) == 1:
+        candidate_results = [_evaluate_candidate(beta, bias) for beta, bias in candidate_pairs]
+    else:
+        candidate_results: List[Dict[str, Any]] = []
+        with ThreadPoolExecutor(max_workers=min(int(grid_workers), len(candidate_pairs))) as ex:
+            futures = [ex.submit(_evaluate_candidate, beta, bias) for beta, bias in candidate_pairs]
+            for fut in as_completed(futures):
+                candidate_results.append(fut.result())
+
+    for cand in candidate_results:
+        if float(cand['score']) < best_score:
+            best_score = float(cand['score'])
+            best_params = {'beta': float(cand['beta']), 'bias': float(cand['bias'])}
+            best_bundle = {
+                'init_cfg': cand['init_cfg'],
+                'sum_weights': cand['sum_weights'],
+                'carry_weights': cand['carry_weights'],
+                'primal_value': float(cand['primal_value']),
+                'dual_value': float(cand['dual_value']),
+                'gap': float(cand['gap']),
+                'cvx_sum_loss': sum_n,
+                'cvx_carry_loss': carry_n,
+                'cvx_time_loss': ctl,
+                'cvx_grid_workers': int(grid_workers),
+                'cvx_ovr_workers': int(ovr_workers),
+            }
 
     if best_bundle is None or best_params is None:
         raise RuntimeError('No CVX candidate found.')
@@ -838,6 +877,289 @@ def _aggregate_lambda_sweep(seed_payloads: List[Dict[str, Any]]) -> List[Dict[st
 
 
 # ------------------------------------------------------------
+# run-mode helpers
+# ------------------------------------------------------------
+
+
+def _build_pretrain_dataset(args: argparse.Namespace, *, pre_seed: int, eval_seed: int) -> CarryAugmentedDataset:
+    return build_carry_augmented_dataset_from_seeds(
+        base=int(args.arith_base),
+        n_digits=int(args.n_digits),
+        n_train=int(args.n_train_pre),
+        n_val=int(args.n_val_pre),
+        n_test=int(args.n_test),
+        seed_train=int(pre_seed) + 11,
+        seed_val=int(pre_seed) + 29,
+        seed_test=int(eval_seed) + 47,
+        verify_count=int(args.verify_samples),
+        add_initial_carry=str(args.add_initial_carry),
+    )
+
+
+def _build_finetune_dataset(args: argparse.Namespace, *, ft_seed: int, eval_seed: int) -> CarryAugmentedDataset:
+    return build_carry_augmented_dataset_from_seeds(
+        base=int(args.arith_base),
+        n_digits=int(args.n_digits),
+        n_train=int(args.n_train_ft),
+        n_val=int(args.n_val_ft),
+        n_test=int(args.n_test),
+        seed_train=int(ft_seed) + 11,
+        seed_val=int(ft_seed) + 29,
+        seed_test=int(eval_seed) + 47,
+        verify_count=int(args.verify_samples),
+        add_initial_carry=str(args.add_initial_carry),
+    )
+
+
+def _run_pretrain_only(args: argparse.Namespace, *, out_root: Path, cvx_device: Optional[torch.device], config_dump: Dict[str, Any]) -> Dict[str, Any]:
+    seed_payloads: List[Dict[str, Any]] = []
+    total_saved = 0
+
+    for base_seed in args.seeds:
+        pre_seed = int(base_seed)
+        eval_seed = int(base_seed) + int(args.eval_seed_offset)
+        ds_pre = _build_pretrain_dataset(args, pre_seed=pre_seed, eval_seed=eval_seed)
+        lambda_payloads: List[Dict[str, Any]] = []
+
+        for lambda_carry in [float(x) for x in args.lambda_carry_grid]:
+            if str(args.pretrain_variant) == 'ste':
+                ste_pre_model, ste_pre_sel, _ = ste_sweep_and_train_init(
+                    ds=ds_pre,
+                    L=int(args.L),
+                    P_rec=int(args.P_rec),
+                    P_last=int(args.P_last),
+                    K_parallel=int(args.K_parallel),
+                    ste_last_layer_readout=str(args.ste_last_layer_readout),
+                    ste_epochs=int(args.ste_pretrain_epochs),
+                    batch_size=int(args.batch_size),
+                    optimizer_name=str(args.optimizer_name),
+                    beta_leak=float(args.beta_leak),
+                    threshold=float(args.threshold),
+                    seed=pre_seed,
+                    ste_lr_grid=args.ste_lr_grid,
+                    ste_beta_grid=args.ste_beta_grid,
+                    lambda_sum=float(args.lambda_sum),
+                    lambda_carry=float(lambda_carry),
+                    ste_sum_loss=str(args.ste_sum_loss),
+                    ste_carry_loss=str(args.ste_carry_loss),
+                    tf_objective=str(args.tf_objective),
+                    ste_time_loss=str(args.ste_time_loss),
+                    pretrained_weights=None,
+                )
+                weights = _extract_carry_weight_list(ste_pre_model)
+                selected_params = ste_pre_sel
+            elif str(args.pretrain_variant) == 'cvx':
+                cvx_pre_bundle, cvx_pre_sel, _ = cvx_fit_shared_two_head_init(
+                    ds=ds_pre,
+                    L=int(args.L),
+                    P_rec=int(args.P_rec),
+                    P_last=int(args.P_last),
+                    K_parallel=int(args.K_parallel),
+                    cvx_last_layer_readout=str(args.cvx_last_layer_readout),
+                    seed=pre_seed,
+                    beta_grid=args.cvx_beta_grid,
+                    bias_grid=args.cvx_bias_grid,
+                    lambda_sum=float(args.lambda_sum),
+                    lambda_carry=float(lambda_carry),
+                    cvx_device=cvx_device,
+                    cvx_sum_loss=str(args.cvx_sum_loss),
+                    cvx_carry_loss=str(args.cvx_carry_loss),
+                    cvx_time_loss=str(args.cvx_time_loss),
+                    init_mode='gaussian',
+                    pretrained_weights=None,
+                    cvx_grid_workers=int(args.cvx_grid_workers),
+                    cvx_ovr_workers=int(args.cvx_ovr_workers),
+                )
+                weights = _cvx_bundle_to_carry_weights(
+                    bundle=cvx_pre_bundle,
+                    d_in=ds_pre.d_in,
+                    L=int(args.L),
+                    P_rec=int(args.P_rec),
+                    P_last=int(args.P_last),
+                    K_parallel=int(args.K_parallel),
+                    base=int(args.arith_base),
+                )
+                selected_params = cvx_pre_sel
+            else:
+                raise ValueError(f'Unknown pretrain_variant={args.pretrain_variant!r}')
+
+            weights_path = _pretrain_weights_path(
+                out_root,
+                variant=str(args.pretrain_variant),
+                seed=int(base_seed),
+                lambda_carry=float(lambda_carry),
+            )
+            metadata = {
+                'seed': int(base_seed),
+                'lambda_carry': float(lambda_carry),
+                'pretrain_variant': str(args.pretrain_variant),
+                'selected_params': selected_params,
+                'arith_base': int(args.arith_base),
+                'n_digits': int(args.n_digits),
+                'L': int(args.L),
+                'P_rec': int(args.P_rec),
+                'P_last': int(args.P_last),
+                'K_parallel': int(args.K_parallel),
+            }
+            _save_weight_list_npz(weights_path, weights=weights, metadata=metadata)
+            total_saved += 1
+
+            lambda_payloads.append({
+                'lambda_carry': float(lambda_carry),
+                'selected_params': selected_params,
+                'weights_path': str(weights_path),
+                'weight_tensors_saved': int(len(weights)),
+            })
+
+        seed_payload = {
+            'seed': int(base_seed),
+            'split_seeds': {
+                'pretrain_train': pre_seed + 11,
+                'pretrain_val': pre_seed + 29,
+                'eval_test': eval_seed + 47,
+            },
+            'pretrain_variant': str(args.pretrain_variant),
+            'lambda_sweep': lambda_payloads,
+        }
+        seed_payloads.append(seed_payload)
+        sdir = out_root / f'seed_{int(base_seed)}'
+        sdir.mkdir(parents=True, exist_ok=True)
+        (sdir / 'metrics_pretrain_only.json').write_text(json.dumps(seed_payload, indent=2, default=str) + '\n')
+
+    root_payload = {
+        'run_config': config_dump,
+        'out_root': str(out_root),
+        'mode': 'pretrain_only',
+        'pretrain_variant': str(args.pretrain_variant),
+        'n_saved_weight_files': int(total_saved),
+        'seeds': seed_payloads,
+    }
+    (out_root / 'metrics_pretrain_only.json').write_text(json.dumps(root_payload, indent=2, default=str) + '\n')
+    return root_payload
+
+
+def _aggregate_finetune_only(seed_payloads: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    if not seed_payloads:
+        return []
+    base_grid = [float(e['lambda_carry']) for e in seed_payloads[0]['lambda_sweep']]
+    for sp in seed_payloads[1:]:
+        if [float(e['lambda_carry']) for e in sp['lambda_sweep']] != base_grid:
+            raise ValueError('lambda_carry sweep order differs across seeds')
+    out: List[Dict[str, Any]] = []
+    for idx, lc in enumerate(base_grid):
+        entries = [sp['lambda_sweep'][idx]['ste_finetune'] for sp in seed_payloads]
+        out.append({
+            'lambda_carry': float(lc),
+            'ste_finetune': _aggregate_stage(entries),
+        })
+    return out
+
+
+def _run_finetune_only(args: argparse.Namespace, *, out_root: Path, config_dump: Dict[str, Any]) -> Dict[str, Any]:
+    if str(args.finetune_variant) == 'ste_from_ste':
+        src_variant = 'ste'
+    elif str(args.finetune_variant) == 'ste_from_cvx':
+        src_variant = 'cvx'
+    else:
+        raise ValueError(f'Unknown finetune_variant={args.finetune_variant!r}')
+
+    seed_payloads: List[Dict[str, Any]] = []
+    for base_seed in args.seeds:
+        pre_seed = int(base_seed)
+        ft_seed = int(base_seed) + int(args.finetune_seed_offset)
+        eval_seed = int(base_seed) + int(args.eval_seed_offset)
+        ds_ft = _build_finetune_dataset(args, ft_seed=ft_seed, eval_seed=eval_seed)
+        lambda_payloads: List[Dict[str, Any]] = []
+
+        for lambda_carry in [float(x) for x in args.lambda_carry_grid]:
+            weights_path = _pretrain_weights_path(
+                out_root,
+                variant=src_variant,
+                seed=int(base_seed),
+                lambda_carry=float(lambda_carry),
+            )
+            pretrained_weights, pretrain_metadata = _load_weight_list_npz(weights_path)
+
+            ste_ft_model, ste_ft_sel, _ = ste_sweep_and_train_init(
+                ds=ds_ft,
+                L=int(args.L),
+                P_rec=int(args.P_rec),
+                P_last=int(args.P_last),
+                K_parallel=int(args.K_parallel),
+                ste_last_layer_readout=str(args.ste_last_layer_readout),
+                ste_epochs=int(args.ste_finetune_epochs),
+                batch_size=int(args.batch_size),
+                optimizer_name=str(args.optimizer_name),
+                beta_leak=float(args.beta_leak),
+                threshold=float(args.threshold),
+                seed=ft_seed,
+                ste_lr_grid=args.ste_lr_grid,
+                ste_beta_grid=args.ste_beta_grid,
+                lambda_sum=float(args.lambda_sum),
+                lambda_carry=float(lambda_carry),
+                ste_sum_loss=str(args.ste_sum_loss),
+                ste_carry_loss=str(args.ste_carry_loss),
+                tf_objective=str(args.tf_objective),
+                ste_time_loss=str(args.ste_time_loss),
+                pretrained_weights=pretrained_weights,
+            )
+            ste_ft_eval = _eval_stage_all_modes(
+                ds_fit=ds_ft,
+                ds_eval=ds_ft,
+                ste_model=ste_ft_model,
+                ood_digits=args.ood_digits,
+                n_test_ood=int(args.n_test_ood),
+                arith_base=int(args.arith_base),
+                eval_seed=eval_seed,
+                verify_count=int(args.verify_samples),
+                add_initial_carry=str(args.add_initial_carry),
+            )
+            lambda_payloads.append({
+                'lambda_carry': float(lambda_carry),
+                'loaded_pretrain_variant': src_variant,
+                'loaded_weights_path': str(weights_path),
+                'loaded_weights_metadata': pretrain_metadata,
+                'ste_finetune': {
+                    'selected_params': ste_ft_sel,
+                    **ste_ft_eval,
+                },
+            })
+
+        seed_payload = {
+            'seed': int(base_seed),
+            'split_seeds': {
+                'expected_pretrain_train': pre_seed + 11,
+                'expected_pretrain_val': pre_seed + 29,
+                'finetune_train': ft_seed + 11,
+                'finetune_val': ft_seed + 29,
+                'eval_test': eval_seed + 47,
+            },
+            'finetune_variant': str(args.finetune_variant),
+            'lambda_sweep': lambda_payloads,
+        }
+        seed_payloads.append(seed_payload)
+        sdir = out_root / f'seed_{int(base_seed)}'
+        sdir.mkdir(parents=True, exist_ok=True)
+        (sdir / 'metrics_finetune_only.json').write_text(json.dumps(seed_payload, indent=2, default=str) + '\n')
+
+    aggregate = {
+        'n_seeds': int(len(seed_payloads)),
+        'lambda_sweep': _aggregate_finetune_only(seed_payloads),
+    }
+    root_payload = {
+        'run_config': config_dump,
+        'out_root': str(out_root),
+        'mode': 'finetune_only',
+        'finetune_variant': str(args.finetune_variant),
+        'loaded_pretrain_variant': src_variant,
+        'seeds': seed_payloads,
+        'aggregate': aggregate,
+    }
+    (out_root / 'metrics_finetune_only.json').write_text(json.dumps(root_payload, indent=2, default=str) + '\n')
+    return root_payload
+
+
+# ------------------------------------------------------------
 # main
 # ------------------------------------------------------------
 
@@ -845,7 +1167,7 @@ def _aggregate_lambda_sweep(seed_payloads: List[Dict[str, Any]]) -> List[Dict[st
 def main() -> None:
     ap = argparse.ArgumentParser(description='Addition carry hybrid fine-tune benchmark (both directions, both eval modes, lambda sweep).')
     ap.add_argument('--seeds', type=int, nargs='*', default=[0, 1, 2])
-    ap.add_argument('--arith_base', type=int, default=3)
+    ap.add_argument('--arith_base', type=int, default=5)
     ap.add_argument('--n_digits', type=int, default=5)
     ap.add_argument('--n_train_pre', type=int, default=2304)
     ap.add_argument('--n_val_pre', type=int, default=512)
@@ -859,7 +1181,7 @@ def main() -> None:
     ap.add_argument('--eval_seed_offset', type=int, default=2000)
     ap.add_argument('--add_initial_carry', choices=['zero', 'random'], default='random')
 
-    ap.add_argument('--L', type=int, default=3)
+    ap.add_argument('--L', type=int, default=10)
     ap.add_argument('--P_rec', type=int, default=256)
     ap.add_argument('--P_last', type=int, default=512)
     ap.add_argument('--K_parallel', type=int, default=2)
@@ -886,6 +1208,11 @@ def main() -> None:
     ap.add_argument('--tf_objective', choices=['joint', 'lambda_weighted', 'mean_pair', 'lambda_normalized'], default='joint')
     ap.add_argument('--ste_time_loss', choices=['uniform', 'ramp'], default='ramp')
     ap.add_argument('--cvx_time_loss', choices=['uniform', 'ramp'], default='ramp')
+    ap.add_argument('--cvx_grid_workers', type=int, default=1)
+    ap.add_argument('--cvx_ovr_workers', type=int, default=1)
+    ap.add_argument('--run_mode', choices=['full', 'pretrain_only', 'finetune_only'], default='full')
+    ap.add_argument('--pretrain_variant', choices=['ste', 'cvx'], default='ste')
+    ap.add_argument('--finetune_variant', choices=['ste_from_ste', 'ste_from_cvx'], default='ste_from_ste')
 
     ap.add_argument('--out_root', type=str, default='')
     ap.add_argument('--output_json', type=str, default='')
@@ -895,6 +1222,12 @@ def main() -> None:
         raise ValueError(f'Unsupported base={args.arith_base}. Supported: {SUPPORTED_BASES}.')
     if not args.lambda_carry_grid:
         raise ValueError('lambda_carry_grid must be non-empty.')
+    if int(args.cvx_grid_workers) <= 0:
+        raise ValueError(f'cvx_grid_workers must be >=1, got {args.cvx_grid_workers}.')
+    if int(args.cvx_ovr_workers) <= 0:
+        raise ValueError(f'cvx_ovr_workers must be >=1, got {args.cvx_ovr_workers}.')
+    if str(args.run_mode) != 'full' and not str(args.out_root).strip():
+        raise ValueError('For run_mode=pretrain_only or finetune_only, --out_root must be set explicitly.')
 
     stamp = datetime.now().strftime('%Y%m%d_%H%M%S')
     if str(args.out_root).strip():
@@ -904,6 +1237,18 @@ def main() -> None:
     out_root.mkdir(parents=True, exist_ok=True)
 
     cvx_device = _resolve_cvx_device(str(args.cvx_device))
+    if str(args.run_mode) == 'pretrain_only':
+        active_stages = [f'{str(args.pretrain_variant)}_pretrain']
+    elif str(args.run_mode) == 'finetune_only':
+        active_stages = [f'{str(args.finetune_variant)}_finetune']
+    else:
+        active_stages = [
+            'ste_pretrain',
+            'cvx_from_ste_pretrain',
+            'ste_finetune_from_ste_pretrain_new_train',
+            'cvx_pretrain',
+            'ste_finetune_from_cvx_pretrain_new_train',
+        ]
 
     config_dump = {
         'seeds': list(args.seeds),
@@ -942,16 +1287,40 @@ def main() -> None:
         'tf_objective': str(args.tf_objective),
         'ste_time_loss': str(args.ste_time_loss),
         'cvx_time_loss': str(args.cvx_time_loss),
+        'cvx_grid_workers': int(args.cvx_grid_workers),
+        'cvx_ovr_workers': int(args.cvx_ovr_workers),
+        'run_mode': str(args.run_mode),
+        'pretrain_variant': str(args.pretrain_variant),
+        'finetune_variant': str(args.finetune_variant),
         'evaluation_modes_saved_by_default': ['teacher_forcing', 'autoregressive'],
-        'stages': [
-            'ste_pretrain',
-            'cvx_from_ste_pretrain',
-            'ste_finetune_from_ste_pretrain_new_train',
-            'cvx_pretrain',
-            'ste_finetune_from_cvx_pretrain_new_train',
-        ],
+        'stages': active_stages,
     }
     (out_root / 'run_config.json').write_text(json.dumps(config_dump, indent=2) + '\n')
+
+    if str(args.run_mode) == 'pretrain_only':
+        root_payload = _run_pretrain_only(args, out_root=out_root, cvx_device=cvx_device, config_dump=config_dump)
+        if str(args.output_json).strip():
+            Path(str(args.output_json)).expanduser().write_text(json.dumps(root_payload, indent=2, default=str) + '\n')
+        print(json.dumps({
+            'mode': 'pretrain_only',
+            'pretrain_variant': str(args.pretrain_variant),
+            'n_saved_weight_files': int(root_payload['n_saved_weight_files']),
+            'out_root': str(out_root),
+        }, indent=2, default=str), flush=True)
+        return
+
+    if str(args.run_mode) == 'finetune_only':
+        root_payload = _run_finetune_only(args, out_root=out_root, config_dump=config_dump)
+        if str(args.output_json).strip():
+            Path(str(args.output_json)).expanduser().write_text(json.dumps(root_payload, indent=2, default=str) + '\n')
+        print(json.dumps({
+            'mode': 'finetune_only',
+            'finetune_variant': str(args.finetune_variant),
+            'loaded_pretrain_variant': str(root_payload['loaded_pretrain_variant']),
+            'aggregate': root_payload['aggregate'],
+            'out_root': str(out_root),
+        }, indent=2, default=str), flush=True)
+        return
 
     seed_payloads: List[Dict[str, Any]] = []
 
@@ -1029,6 +1398,8 @@ def main() -> None:
                 cvx_time_loss=str(args.cvx_time_loss),
                 init_mode='pretraining',
                 pretrained_weights=ste_pre_weights,
+                cvx_grid_workers=int(args.cvx_grid_workers),
+                cvx_ovr_workers=int(args.cvx_ovr_workers),
             )
 
             ste_ft_from_ste_model, ste_ft_from_ste_sel, _ = ste_sweep_and_train_init(
@@ -1073,6 +1444,8 @@ def main() -> None:
                 cvx_time_loss=str(args.cvx_time_loss),
                 init_mode='gaussian',
                 pretrained_weights=None,
+                cvx_grid_workers=int(args.cvx_grid_workers),
+                cvx_ovr_workers=int(args.cvx_ovr_workers),
             )
             cvx_pre_weights = _cvx_bundle_to_carry_weights(
                 bundle=cvx_pre_bundle,

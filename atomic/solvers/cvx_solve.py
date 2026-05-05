@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import math
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
 from typing import Dict, List, Optional, Sequence, Tuple
 
@@ -49,6 +50,9 @@ class SolveConfig:
     epochs: int = 100
     batch_size: Optional[int] = None
     log_every: int = 10
+    # When method=cvx and loss_name=ce, solve dual conic problem for gap/dual_obj (skip for speed).
+    compute_ce_dual: bool = True
+    cvx_ovr_workers: int = 1
 
 
 @dataclass
@@ -400,9 +404,9 @@ def _solve_with_fallback(
 ) -> None:
     for s in solver_order:
         if s == "CLARABEL":
-            problem.solve(solver=cp.CLARABEL, verbose=False)
+            problem.solve(solver=cp.CLARABEL, verbose=False, max_iter=50000)
         elif s == "OSQP":
-            problem.solve(solver=cp.OSQP, verbose=False, eps_abs=1e-8, eps_rel=1e-8, max_iter=200000)
+            problem.solve(solver=cp.OSQP, verbose=False, eps_abs=1e-8, eps_rel=1e-8, max_iter=50000)
         elif s == "SCS":
             problem.solve(solver=cp.SCS, verbose=False, eps=1e-5, max_iters=50000)
         else:
@@ -591,6 +595,24 @@ def _token_seq_stats_from_flat_predictions(
     }
 
 
+def _solve_one_ovr_class(
+    *,
+    class_idx: int,
+    d_train: np.ndarray,
+    y_train: np.ndarray,
+    rho: float,
+    loss_name: str,
+) -> Tuple[int, np.ndarray, float, float]:
+    y_bin = np.where(y_train == int(class_idx), 1.0, -1.0).astype(np.float64)
+    sol = solve_binary_l1_primal_dual(
+        d_train,
+        y_bin,
+        rho=rho,
+        loss_name=loss_name,
+    )
+    return int(class_idx), np.asarray(sol.w, dtype=np.float64), float(sol.primal_obj), float(sol.dual_obj)
+
+
 def _run_cvx_method(
     d_train: np.ndarray,
     y_train: np.ndarray,
@@ -603,11 +625,14 @@ def _run_cvx_method(
 ) -> CvxSolveResult:
     num_classes = int(np.max(y_train) + 1)
     rho = float(solve_cfg.beta / math.sqrt(max(d_train.shape[1], 1)))
+    ovr_workers = int(solve_cfg.cvx_ovr_workers)
+    if ovr_workers <= 0:
+        raise ValueError(f"cvx_ovr_workers must be >= 1, got {ovr_workers}.")
     print(
         (
             f"[cvx-run] method=cvx beta={float(solve_cfg.beta):.6g} lr={float(solve_cfg.lr):.6g} "
             f"bias={float(init_bias):.6g} "
-            "batch_size=full"
+            f"batch_size=full ovr_workers={ovr_workers}"
         ),
         flush=True,
     )
@@ -618,22 +643,43 @@ def _run_cvx_method(
             rho=rho,
             num_classes=num_classes,
             solver_order=("CLARABEL", "SCS"),
+            compute_dual=solve_cfg.compute_ce_dual,
         )
     else:
         w = np.zeros((d_train.shape[1], num_classes), dtype=np.float64)
         primal_sum = 0.0
         dual_sum = 0.0
-        for c in range(num_classes):
-            y_bin = np.where(y_train == c, 1.0, -1.0).astype(np.float64)
-            sol = solve_binary_l1_primal_dual(
-                d_train,
-                y_bin,
-                rho=rho,
-                loss_name=solve_cfg.loss_name,
-            )
-            w[:, c] = sol.w
-            primal_sum += sol.primal_obj
-            dual_sum += sol.dual_obj
+        if ovr_workers == 1 or num_classes == 1:
+            for c in range(num_classes):
+                _, w_c, p_c, d_c = _solve_one_ovr_class(
+                    class_idx=c,
+                    d_train=d_train,
+                    y_train=y_train,
+                    rho=rho,
+                    loss_name=solve_cfg.loss_name,
+                )
+                w[:, c] = w_c
+                primal_sum += p_c
+                dual_sum += d_c
+        else:
+            max_workers = min(int(ovr_workers), int(num_classes))
+            with ThreadPoolExecutor(max_workers=max_workers) as ex:
+                futures = [
+                    ex.submit(
+                        _solve_one_ovr_class,
+                        class_idx=c,
+                        d_train=d_train,
+                        y_train=y_train,
+                        rho=rho,
+                        loss_name=solve_cfg.loss_name,
+                    )
+                    for c in range(num_classes)
+                ]
+                for fut in as_completed(futures):
+                    c_idx, w_c, p_c, d_c = fut.result()
+                    w[:, c_idx] = w_c
+                    primal_sum += p_c
+                    dual_sum += d_c
     train_scores = d_train @ w
     val_scores = d_val @ w
     test_scores = d_test @ w
@@ -843,6 +889,8 @@ def cvx_solve(
                 epochs=solve_cfg.epochs,
                 batch_size=solve_cfg.batch_size,
                 log_every=solve_cfg.log_every,
+                compute_ce_dual=solve_cfg.compute_ce_dual,
+                cvx_ovr_workers=solve_cfg.cvx_ovr_workers,
             ),
             device=device,
         )
