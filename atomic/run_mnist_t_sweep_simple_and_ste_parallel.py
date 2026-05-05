@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import argparse
-from re import L
+import os
 import subprocess
 import sys
 from pathlib import Path
@@ -25,6 +25,21 @@ COMMON = {
 }
 
 
+def _child_env(*, blas_threads: int | None) -> dict[str, str] | None:
+    """If set, each child uses this many BLAS threads (use without --parallel for fastest per-job time)."""
+    if blas_threads is None:
+        return None
+    if blas_threads < 1:
+        raise ValueError(f"blas_threads must be >= 1, got {blas_threads}.")
+    env = os.environ.copy()
+    s = str(blas_threads)
+    env["OMP_NUM_THREADS"] = s
+    env["OPENBLAS_NUM_THREADS"] = s
+    env["MKL_NUM_THREADS"] = s
+    env["VECLIB_MAXIMUM_THREADS"] = s
+    return env
+
+
 def _build_cmd(
     *,
     simple_side: str,
@@ -42,7 +57,7 @@ def _build_cmd(
         "--mode", "simple",
         "--simple_side", simple_side,
         "--dataset", COMMON["dataset"],
-        "--cvx_method", "sgd",
+        "--cvx_method", "cvx",
         "--loss_type", "ce",
         "--seed", str(seed),
         "--T", str(t),
@@ -77,8 +92,20 @@ def parse_args() -> argparse.Namespace:
         "--parallel",
         action="store_true",
         help=(
-            "Launch all (K, L, T, seed) combinations as concurrent subprocesses "
-            "instead of sequentially. Combine with --cvx_ovr_workers to saturate all cores."
+            "Launch all (K, L, T, seed) combinations as concurrent subprocesses (max throughput, "
+            "slower per job). Omit this to run one simple_testing at a time (fastest per job); "
+            "pair with --blas_threads."
+        ),
+    )
+    parser.add_argument(
+        "--blas_threads",
+        type=int,
+        default=None,
+        metavar="N",
+        help=(
+            "Set OMP/MKL/OpenBLAS/Accelerate thread count for each child process. "
+            "Use with serial runs (no --parallel), e.g. --blas_threads 32 on a 64-core box. "
+            "Default: inherit from your shell (unset this flag)."
         ),
     )
     parser.add_argument(
@@ -117,17 +144,18 @@ def main() -> None:
         for seed in SEEDS
     ]
 
+    child_env = _child_env(blas_threads=args.blas_threads)
     if not args.parallel:
         for cmd in all_cmds:
             print("\n" + "=" * 120)
             print(" ".join(cmd))
             print("=" * 120)
-            subprocess.run(cmd, cwd=atomic_dir, check=True)
+            subprocess.run(cmd, cwd=atomic_dir, env=child_env, check=True)
     else:
         procs: list[tuple[list[str], subprocess.Popen[bytes]]] = []
         for cmd in all_cmds:
             print("\n[launch] " + " ".join(cmd))
-            proc = subprocess.Popen(cmd, cwd=atomic_dir)
+            proc = subprocess.Popen(cmd, cwd=atomic_dir, env=child_env)
             procs.append((cmd, proc))
 
         failed: list[tuple[list[str], int]] = []
