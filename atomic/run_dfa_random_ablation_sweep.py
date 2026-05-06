@@ -191,16 +191,16 @@ def main() -> None:
         help="Base seed; per (q,a) anchor = base + n_states*10007 + alphabet*10009.",
     )
     ap.add_argument("--T", type=int, default=9, help="Train / ID sequence length (8–10 regime).")
-    ap.add_argument("--n_train", type=int, default=5000)
+    ap.add_argument("--n_train", type=int, default=4096)
     ap.add_argument("--n_val", type=int, default=-1, help="If <0, derive from 2304/512 ratio.")
     ap.add_argument("--n_test", type=int, default=1024)
     ap.add_argument("--n_test_ood", type=int, default=1024)
     ap.add_argument("--seeds", type=int, nargs="*", default=[0, 1, 2])
     ap.add_argument("--ood_T_multipliers", type=int, nargs="*", default=[2, 5, 10])
     ap.add_argument("--L", type=int, default=3)
-    ap.add_argument("--P_rec", type=int, default=256)
-    ap.add_argument("--P_last", type=int, default=512)
-    ap.add_argument("--K_parallel", type=int, default=2)
+    ap.add_argument("--P_rec", type=int, default=512)
+    ap.add_argument("--P_last", type=int, default=2048)
+    ap.add_argument("--K_parallel", type=int, default=128)
     ap.add_argument("--beta_leak", type=float, default=0.99)
     ap.add_argument("--threshold", type=float, default=1.0)
     ap.add_argument("--last_layer_readout", choices=["membrane", "spike"], default="spike")
@@ -249,7 +249,7 @@ def main() -> None:
     ap.add_argument(
         "--dfa_instances_per_variant",
         type=int,
-        default=3,
+        default=1,
         help="Number of independent DFA construction seeds per (q,a, variant).",
     )
     ap.add_argument(
