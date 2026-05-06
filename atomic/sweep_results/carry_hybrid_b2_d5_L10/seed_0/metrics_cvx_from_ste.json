@@ -1,0 +1,1667 @@
+{
+  "seed": 0,
+  "finetune_variant": "cvx_from_ste",
+  "split_seeds": {
+    "pretrain_train": 11,
+    "pretrain_val": 29,
+    "eval_test": 2047
+  },
+  "lambda_sweep": [
+    {
+      "lambda_carry": 0.125,
+      "ste_weights_source": "/home/azureuser/globally_optimal_training_of_snns/atomic/sweep_results/carry_hybrid_b2_d5_L10/seed_0/pretrain_weights/ste_lambda_0p125.npz",
+      "cvx_weights_path": "/home/azureuser/globally_optimal_training_of_snns/atomic/sweep_results/carry_hybrid_b2_d5_L10/seed_0/pretrain_weights/cvx_from_ste_lambda_0p125.npz",
+      "selected_params": {
+        "beta": 0.5,
+        "bias": 0.0
+      },
+      "teacher_forcing_pretrain_test_metrics": {
+        "sum_token_acc": 0.4876302083333333,
+        "carry_token_acc": 0.41796875,
+        "joint_token_acc": 0.1025390625,
+        "joint_seq_acc": 0.0,
+        "sum_seq_acc": 0.0,
+        "carry_seq_acc": 0.0,
+        "mean_first_wrong_sum_among_error_seq": 0.8515625,
+        "mean_first_wrong_carry_among_error_seq": 1.5419921875
+      },
+      "cvx_convex": {
+        "primal_value": 1.125000000401808,
+        "dual_value": 1.1250000448022468,
+        "gap": -4.4400438825586974e-08
+      },
+      "cvx_refine_eval": {
+        "teacher_forcing": {
+          "id_metrics": {
+            "sum_token_acc": 0.4876302083333333,
+            "carry_token_acc": 0.41796875,
+            "joint_token_acc": 0.1025390625,
+            "joint_seq_acc": 0.0,
+            "sum_seq_acc": 0.0,
+            "carry_seq_acc": 0.0,
+            "mean_first_wrong_sum_among_error_seq": 0.8515625,
+            "mean_first_wrong_carry_among_error_seq": 1.5419921875
+          },
+          "ood_eval": {
+            "n_digits_10": {
+              "n_digits": 10,
+              "n_test": 1024,
+              "metrics": {
+                "sum_token_acc": 0.4951171875,
+                "carry_token_acc": 0.45836292613636365,
+                "joint_token_acc": 0.11452414772727272,
+                "joint_seq_acc": 0.0,
+                "sum_seq_acc": 0.0,
+                "carry_seq_acc": 0.0,
+                "mean_first_wrong_sum_among_error_seq": 0.9638671875,
+                "mean_first_wrong_carry_among_error_seq": 2.044921875
+              }
+            },
+            "n_digits_25": {
+              "n_digits": 25,
+              "n_test": 1024,
+              "metrics": {
+                "sum_token_acc": 0.4992487980769231,
+                "carry_token_acc": 0.48148287259615385,
+                "joint_token_acc": 0.1177509014423077,
+                "joint_seq_acc": 0.0,
+                "sum_seq_acc": 0.0,
+                "carry_seq_acc": 0.0,
+                "mean_first_wrong_sum_among_error_seq": 1.0751953125,
+                "mean_first_wrong_carry_among_error_seq": 1.8603515625
+              }
+            },
+            "n_digits_50": {
+              "n_digits": 50,
+              "n_test": 1024,
+              "metrics": {
+                "sum_token_acc": 0.5000574448529411,
+                "carry_token_acc": 0.49465762867647056,
+                "joint_token_acc": 0.1253638174019608,
+                "joint_seq_acc": 0.0,
+                "sum_seq_acc": 0.0,
+                "carry_seq_acc": 0.0,
+                "mean_first_wrong_sum_among_error_seq": 0.9794921875,
+                "mean_first_wrong_carry_among_error_seq": 1.92578125
+              }
+            }
+          }
+        },
+        "autoregressive": {
+          "id_metrics": {
+            "sum_token_acc": 0.4876302083333333,
+            "carry_token_acc": 0.41796875,
+            "joint_token_acc": 0.1025390625,
+            "joint_seq_acc": 0.0,
+            "sum_seq_acc": 0.0,
+            "carry_seq_acc": 0.0,
+            "mean_first_wrong_sum_among_error_seq": 0.8515625,
+            "mean_first_wrong_carry_among_error_seq": 1.5419921875
+          },
+          "ood_eval": {
+            "n_digits_10": {
+              "n_digits": 10,
+              "n_test": 1024,
+              "metrics": {
+                "sum_token_acc": 0.4951171875,
+                "carry_token_acc": 0.45836292613636365,
+                "joint_token_acc": 0.11452414772727272,
+                "joint_seq_acc": 0.0,
+                "sum_seq_acc": 0.0,
+                "carry_seq_acc": 0.0,
+                "mean_first_wrong_sum_among_error_seq": 0.9638671875,
+                "mean_first_wrong_carry_among_error_seq": 2.044921875
+              }
+            },
+            "n_digits_25": {
+              "n_digits": 25,
+              "n_test": 1024,
+              "metrics": {
+                "sum_token_acc": 0.4992487980769231,
+                "carry_token_acc": 0.48148287259615385,
+                "joint_token_acc": 0.1177509014423077,
+                "joint_seq_acc": 0.0,
+                "sum_seq_acc": 0.0,
+                "carry_seq_acc": 0.0,
+                "mean_first_wrong_sum_among_error_seq": 1.0751953125,
+                "mean_first_wrong_carry_among_error_seq": 1.8603515625
+              }
+            },
+            "n_digits_50": {
+              "n_digits": 50,
+              "n_test": 1024,
+              "metrics": {
+                "sum_token_acc": 0.5000574448529411,
+                "carry_token_acc": 0.49465762867647056,
+                "joint_token_acc": 0.1253638174019608,
+                "joint_seq_acc": 0.0,
+                "sum_seq_acc": 0.0,
+                "carry_seq_acc": 0.0,
+                "mean_first_wrong_sum_among_error_seq": 0.9794921875,
+                "mean_first_wrong_carry_among_error_seq": 1.92578125
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "lambda_carry": 0.25,
+      "ste_weights_source": "/home/azureuser/globally_optimal_training_of_snns/atomic/sweep_results/carry_hybrid_b2_d5_L10/seed_0/pretrain_weights/ste_lambda_0p25.npz",
+      "cvx_weights_path": "/home/azureuser/globally_optimal_training_of_snns/atomic/sweep_results/carry_hybrid_b2_d5_L10/seed_0/pretrain_weights/cvx_from_ste_lambda_0p25.npz",
+      "selected_params": {
+        "beta": 10.0,
+        "bias": 0.0
+      },
+      "teacher_forcing_pretrain_test_metrics": {
+        "sum_token_acc": 0.4876302083333333,
+        "carry_token_acc": 0.41796875,
+        "joint_token_acc": 0.1025390625,
+        "joint_seq_acc": 0.0,
+        "sum_seq_acc": 0.0,
+        "carry_seq_acc": 0.0,
+        "mean_first_wrong_sum_among_error_seq": 0.8515625,
+        "mean_first_wrong_carry_among_error_seq": 1.5419921875
+      },
+      "cvx_convex": {
+        "primal_value": 1.2500000026995137,
+        "dual_value": 1.2500000014288637,
+        "gap": 1.2706499186165843e-09
+      },
+      "cvx_refine_eval": {
+        "teacher_forcing": {
+          "id_metrics": {
+            "sum_token_acc": 0.4876302083333333,
+            "carry_token_acc": 0.41796875,
+            "joint_token_acc": 0.1025390625,
+            "joint_seq_acc": 0.0,
+            "sum_seq_acc": 0.0,
+            "carry_seq_acc": 0.0,
+            "mean_first_wrong_sum_among_error_seq": 0.8515625,
+            "mean_first_wrong_carry_among_error_seq": 1.5419921875
+          },
+          "ood_eval": {
+            "n_digits_10": {
+              "n_digits": 10,
+              "n_test": 1024,
+              "metrics": {
+                "sum_token_acc": 0.4951171875,
+                "carry_token_acc": 0.45836292613636365,
+                "joint_token_acc": 0.11452414772727272,
+                "joint_seq_acc": 0.0,
+                "sum_seq_acc": 0.0,
+                "carry_seq_acc": 0.0,
+                "mean_first_wrong_sum_among_error_seq": 0.9638671875,
+                "mean_first_wrong_carry_among_error_seq": 2.044921875
+              }
+            },
+            "n_digits_25": {
+              "n_digits": 25,
+              "n_test": 1024,
+              "metrics": {
+                "sum_token_acc": 0.4992487980769231,
+                "carry_token_acc": 0.48148287259615385,
+                "joint_token_acc": 0.1177509014423077,
+                "joint_seq_acc": 0.0,
+                "sum_seq_acc": 0.0,
+                "carry_seq_acc": 0.0,
+                "mean_first_wrong_sum_among_error_seq": 1.0751953125,
+                "mean_first_wrong_carry_among_error_seq": 1.8603515625
+              }
+            },
+            "n_digits_50": {
+              "n_digits": 50,
+              "n_test": 1024,
+              "metrics": {
+                "sum_token_acc": 0.5000574448529411,
+                "carry_token_acc": 0.49465762867647056,
+                "joint_token_acc": 0.1253638174019608,
+                "joint_seq_acc": 0.0,
+                "sum_seq_acc": 0.0,
+                "carry_seq_acc": 0.0,
+                "mean_first_wrong_sum_among_error_seq": 0.9794921875,
+                "mean_first_wrong_carry_among_error_seq": 1.92578125
+              }
+            }
+          }
+        },
+        "autoregressive": {
+          "id_metrics": {
+            "sum_token_acc": 0.4876302083333333,
+            "carry_token_acc": 0.41796875,
+            "joint_token_acc": 0.1025390625,
+            "joint_seq_acc": 0.0,
+            "sum_seq_acc": 0.0,
+            "carry_seq_acc": 0.0,
+            "mean_first_wrong_sum_among_error_seq": 0.8515625,
+            "mean_first_wrong_carry_among_error_seq": 1.5419921875
+          },
+          "ood_eval": {
+            "n_digits_10": {
+              "n_digits": 10,
+              "n_test": 1024,
+              "metrics": {
+                "sum_token_acc": 0.4951171875,
+                "carry_token_acc": 0.45836292613636365,
+                "joint_token_acc": 0.11452414772727272,
+                "joint_seq_acc": 0.0,
+                "sum_seq_acc": 0.0,
+                "carry_seq_acc": 0.0,
+                "mean_first_wrong_sum_among_error_seq": 0.9638671875,
+                "mean_first_wrong_carry_among_error_seq": 2.044921875
+              }
+            },
+            "n_digits_25": {
+              "n_digits": 25,
+              "n_test": 1024,
+              "metrics": {
+                "sum_token_acc": 0.4992487980769231,
+                "carry_token_acc": 0.48148287259615385,
+                "joint_token_acc": 0.1177509014423077,
+                "joint_seq_acc": 0.0,
+                "sum_seq_acc": 0.0,
+                "carry_seq_acc": 0.0,
+                "mean_first_wrong_sum_among_error_seq": 1.0751953125,
+                "mean_first_wrong_carry_among_error_seq": 1.8603515625
+              }
+            },
+            "n_digits_50": {
+              "n_digits": 50,
+              "n_test": 1024,
+              "metrics": {
+                "sum_token_acc": 0.5000574448529411,
+                "carry_token_acc": 0.49465762867647056,
+                "joint_token_acc": 0.1253638174019608,
+                "joint_seq_acc": 0.0,
+                "sum_seq_acc": 0.0,
+                "carry_seq_acc": 0.0,
+                "mean_first_wrong_sum_among_error_seq": 0.9794921875,
+                "mean_first_wrong_carry_among_error_seq": 1.92578125
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "lambda_carry": 0.5,
+      "ste_weights_source": "/home/azureuser/globally_optimal_training_of_snns/atomic/sweep_results/carry_hybrid_b2_d5_L10/seed_0/pretrain_weights/ste_lambda_0p5.npz",
+      "cvx_weights_path": "/home/azureuser/globally_optimal_training_of_snns/atomic/sweep_results/carry_hybrid_b2_d5_L10/seed_0/pretrain_weights/cvx_from_ste_lambda_0p5.npz",
+      "selected_params": {
+        "beta": 1.0,
+        "bias": 0.0
+      },
+      "teacher_forcing_pretrain_test_metrics": {
+        "sum_token_acc": 0.4876302083333333,
+        "carry_token_acc": 0.41796875,
+        "joint_token_acc": 0.1025390625,
+        "joint_seq_acc": 0.0,
+        "sum_seq_acc": 0.0,
+        "carry_seq_acc": 0.0,
+        "mean_first_wrong_sum_among_error_seq": 0.8515625,
+        "mean_first_wrong_carry_among_error_seq": 1.5419921875
+      },
+      "cvx_convex": {
+        "primal_value": 1.5000000005675438,
+        "dual_value": 1.5000000372476223,
+        "gap": -3.668007875212709e-08
+      },
+      "cvx_refine_eval": {
+        "teacher_forcing": {
+          "id_metrics": {
+            "sum_token_acc": 0.4876302083333333,
+            "carry_token_acc": 0.41796875,
+            "joint_token_acc": 0.1025390625,
+            "joint_seq_acc": 0.0,
+            "sum_seq_acc": 0.0,
+            "carry_seq_acc": 0.0,
+            "mean_first_wrong_sum_among_error_seq": 0.8515625,
+            "mean_first_wrong_carry_among_error_seq": 1.5419921875
+          },
+          "ood_eval": {
+            "n_digits_10": {
+              "n_digits": 10,
+              "n_test": 1024,
+              "metrics": {
+                "sum_token_acc": 0.4951171875,
+                "carry_token_acc": 0.45836292613636365,
+                "joint_token_acc": 0.11452414772727272,
+                "joint_seq_acc": 0.0,
+                "sum_seq_acc": 0.0,
+                "carry_seq_acc": 0.0,
+                "mean_first_wrong_sum_among_error_seq": 0.9638671875,
+                "mean_first_wrong_carry_among_error_seq": 2.044921875
+              }
+            },
+            "n_digits_25": {
+              "n_digits": 25,
+              "n_test": 1024,
+              "metrics": {
+                "sum_token_acc": 0.4992487980769231,
+                "carry_token_acc": 0.48148287259615385,
+                "joint_token_acc": 0.1177509014423077,
+                "joint_seq_acc": 0.0,
+                "sum_seq_acc": 0.0,
+                "carry_seq_acc": 0.0,
+                "mean_first_wrong_sum_among_error_seq": 1.0751953125,
+                "mean_first_wrong_carry_among_error_seq": 1.8603515625
+              }
+            },
+            "n_digits_50": {
+              "n_digits": 50,
+              "n_test": 1024,
+              "metrics": {
+                "sum_token_acc": 0.5000574448529411,
+                "carry_token_acc": 0.49465762867647056,
+                "joint_token_acc": 0.1253638174019608,
+                "joint_seq_acc": 0.0,
+                "sum_seq_acc": 0.0,
+                "carry_seq_acc": 0.0,
+                "mean_first_wrong_sum_among_error_seq": 0.9794921875,
+                "mean_first_wrong_carry_among_error_seq": 1.92578125
+              }
+            }
+          }
+        },
+        "autoregressive": {
+          "id_metrics": {
+            "sum_token_acc": 0.4876302083333333,
+            "carry_token_acc": 0.41796875,
+            "joint_token_acc": 0.1025390625,
+            "joint_seq_acc": 0.0,
+            "sum_seq_acc": 0.0,
+            "carry_seq_acc": 0.0,
+            "mean_first_wrong_sum_among_error_seq": 0.8515625,
+            "mean_first_wrong_carry_among_error_seq": 1.5419921875
+          },
+          "ood_eval": {
+            "n_digits_10": {
+              "n_digits": 10,
+              "n_test": 1024,
+              "metrics": {
+                "sum_token_acc": 0.4951171875,
+                "carry_token_acc": 0.45836292613636365,
+                "joint_token_acc": 0.11452414772727272,
+                "joint_seq_acc": 0.0,
+                "sum_seq_acc": 0.0,
+                "carry_seq_acc": 0.0,
+                "mean_first_wrong_sum_among_error_seq": 0.9638671875,
+                "mean_first_wrong_carry_among_error_seq": 2.044921875
+              }
+            },
+            "n_digits_25": {
+              "n_digits": 25,
+              "n_test": 1024,
+              "metrics": {
+                "sum_token_acc": 0.4992487980769231,
+                "carry_token_acc": 0.48148287259615385,
+                "joint_token_acc": 0.1177509014423077,
+                "joint_seq_acc": 0.0,
+                "sum_seq_acc": 0.0,
+                "carry_seq_acc": 0.0,
+                "mean_first_wrong_sum_among_error_seq": 1.0751953125,
+                "mean_first_wrong_carry_among_error_seq": 1.8603515625
+              }
+            },
+            "n_digits_50": {
+              "n_digits": 50,
+              "n_test": 1024,
+              "metrics": {
+                "sum_token_acc": 0.5000574448529411,
+                "carry_token_acc": 0.49465762867647056,
+                "joint_token_acc": 0.1253638174019608,
+                "joint_seq_acc": 0.0,
+                "sum_seq_acc": 0.0,
+                "carry_seq_acc": 0.0,
+                "mean_first_wrong_sum_among_error_seq": 0.9794921875,
+                "mean_first_wrong_carry_among_error_seq": 1.92578125
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "lambda_carry": 0.75,
+      "ste_weights_source": "/home/azureuser/globally_optimal_training_of_snns/atomic/sweep_results/carry_hybrid_b2_d5_L10/seed_0/pretrain_weights/ste_lambda_0p75.npz",
+      "cvx_weights_path": "/home/azureuser/globally_optimal_training_of_snns/atomic/sweep_results/carry_hybrid_b2_d5_L10/seed_0/pretrain_weights/cvx_from_ste_lambda_0p75.npz",
+      "selected_params": {
+        "beta": 0.5,
+        "bias": 0.0
+      },
+      "teacher_forcing_pretrain_test_metrics": {
+        "sum_token_acc": 0.4876302083333333,
+        "carry_token_acc": 0.41796875,
+        "joint_token_acc": 0.1025390625,
+        "joint_seq_acc": 0.0,
+        "sum_seq_acc": 0.0,
+        "carry_seq_acc": 0.0,
+        "mean_first_wrong_sum_among_error_seq": 0.8515625,
+        "mean_first_wrong_carry_among_error_seq": 1.5419921875
+      },
+      "cvx_convex": {
+        "primal_value": 1.7500000006799863,
+        "dual_value": 1.7500000752709617,
+        "gap": -7.459097550732707e-08
+      },
+      "cvx_refine_eval": {
+        "teacher_forcing": {
+          "id_metrics": {
+            "sum_token_acc": 0.4876302083333333,
+            "carry_token_acc": 0.41796875,
+            "joint_token_acc": 0.1025390625,
+            "joint_seq_acc": 0.0,
+            "sum_seq_acc": 0.0,
+            "carry_seq_acc": 0.0,
+            "mean_first_wrong_sum_among_error_seq": 0.8515625,
+            "mean_first_wrong_carry_among_error_seq": 1.5419921875
+          },
+          "ood_eval": {
+            "n_digits_10": {
+              "n_digits": 10,
+              "n_test": 1024,
+              "metrics": {
+                "sum_token_acc": 0.4951171875,
+                "carry_token_acc": 0.45836292613636365,
+                "joint_token_acc": 0.11452414772727272,
+                "joint_seq_acc": 0.0,
+                "sum_seq_acc": 0.0,
+                "carry_seq_acc": 0.0,
+                "mean_first_wrong_sum_among_error_seq": 0.9638671875,
+                "mean_first_wrong_carry_among_error_seq": 2.044921875
+              }
+            },
+            "n_digits_25": {
+              "n_digits": 25,
+              "n_test": 1024,
+              "metrics": {
+                "sum_token_acc": 0.4992487980769231,
+                "carry_token_acc": 0.48148287259615385,
+                "joint_token_acc": 0.1177509014423077,
+                "joint_seq_acc": 0.0,
+                "sum_seq_acc": 0.0,
+                "carry_seq_acc": 0.0,
+                "mean_first_wrong_sum_among_error_seq": 1.0751953125,
+                "mean_first_wrong_carry_among_error_seq": 1.8603515625
+              }
+            },
+            "n_digits_50": {
+              "n_digits": 50,
+              "n_test": 1024,
+              "metrics": {
+                "sum_token_acc": 0.5000574448529411,
+                "carry_token_acc": 0.49465762867647056,
+                "joint_token_acc": 0.1253638174019608,
+                "joint_seq_acc": 0.0,
+                "sum_seq_acc": 0.0,
+                "carry_seq_acc": 0.0,
+                "mean_first_wrong_sum_among_error_seq": 0.9794921875,
+                "mean_first_wrong_carry_among_error_seq": 1.92578125
+              }
+            }
+          }
+        },
+        "autoregressive": {
+          "id_metrics": {
+            "sum_token_acc": 0.4876302083333333,
+            "carry_token_acc": 0.41796875,
+            "joint_token_acc": 0.1025390625,
+            "joint_seq_acc": 0.0,
+            "sum_seq_acc": 0.0,
+            "carry_seq_acc": 0.0,
+            "mean_first_wrong_sum_among_error_seq": 0.8515625,
+            "mean_first_wrong_carry_among_error_seq": 1.5419921875
+          },
+          "ood_eval": {
+            "n_digits_10": {
+              "n_digits": 10,
+              "n_test": 1024,
+              "metrics": {
+                "sum_token_acc": 0.4951171875,
+                "carry_token_acc": 0.45836292613636365,
+                "joint_token_acc": 0.11452414772727272,
+                "joint_seq_acc": 0.0,
+                "sum_seq_acc": 0.0,
+                "carry_seq_acc": 0.0,
+                "mean_first_wrong_sum_among_error_seq": 0.9638671875,
+                "mean_first_wrong_carry_among_error_seq": 2.044921875
+              }
+            },
+            "n_digits_25": {
+              "n_digits": 25,
+              "n_test": 1024,
+              "metrics": {
+                "sum_token_acc": 0.4992487980769231,
+                "carry_token_acc": 0.48148287259615385,
+                "joint_token_acc": 0.1177509014423077,
+                "joint_seq_acc": 0.0,
+                "sum_seq_acc": 0.0,
+                "carry_seq_acc": 0.0,
+                "mean_first_wrong_sum_among_error_seq": 1.0751953125,
+                "mean_first_wrong_carry_among_error_seq": 1.8603515625
+              }
+            },
+            "n_digits_50": {
+              "n_digits": 50,
+              "n_test": 1024,
+              "metrics": {
+                "sum_token_acc": 0.5000574448529411,
+                "carry_token_acc": 0.49465762867647056,
+                "joint_token_acc": 0.1253638174019608,
+                "joint_seq_acc": 0.0,
+                "sum_seq_acc": 0.0,
+                "carry_seq_acc": 0.0,
+                "mean_first_wrong_sum_among_error_seq": 0.9794921875,
+                "mean_first_wrong_carry_among_error_seq": 1.92578125
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "lambda_carry": 1.0,
+      "ste_weights_source": "/home/azureuser/globally_optimal_training_of_snns/atomic/sweep_results/carry_hybrid_b2_d5_L10/seed_0/pretrain_weights/ste_lambda_1.npz",
+      "cvx_weights_path": "/home/azureuser/globally_optimal_training_of_snns/atomic/sweep_results/carry_hybrid_b2_d5_L10/seed_0/pretrain_weights/cvx_from_ste_lambda_1.npz",
+      "selected_params": {
+        "beta": 1.0,
+        "bias": 0.0
+      },
+      "teacher_forcing_pretrain_test_metrics": {
+        "sum_token_acc": 0.4876302083333333,
+        "carry_token_acc": 0.41796875,
+        "joint_token_acc": 0.1025390625,
+        "joint_seq_acc": 0.0,
+        "sum_seq_acc": 0.0,
+        "carry_seq_acc": 0.0,
+        "mean_first_wrong_sum_among_error_seq": 0.8515625,
+        "mean_first_wrong_carry_among_error_seq": 1.5419921875
+      },
+      "cvx_convex": {
+        "primal_value": 2.0000000008224,
+        "dual_value": 2.0000000623695504,
+        "gap": -6.154715048722892e-08
+      },
+      "cvx_refine_eval": {
+        "teacher_forcing": {
+          "id_metrics": {
+            "sum_token_acc": 0.4876302083333333,
+            "carry_token_acc": 0.41796875,
+            "joint_token_acc": 0.1025390625,
+            "joint_seq_acc": 0.0,
+            "sum_seq_acc": 0.0,
+            "carry_seq_acc": 0.0,
+            "mean_first_wrong_sum_among_error_seq": 0.8515625,
+            "mean_first_wrong_carry_among_error_seq": 1.5419921875
+          },
+          "ood_eval": {
+            "n_digits_10": {
+              "n_digits": 10,
+              "n_test": 1024,
+              "metrics": {
+                "sum_token_acc": 0.4951171875,
+                "carry_token_acc": 0.45836292613636365,
+                "joint_token_acc": 0.11452414772727272,
+                "joint_seq_acc": 0.0,
+                "sum_seq_acc": 0.0,
+                "carry_seq_acc": 0.0,
+                "mean_first_wrong_sum_among_error_seq": 0.9638671875,
+                "mean_first_wrong_carry_among_error_seq": 2.044921875
+              }
+            },
+            "n_digits_25": {
+              "n_digits": 25,
+              "n_test": 1024,
+              "metrics": {
+                "sum_token_acc": 0.4992487980769231,
+                "carry_token_acc": 0.48148287259615385,
+                "joint_token_acc": 0.1177509014423077,
+                "joint_seq_acc": 0.0,
+                "sum_seq_acc": 0.0,
+                "carry_seq_acc": 0.0,
+                "mean_first_wrong_sum_among_error_seq": 1.0751953125,
+                "mean_first_wrong_carry_among_error_seq": 1.8603515625
+              }
+            },
+            "n_digits_50": {
+              "n_digits": 50,
+              "n_test": 1024,
+              "metrics": {
+                "sum_token_acc": 0.5000574448529411,
+                "carry_token_acc": 0.49465762867647056,
+                "joint_token_acc": 0.1253638174019608,
+                "joint_seq_acc": 0.0,
+                "sum_seq_acc": 0.0,
+                "carry_seq_acc": 0.0,
+                "mean_first_wrong_sum_among_error_seq": 0.9794921875,
+                "mean_first_wrong_carry_among_error_seq": 1.92578125
+              }
+            }
+          }
+        },
+        "autoregressive": {
+          "id_metrics": {
+            "sum_token_acc": 0.4876302083333333,
+            "carry_token_acc": 0.41796875,
+            "joint_token_acc": 0.1025390625,
+            "joint_seq_acc": 0.0,
+            "sum_seq_acc": 0.0,
+            "carry_seq_acc": 0.0,
+            "mean_first_wrong_sum_among_error_seq": 0.8515625,
+            "mean_first_wrong_carry_among_error_seq": 1.5419921875
+          },
+          "ood_eval": {
+            "n_digits_10": {
+              "n_digits": 10,
+              "n_test": 1024,
+              "metrics": {
+                "sum_token_acc": 0.4951171875,
+                "carry_token_acc": 0.45836292613636365,
+                "joint_token_acc": 0.11452414772727272,
+                "joint_seq_acc": 0.0,
+                "sum_seq_acc": 0.0,
+                "carry_seq_acc": 0.0,
+                "mean_first_wrong_sum_among_error_seq": 0.9638671875,
+                "mean_first_wrong_carry_among_error_seq": 2.044921875
+              }
+            },
+            "n_digits_25": {
+              "n_digits": 25,
+              "n_test": 1024,
+              "metrics": {
+                "sum_token_acc": 0.4992487980769231,
+                "carry_token_acc": 0.48148287259615385,
+                "joint_token_acc": 0.1177509014423077,
+                "joint_seq_acc": 0.0,
+                "sum_seq_acc": 0.0,
+                "carry_seq_acc": 0.0,
+                "mean_first_wrong_sum_among_error_seq": 1.0751953125,
+                "mean_first_wrong_carry_among_error_seq": 1.8603515625
+              }
+            },
+            "n_digits_50": {
+              "n_digits": 50,
+              "n_test": 1024,
+              "metrics": {
+                "sum_token_acc": 0.5000574448529411,
+                "carry_token_acc": 0.49465762867647056,
+                "joint_token_acc": 0.1253638174019608,
+                "joint_seq_acc": 0.0,
+                "sum_seq_acc": 0.0,
+                "carry_seq_acc": 0.0,
+                "mean_first_wrong_sum_among_error_seq": 0.9794921875,
+                "mean_first_wrong_carry_among_error_seq": 1.92578125
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "lambda_carry": 1.25,
+      "ste_weights_source": "/home/azureuser/globally_optimal_training_of_snns/atomic/sweep_results/carry_hybrid_b2_d5_L10/seed_0/pretrain_weights/ste_lambda_1p25.npz",
+      "cvx_weights_path": "/home/azureuser/globally_optimal_training_of_snns/atomic/sweep_results/carry_hybrid_b2_d5_L10/seed_0/pretrain_weights/cvx_from_ste_lambda_1p25.npz",
+      "selected_params": {
+        "beta": 0.5,
+        "bias": 0.0
+      },
+      "teacher_forcing_pretrain_test_metrics": {
+        "sum_token_acc": 0.4876302083333333,
+        "carry_token_acc": 0.41796875,
+        "joint_token_acc": 0.1025390625,
+        "joint_seq_acc": 0.0,
+        "sum_seq_acc": 0.0,
+        "carry_seq_acc": 0.0,
+        "mean_first_wrong_sum_among_error_seq": 0.8515625,
+        "mean_first_wrong_carry_among_error_seq": 1.5419921875
+      },
+      "cvx_convex": {
+        "primal_value": 2.2500000008425918,
+        "dual_value": 2.250000097732306,
+        "gap": -9.688971375210187e-08
+      },
+      "cvx_refine_eval": {
+        "teacher_forcing": {
+          "id_metrics": {
+            "sum_token_acc": 0.4876302083333333,
+            "carry_token_acc": 0.41796875,
+            "joint_token_acc": 0.1025390625,
+            "joint_seq_acc": 0.0,
+            "sum_seq_acc": 0.0,
+            "carry_seq_acc": 0.0,
+            "mean_first_wrong_sum_among_error_seq": 0.8515625,
+            "mean_first_wrong_carry_among_error_seq": 1.5419921875
+          },
+          "ood_eval": {
+            "n_digits_10": {
+              "n_digits": 10,
+              "n_test": 1024,
+              "metrics": {
+                "sum_token_acc": 0.4951171875,
+                "carry_token_acc": 0.45836292613636365,
+                "joint_token_acc": 0.11452414772727272,
+                "joint_seq_acc": 0.0,
+                "sum_seq_acc": 0.0,
+                "carry_seq_acc": 0.0,
+                "mean_first_wrong_sum_among_error_seq": 0.9638671875,
+                "mean_first_wrong_carry_among_error_seq": 2.044921875
+              }
+            },
+            "n_digits_25": {
+              "n_digits": 25,
+              "n_test": 1024,
+              "metrics": {
+                "sum_token_acc": 0.4992487980769231,
+                "carry_token_acc": 0.48148287259615385,
+                "joint_token_acc": 0.1177509014423077,
+                "joint_seq_acc": 0.0,
+                "sum_seq_acc": 0.0,
+                "carry_seq_acc": 0.0,
+                "mean_first_wrong_sum_among_error_seq": 1.0751953125,
+                "mean_first_wrong_carry_among_error_seq": 1.8603515625
+              }
+            },
+            "n_digits_50": {
+              "n_digits": 50,
+              "n_test": 1024,
+              "metrics": {
+                "sum_token_acc": 0.5000574448529411,
+                "carry_token_acc": 0.49465762867647056,
+                "joint_token_acc": 0.1253638174019608,
+                "joint_seq_acc": 0.0,
+                "sum_seq_acc": 0.0,
+                "carry_seq_acc": 0.0,
+                "mean_first_wrong_sum_among_error_seq": 0.9794921875,
+                "mean_first_wrong_carry_among_error_seq": 1.92578125
+              }
+            }
+          }
+        },
+        "autoregressive": {
+          "id_metrics": {
+            "sum_token_acc": 0.4876302083333333,
+            "carry_token_acc": 0.41796875,
+            "joint_token_acc": 0.1025390625,
+            "joint_seq_acc": 0.0,
+            "sum_seq_acc": 0.0,
+            "carry_seq_acc": 0.0,
+            "mean_first_wrong_sum_among_error_seq": 0.8515625,
+            "mean_first_wrong_carry_among_error_seq": 1.5419921875
+          },
+          "ood_eval": {
+            "n_digits_10": {
+              "n_digits": 10,
+              "n_test": 1024,
+              "metrics": {
+                "sum_token_acc": 0.4951171875,
+                "carry_token_acc": 0.45836292613636365,
+                "joint_token_acc": 0.11452414772727272,
+                "joint_seq_acc": 0.0,
+                "sum_seq_acc": 0.0,
+                "carry_seq_acc": 0.0,
+                "mean_first_wrong_sum_among_error_seq": 0.9638671875,
+                "mean_first_wrong_carry_among_error_seq": 2.044921875
+              }
+            },
+            "n_digits_25": {
+              "n_digits": 25,
+              "n_test": 1024,
+              "metrics": {
+                "sum_token_acc": 0.4992487980769231,
+                "carry_token_acc": 0.48148287259615385,
+                "joint_token_acc": 0.1177509014423077,
+                "joint_seq_acc": 0.0,
+                "sum_seq_acc": 0.0,
+                "carry_seq_acc": 0.0,
+                "mean_first_wrong_sum_among_error_seq": 1.0751953125,
+                "mean_first_wrong_carry_among_error_seq": 1.8603515625
+              }
+            },
+            "n_digits_50": {
+              "n_digits": 50,
+              "n_test": 1024,
+              "metrics": {
+                "sum_token_acc": 0.5000574448529411,
+                "carry_token_acc": 0.49465762867647056,
+                "joint_token_acc": 0.1253638174019608,
+                "joint_seq_acc": 0.0,
+                "sum_seq_acc": 0.0,
+                "carry_seq_acc": 0.0,
+                "mean_first_wrong_sum_among_error_seq": 0.9794921875,
+                "mean_first_wrong_carry_among_error_seq": 1.92578125
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "lambda_carry": 1.5,
+      "ste_weights_source": "/home/azureuser/globally_optimal_training_of_snns/atomic/sweep_results/carry_hybrid_b2_d5_L10/seed_0/pretrain_weights/ste_lambda_1p5.npz",
+      "cvx_weights_path": "/home/azureuser/globally_optimal_training_of_snns/atomic/sweep_results/carry_hybrid_b2_d5_L10/seed_0/pretrain_weights/cvx_from_ste_lambda_1p5.npz",
+      "selected_params": {
+        "beta": 0.1,
+        "bias": 0.0
+      },
+      "teacher_forcing_pretrain_test_metrics": {
+        "sum_token_acc": 0.4876302083333333,
+        "carry_token_acc": 0.41796875,
+        "joint_token_acc": 0.1025390625,
+        "joint_seq_acc": 0.0,
+        "sum_seq_acc": 0.0,
+        "carry_seq_acc": 0.0,
+        "mean_first_wrong_sum_among_error_seq": 0.8515625,
+        "mean_first_wrong_carry_among_error_seq": 1.5419921875
+      },
+      "cvx_convex": {
+        "primal_value": 2.500000000595744,
+        "dual_value": 2.5000000837225094,
+        "gap": -8.312676569310895e-08
+      },
+      "cvx_refine_eval": {
+        "teacher_forcing": {
+          "id_metrics": {
+            "sum_token_acc": 0.4876302083333333,
+            "carry_token_acc": 0.41796875,
+            "joint_token_acc": 0.1025390625,
+            "joint_seq_acc": 0.0,
+            "sum_seq_acc": 0.0,
+            "carry_seq_acc": 0.0,
+            "mean_first_wrong_sum_among_error_seq": 0.8515625,
+            "mean_first_wrong_carry_among_error_seq": 1.5419921875
+          },
+          "ood_eval": {
+            "n_digits_10": {
+              "n_digits": 10,
+              "n_test": 1024,
+              "metrics": {
+                "sum_token_acc": 0.4951171875,
+                "carry_token_acc": 0.45836292613636365,
+                "joint_token_acc": 0.11452414772727272,
+                "joint_seq_acc": 0.0,
+                "sum_seq_acc": 0.0,
+                "carry_seq_acc": 0.0,
+                "mean_first_wrong_sum_among_error_seq": 0.9638671875,
+                "mean_first_wrong_carry_among_error_seq": 2.044921875
+              }
+            },
+            "n_digits_25": {
+              "n_digits": 25,
+              "n_test": 1024,
+              "metrics": {
+                "sum_token_acc": 0.4992487980769231,
+                "carry_token_acc": 0.48148287259615385,
+                "joint_token_acc": 0.1177509014423077,
+                "joint_seq_acc": 0.0,
+                "sum_seq_acc": 0.0,
+                "carry_seq_acc": 0.0,
+                "mean_first_wrong_sum_among_error_seq": 1.0751953125,
+                "mean_first_wrong_carry_among_error_seq": 1.8603515625
+              }
+            },
+            "n_digits_50": {
+              "n_digits": 50,
+              "n_test": 1024,
+              "metrics": {
+                "sum_token_acc": 0.5000574448529411,
+                "carry_token_acc": 0.49465762867647056,
+                "joint_token_acc": 0.1253638174019608,
+                "joint_seq_acc": 0.0,
+                "sum_seq_acc": 0.0,
+                "carry_seq_acc": 0.0,
+                "mean_first_wrong_sum_among_error_seq": 0.9794921875,
+                "mean_first_wrong_carry_among_error_seq": 1.92578125
+              }
+            }
+          }
+        },
+        "autoregressive": {
+          "id_metrics": {
+            "sum_token_acc": 0.4876302083333333,
+            "carry_token_acc": 0.41796875,
+            "joint_token_acc": 0.1025390625,
+            "joint_seq_acc": 0.0,
+            "sum_seq_acc": 0.0,
+            "carry_seq_acc": 0.0,
+            "mean_first_wrong_sum_among_error_seq": 0.8515625,
+            "mean_first_wrong_carry_among_error_seq": 1.5419921875
+          },
+          "ood_eval": {
+            "n_digits_10": {
+              "n_digits": 10,
+              "n_test": 1024,
+              "metrics": {
+                "sum_token_acc": 0.4951171875,
+                "carry_token_acc": 0.45836292613636365,
+                "joint_token_acc": 0.11452414772727272,
+                "joint_seq_acc": 0.0,
+                "sum_seq_acc": 0.0,
+                "carry_seq_acc": 0.0,
+                "mean_first_wrong_sum_among_error_seq": 0.9638671875,
+                "mean_first_wrong_carry_among_error_seq": 2.044921875
+              }
+            },
+            "n_digits_25": {
+              "n_digits": 25,
+              "n_test": 1024,
+              "metrics": {
+                "sum_token_acc": 0.4992487980769231,
+                "carry_token_acc": 0.48148287259615385,
+                "joint_token_acc": 0.1177509014423077,
+                "joint_seq_acc": 0.0,
+                "sum_seq_acc": 0.0,
+                "carry_seq_acc": 0.0,
+                "mean_first_wrong_sum_among_error_seq": 1.0751953125,
+                "mean_first_wrong_carry_among_error_seq": 1.8603515625
+              }
+            },
+            "n_digits_50": {
+              "n_digits": 50,
+              "n_test": 1024,
+              "metrics": {
+                "sum_token_acc": 0.5000574448529411,
+                "carry_token_acc": 0.49465762867647056,
+                "joint_token_acc": 0.1253638174019608,
+                "joint_seq_acc": 0.0,
+                "sum_seq_acc": 0.0,
+                "carry_seq_acc": 0.0,
+                "mean_first_wrong_sum_among_error_seq": 0.9794921875,
+                "mean_first_wrong_carry_among_error_seq": 1.92578125
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "lambda_carry": 2.0,
+      "ste_weights_source": "/home/azureuser/globally_optimal_training_of_snns/atomic/sweep_results/carry_hybrid_b2_d5_L10/seed_0/pretrain_weights/ste_lambda_2.npz",
+      "cvx_weights_path": "/home/azureuser/globally_optimal_training_of_snns/atomic/sweep_results/carry_hybrid_b2_d5_L10/seed_0/pretrain_weights/cvx_from_ste_lambda_2.npz",
+      "selected_params": {
+        "beta": 0.01,
+        "bias": 0.0
+      },
+      "teacher_forcing_pretrain_test_metrics": {
+        "sum_token_acc": 0.4876302083333333,
+        "carry_token_acc": 0.41796875,
+        "joint_token_acc": 0.1025390625,
+        "joint_seq_acc": 0.0,
+        "sum_seq_acc": 0.0,
+        "carry_seq_acc": 0.0,
+        "mean_first_wrong_sum_among_error_seq": 0.8515625,
+        "mean_first_wrong_carry_among_error_seq": 1.5419921875
+      },
+      "cvx_convex": {
+        "primal_value": 3.0000000014865256,
+        "dual_value": 3.000000181717054,
+        "gap": -1.8023052805737905e-07
+      },
+      "cvx_refine_eval": {
+        "teacher_forcing": {
+          "id_metrics": {
+            "sum_token_acc": 0.4876302083333333,
+            "carry_token_acc": 0.41796875,
+            "joint_token_acc": 0.1025390625,
+            "joint_seq_acc": 0.0,
+            "sum_seq_acc": 0.0,
+            "carry_seq_acc": 0.0,
+            "mean_first_wrong_sum_among_error_seq": 0.8515625,
+            "mean_first_wrong_carry_among_error_seq": 1.5419921875
+          },
+          "ood_eval": {
+            "n_digits_10": {
+              "n_digits": 10,
+              "n_test": 1024,
+              "metrics": {
+                "sum_token_acc": 0.4951171875,
+                "carry_token_acc": 0.45836292613636365,
+                "joint_token_acc": 0.11452414772727272,
+                "joint_seq_acc": 0.0,
+                "sum_seq_acc": 0.0,
+                "carry_seq_acc": 0.0,
+                "mean_first_wrong_sum_among_error_seq": 0.9638671875,
+                "mean_first_wrong_carry_among_error_seq": 2.044921875
+              }
+            },
+            "n_digits_25": {
+              "n_digits": 25,
+              "n_test": 1024,
+              "metrics": {
+                "sum_token_acc": 0.4992487980769231,
+                "carry_token_acc": 0.48148287259615385,
+                "joint_token_acc": 0.1177509014423077,
+                "joint_seq_acc": 0.0,
+                "sum_seq_acc": 0.0,
+                "carry_seq_acc": 0.0,
+                "mean_first_wrong_sum_among_error_seq": 1.0751953125,
+                "mean_first_wrong_carry_among_error_seq": 1.8603515625
+              }
+            },
+            "n_digits_50": {
+              "n_digits": 50,
+              "n_test": 1024,
+              "metrics": {
+                "sum_token_acc": 0.5000574448529411,
+                "carry_token_acc": 0.49465762867647056,
+                "joint_token_acc": 0.1253638174019608,
+                "joint_seq_acc": 0.0,
+                "sum_seq_acc": 0.0,
+                "carry_seq_acc": 0.0,
+                "mean_first_wrong_sum_among_error_seq": 0.9794921875,
+                "mean_first_wrong_carry_among_error_seq": 1.92578125
+              }
+            }
+          }
+        },
+        "autoregressive": {
+          "id_metrics": {
+            "sum_token_acc": 0.4876302083333333,
+            "carry_token_acc": 0.41796875,
+            "joint_token_acc": 0.1025390625,
+            "joint_seq_acc": 0.0,
+            "sum_seq_acc": 0.0,
+            "carry_seq_acc": 0.0,
+            "mean_first_wrong_sum_among_error_seq": 0.8515625,
+            "mean_first_wrong_carry_among_error_seq": 1.5419921875
+          },
+          "ood_eval": {
+            "n_digits_10": {
+              "n_digits": 10,
+              "n_test": 1024,
+              "metrics": {
+                "sum_token_acc": 0.4951171875,
+                "carry_token_acc": 0.45836292613636365,
+                "joint_token_acc": 0.11452414772727272,
+                "joint_seq_acc": 0.0,
+                "sum_seq_acc": 0.0,
+                "carry_seq_acc": 0.0,
+                "mean_first_wrong_sum_among_error_seq": 0.9638671875,
+                "mean_first_wrong_carry_among_error_seq": 2.044921875
+              }
+            },
+            "n_digits_25": {
+              "n_digits": 25,
+              "n_test": 1024,
+              "metrics": {
+                "sum_token_acc": 0.4992487980769231,
+                "carry_token_acc": 0.48148287259615385,
+                "joint_token_acc": 0.1177509014423077,
+                "joint_seq_acc": 0.0,
+                "sum_seq_acc": 0.0,
+                "carry_seq_acc": 0.0,
+                "mean_first_wrong_sum_among_error_seq": 1.0751953125,
+                "mean_first_wrong_carry_among_error_seq": 1.8603515625
+              }
+            },
+            "n_digits_50": {
+              "n_digits": 50,
+              "n_test": 1024,
+              "metrics": {
+                "sum_token_acc": 0.5000574448529411,
+                "carry_token_acc": 0.49465762867647056,
+                "joint_token_acc": 0.1253638174019608,
+                "joint_seq_acc": 0.0,
+                "sum_seq_acc": 0.0,
+                "carry_seq_acc": 0.0,
+                "mean_first_wrong_sum_among_error_seq": 0.9794921875,
+                "mean_first_wrong_carry_among_error_seq": 1.92578125
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "lambda_carry": 4.0,
+      "ste_weights_source": "/home/azureuser/globally_optimal_training_of_snns/atomic/sweep_results/carry_hybrid_b2_d5_L10/seed_0/pretrain_weights/ste_lambda_4.npz",
+      "cvx_weights_path": "/home/azureuser/globally_optimal_training_of_snns/atomic/sweep_results/carry_hybrid_b2_d5_L10/seed_0/pretrain_weights/cvx_from_ste_lambda_4.npz",
+      "selected_params": {
+        "beta": 1.0,
+        "bias": 0.0
+      },
+      "teacher_forcing_pretrain_test_metrics": {
+        "sum_token_acc": 0.4876302083333333,
+        "carry_token_acc": 0.41796875,
+        "joint_token_acc": 0.1025390625,
+        "joint_seq_acc": 0.0,
+        "sum_seq_acc": 0.0,
+        "carry_seq_acc": 0.0,
+        "mean_first_wrong_sum_among_error_seq": 0.8515625,
+        "mean_first_wrong_carry_among_error_seq": 1.5419921875
+      },
+      "cvx_convex": {
+        "primal_value": 5.00000000169832,
+        "dual_value": 5.000000203377246,
+        "gap": -2.0167892644806784e-07
+      },
+      "cvx_refine_eval": {
+        "teacher_forcing": {
+          "id_metrics": {
+            "sum_token_acc": 0.4876302083333333,
+            "carry_token_acc": 0.41796875,
+            "joint_token_acc": 0.1025390625,
+            "joint_seq_acc": 0.0,
+            "sum_seq_acc": 0.0,
+            "carry_seq_acc": 0.0,
+            "mean_first_wrong_sum_among_error_seq": 0.8515625,
+            "mean_first_wrong_carry_among_error_seq": 1.5419921875
+          },
+          "ood_eval": {
+            "n_digits_10": {
+              "n_digits": 10,
+              "n_test": 1024,
+              "metrics": {
+                "sum_token_acc": 0.4951171875,
+                "carry_token_acc": 0.45836292613636365,
+                "joint_token_acc": 0.11452414772727272,
+                "joint_seq_acc": 0.0,
+                "sum_seq_acc": 0.0,
+                "carry_seq_acc": 0.0,
+                "mean_first_wrong_sum_among_error_seq": 0.9638671875,
+                "mean_first_wrong_carry_among_error_seq": 2.044921875
+              }
+            },
+            "n_digits_25": {
+              "n_digits": 25,
+              "n_test": 1024,
+              "metrics": {
+                "sum_token_acc": 0.4992487980769231,
+                "carry_token_acc": 0.48148287259615385,
+                "joint_token_acc": 0.1177509014423077,
+                "joint_seq_acc": 0.0,
+                "sum_seq_acc": 0.0,
+                "carry_seq_acc": 0.0,
+                "mean_first_wrong_sum_among_error_seq": 1.0751953125,
+                "mean_first_wrong_carry_among_error_seq": 1.8603515625
+              }
+            },
+            "n_digits_50": {
+              "n_digits": 50,
+              "n_test": 1024,
+              "metrics": {
+                "sum_token_acc": 0.5000574448529411,
+                "carry_token_acc": 0.49465762867647056,
+                "joint_token_acc": 0.1253638174019608,
+                "joint_seq_acc": 0.0,
+                "sum_seq_acc": 0.0,
+                "carry_seq_acc": 0.0,
+                "mean_first_wrong_sum_among_error_seq": 0.9794921875,
+                "mean_first_wrong_carry_among_error_seq": 1.92578125
+              }
+            }
+          }
+        },
+        "autoregressive": {
+          "id_metrics": {
+            "sum_token_acc": 0.4876302083333333,
+            "carry_token_acc": 0.41796875,
+            "joint_token_acc": 0.1025390625,
+            "joint_seq_acc": 0.0,
+            "sum_seq_acc": 0.0,
+            "carry_seq_acc": 0.0,
+            "mean_first_wrong_sum_among_error_seq": 0.8515625,
+            "mean_first_wrong_carry_among_error_seq": 1.5419921875
+          },
+          "ood_eval": {
+            "n_digits_10": {
+              "n_digits": 10,
+              "n_test": 1024,
+              "metrics": {
+                "sum_token_acc": 0.4951171875,
+                "carry_token_acc": 0.45836292613636365,
+                "joint_token_acc": 0.11452414772727272,
+                "joint_seq_acc": 0.0,
+                "sum_seq_acc": 0.0,
+                "carry_seq_acc": 0.0,
+                "mean_first_wrong_sum_among_error_seq": 0.9638671875,
+                "mean_first_wrong_carry_among_error_seq": 2.044921875
+              }
+            },
+            "n_digits_25": {
+              "n_digits": 25,
+              "n_test": 1024,
+              "metrics": {
+                "sum_token_acc": 0.4992487980769231,
+                "carry_token_acc": 0.48148287259615385,
+                "joint_token_acc": 0.1177509014423077,
+                "joint_seq_acc": 0.0,
+                "sum_seq_acc": 0.0,
+                "carry_seq_acc": 0.0,
+                "mean_first_wrong_sum_among_error_seq": 1.0751953125,
+                "mean_first_wrong_carry_among_error_seq": 1.8603515625
+              }
+            },
+            "n_digits_50": {
+              "n_digits": 50,
+              "n_test": 1024,
+              "metrics": {
+                "sum_token_acc": 0.5000574448529411,
+                "carry_token_acc": 0.49465762867647056,
+                "joint_token_acc": 0.1253638174019608,
+                "joint_seq_acc": 0.0,
+                "sum_seq_acc": 0.0,
+                "carry_seq_acc": 0.0,
+                "mean_first_wrong_sum_among_error_seq": 0.9794921875,
+                "mean_first_wrong_carry_among_error_seq": 1.92578125
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "lambda_carry": 6.0,
+      "ste_weights_source": "/home/azureuser/globally_optimal_training_of_snns/atomic/sweep_results/carry_hybrid_b2_d5_L10/seed_0/pretrain_weights/ste_lambda_6.npz",
+      "cvx_weights_path": "/home/azureuser/globally_optimal_training_of_snns/atomic/sweep_results/carry_hybrid_b2_d5_L10/seed_0/pretrain_weights/cvx_from_ste_lambda_6.npz",
+      "selected_params": {
+        "beta": 10.0,
+        "bias": 0.0
+      },
+      "teacher_forcing_pretrain_test_metrics": {
+        "sum_token_acc": 0.4876302083333333,
+        "carry_token_acc": 0.41796875,
+        "joint_token_acc": 0.1025390625,
+        "joint_seq_acc": 0.0,
+        "sum_seq_acc": 0.0,
+        "carry_seq_acc": 0.0,
+        "mean_first_wrong_sum_among_error_seq": 0.8515625,
+        "mean_first_wrong_carry_among_error_seq": 1.5419921875
+      },
+      "cvx_convex": {
+        "primal_value": 7.0000000022485676,
+        "dual_value": 7.000000096534978,
+        "gap": -9.428641045694519e-08
+      },
+      "cvx_refine_eval": {
+        "teacher_forcing": {
+          "id_metrics": {
+            "sum_token_acc": 0.4876302083333333,
+            "carry_token_acc": 0.41796875,
+            "joint_token_acc": 0.1025390625,
+            "joint_seq_acc": 0.0,
+            "sum_seq_acc": 0.0,
+            "carry_seq_acc": 0.0,
+            "mean_first_wrong_sum_among_error_seq": 0.8515625,
+            "mean_first_wrong_carry_among_error_seq": 1.5419921875
+          },
+          "ood_eval": {
+            "n_digits_10": {
+              "n_digits": 10,
+              "n_test": 1024,
+              "metrics": {
+                "sum_token_acc": 0.4951171875,
+                "carry_token_acc": 0.45836292613636365,
+                "joint_token_acc": 0.11452414772727272,
+                "joint_seq_acc": 0.0,
+                "sum_seq_acc": 0.0,
+                "carry_seq_acc": 0.0,
+                "mean_first_wrong_sum_among_error_seq": 0.9638671875,
+                "mean_first_wrong_carry_among_error_seq": 2.044921875
+              }
+            },
+            "n_digits_25": {
+              "n_digits": 25,
+              "n_test": 1024,
+              "metrics": {
+                "sum_token_acc": 0.4992487980769231,
+                "carry_token_acc": 0.48148287259615385,
+                "joint_token_acc": 0.1177509014423077,
+                "joint_seq_acc": 0.0,
+                "sum_seq_acc": 0.0,
+                "carry_seq_acc": 0.0,
+                "mean_first_wrong_sum_among_error_seq": 1.0751953125,
+                "mean_first_wrong_carry_among_error_seq": 1.8603515625
+              }
+            },
+            "n_digits_50": {
+              "n_digits": 50,
+              "n_test": 1024,
+              "metrics": {
+                "sum_token_acc": 0.5000574448529411,
+                "carry_token_acc": 0.49465762867647056,
+                "joint_token_acc": 0.1253638174019608,
+                "joint_seq_acc": 0.0,
+                "sum_seq_acc": 0.0,
+                "carry_seq_acc": 0.0,
+                "mean_first_wrong_sum_among_error_seq": 0.9794921875,
+                "mean_first_wrong_carry_among_error_seq": 1.92578125
+              }
+            }
+          }
+        },
+        "autoregressive": {
+          "id_metrics": {
+            "sum_token_acc": 0.4876302083333333,
+            "carry_token_acc": 0.41796875,
+            "joint_token_acc": 0.1025390625,
+            "joint_seq_acc": 0.0,
+            "sum_seq_acc": 0.0,
+            "carry_seq_acc": 0.0,
+            "mean_first_wrong_sum_among_error_seq": 0.8515625,
+            "mean_first_wrong_carry_among_error_seq": 1.5419921875
+          },
+          "ood_eval": {
+            "n_digits_10": {
+              "n_digits": 10,
+              "n_test": 1024,
+              "metrics": {
+                "sum_token_acc": 0.4951171875,
+                "carry_token_acc": 0.45836292613636365,
+                "joint_token_acc": 0.11452414772727272,
+                "joint_seq_acc": 0.0,
+                "sum_seq_acc": 0.0,
+                "carry_seq_acc": 0.0,
+                "mean_first_wrong_sum_among_error_seq": 0.9638671875,
+                "mean_first_wrong_carry_among_error_seq": 2.044921875
+              }
+            },
+            "n_digits_25": {
+              "n_digits": 25,
+              "n_test": 1024,
+              "metrics": {
+                "sum_token_acc": 0.4992487980769231,
+                "carry_token_acc": 0.48148287259615385,
+                "joint_token_acc": 0.1177509014423077,
+                "joint_seq_acc": 0.0,
+                "sum_seq_acc": 0.0,
+                "carry_seq_acc": 0.0,
+                "mean_first_wrong_sum_among_error_seq": 1.0751953125,
+                "mean_first_wrong_carry_among_error_seq": 1.8603515625
+              }
+            },
+            "n_digits_50": {
+              "n_digits": 50,
+              "n_test": 1024,
+              "metrics": {
+                "sum_token_acc": 0.5000574448529411,
+                "carry_token_acc": 0.49465762867647056,
+                "joint_token_acc": 0.1253638174019608,
+                "joint_seq_acc": 0.0,
+                "sum_seq_acc": 0.0,
+                "carry_seq_acc": 0.0,
+                "mean_first_wrong_sum_among_error_seq": 0.9794921875,
+                "mean_first_wrong_carry_among_error_seq": 1.92578125
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "lambda_carry": 8.0,
+      "ste_weights_source": "/home/azureuser/globally_optimal_training_of_snns/atomic/sweep_results/carry_hybrid_b2_d5_L10/seed_0/pretrain_weights/ste_lambda_8.npz",
+      "cvx_weights_path": "/home/azureuser/globally_optimal_training_of_snns/atomic/sweep_results/carry_hybrid_b2_d5_L10/seed_0/pretrain_weights/cvx_from_ste_lambda_8.npz",
+      "selected_params": {
+        "beta": 1.0,
+        "bias": 0.0
+      },
+      "teacher_forcing_pretrain_test_metrics": {
+        "sum_token_acc": 0.4876302083333333,
+        "carry_token_acc": 0.41796875,
+        "joint_token_acc": 0.1025390625,
+        "joint_seq_acc": 0.0,
+        "sum_seq_acc": 0.0,
+        "carry_seq_acc": 0.0,
+        "mean_first_wrong_sum_among_error_seq": 0.8515625,
+        "mean_first_wrong_carry_among_error_seq": 1.5419921875
+      },
+      "cvx_convex": {
+        "primal_value": 9.000000002497785,
+        "dual_value": 9.000000332144815,
+        "gap": -3.296470292291076e-07
+      },
+      "cvx_refine_eval": {
+        "teacher_forcing": {
+          "id_metrics": {
+            "sum_token_acc": 0.4876302083333333,
+            "carry_token_acc": 0.41796875,
+            "joint_token_acc": 0.1025390625,
+            "joint_seq_acc": 0.0,
+            "sum_seq_acc": 0.0,
+            "carry_seq_acc": 0.0,
+            "mean_first_wrong_sum_among_error_seq": 0.8515625,
+            "mean_first_wrong_carry_among_error_seq": 1.5419921875
+          },
+          "ood_eval": {
+            "n_digits_10": {
+              "n_digits": 10,
+              "n_test": 1024,
+              "metrics": {
+                "sum_token_acc": 0.4951171875,
+                "carry_token_acc": 0.45836292613636365,
+                "joint_token_acc": 0.11452414772727272,
+                "joint_seq_acc": 0.0,
+                "sum_seq_acc": 0.0,
+                "carry_seq_acc": 0.0,
+                "mean_first_wrong_sum_among_error_seq": 0.9638671875,
+                "mean_first_wrong_carry_among_error_seq": 2.044921875
+              }
+            },
+            "n_digits_25": {
+              "n_digits": 25,
+              "n_test": 1024,
+              "metrics": {
+                "sum_token_acc": 0.4992487980769231,
+                "carry_token_acc": 0.48148287259615385,
+                "joint_token_acc": 0.1177509014423077,
+                "joint_seq_acc": 0.0,
+                "sum_seq_acc": 0.0,
+                "carry_seq_acc": 0.0,
+                "mean_first_wrong_sum_among_error_seq": 1.0751953125,
+                "mean_first_wrong_carry_among_error_seq": 1.8603515625
+              }
+            },
+            "n_digits_50": {
+              "n_digits": 50,
+              "n_test": 1024,
+              "metrics": {
+                "sum_token_acc": 0.5000574448529411,
+                "carry_token_acc": 0.49465762867647056,
+                "joint_token_acc": 0.1253638174019608,
+                "joint_seq_acc": 0.0,
+                "sum_seq_acc": 0.0,
+                "carry_seq_acc": 0.0,
+                "mean_first_wrong_sum_among_error_seq": 0.9794921875,
+                "mean_first_wrong_carry_among_error_seq": 1.92578125
+              }
+            }
+          }
+        },
+        "autoregressive": {
+          "id_metrics": {
+            "sum_token_acc": 0.4876302083333333,
+            "carry_token_acc": 0.41796875,
+            "joint_token_acc": 0.1025390625,
+            "joint_seq_acc": 0.0,
+            "sum_seq_acc": 0.0,
+            "carry_seq_acc": 0.0,
+            "mean_first_wrong_sum_among_error_seq": 0.8515625,
+            "mean_first_wrong_carry_among_error_seq": 1.5419921875
+          },
+          "ood_eval": {
+            "n_digits_10": {
+              "n_digits": 10,
+              "n_test": 1024,
+              "metrics": {
+                "sum_token_acc": 0.4951171875,
+                "carry_token_acc": 0.45836292613636365,
+                "joint_token_acc": 0.11452414772727272,
+                "joint_seq_acc": 0.0,
+                "sum_seq_acc": 0.0,
+                "carry_seq_acc": 0.0,
+                "mean_first_wrong_sum_among_error_seq": 0.9638671875,
+                "mean_first_wrong_carry_among_error_seq": 2.044921875
+              }
+            },
+            "n_digits_25": {
+              "n_digits": 25,
+              "n_test": 1024,
+              "metrics": {
+                "sum_token_acc": 0.4992487980769231,
+                "carry_token_acc": 0.48148287259615385,
+                "joint_token_acc": 0.1177509014423077,
+                "joint_seq_acc": 0.0,
+                "sum_seq_acc": 0.0,
+                "carry_seq_acc": 0.0,
+                "mean_first_wrong_sum_among_error_seq": 1.0751953125,
+                "mean_first_wrong_carry_among_error_seq": 1.8603515625
+              }
+            },
+            "n_digits_50": {
+              "n_digits": 50,
+              "n_test": 1024,
+              "metrics": {
+                "sum_token_acc": 0.5000574448529411,
+                "carry_token_acc": 0.49465762867647056,
+                "joint_token_acc": 0.1253638174019608,
+                "joint_seq_acc": 0.0,
+                "sum_seq_acc": 0.0,
+                "carry_seq_acc": 0.0,
+                "mean_first_wrong_sum_among_error_seq": 0.9794921875,
+                "mean_first_wrong_carry_among_error_seq": 1.92578125
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "lambda_carry": 10.0,
+      "ste_weights_source": "/home/azureuser/globally_optimal_training_of_snns/atomic/sweep_results/carry_hybrid_b2_d5_L10/seed_0/pretrain_weights/ste_lambda_10.npz",
+      "cvx_weights_path": "/home/azureuser/globally_optimal_training_of_snns/atomic/sweep_results/carry_hybrid_b2_d5_L10/seed_0/pretrain_weights/cvx_from_ste_lambda_10.npz",
+      "selected_params": {
+        "beta": 1.0,
+        "bias": 0.0
+      },
+      "teacher_forcing_pretrain_test_metrics": {
+        "sum_token_acc": 0.4876302083333333,
+        "carry_token_acc": 0.41796875,
+        "joint_token_acc": 0.1025390625,
+        "joint_seq_acc": 0.0,
+        "sum_seq_acc": 0.0,
+        "carry_seq_acc": 0.0,
+        "mean_first_wrong_sum_among_error_seq": 0.8515625,
+        "mean_first_wrong_carry_among_error_seq": 1.5419921875
+      },
+      "cvx_convex": {
+        "primal_value": 11.000000002886749,
+        "dual_value": 11.000000385885855,
+        "gap": -3.8299910620764877e-07
+      },
+      "cvx_refine_eval": {
+        "teacher_forcing": {
+          "id_metrics": {
+            "sum_token_acc": 0.4876302083333333,
+            "carry_token_acc": 0.41796875,
+            "joint_token_acc": 0.1025390625,
+            "joint_seq_acc": 0.0,
+            "sum_seq_acc": 0.0,
+            "carry_seq_acc": 0.0,
+            "mean_first_wrong_sum_among_error_seq": 0.8515625,
+            "mean_first_wrong_carry_among_error_seq": 1.5419921875
+          },
+          "ood_eval": {
+            "n_digits_10": {
+              "n_digits": 10,
+              "n_test": 1024,
+              "metrics": {
+                "sum_token_acc": 0.4951171875,
+                "carry_token_acc": 0.45836292613636365,
+                "joint_token_acc": 0.11452414772727272,
+                "joint_seq_acc": 0.0,
+                "sum_seq_acc": 0.0,
+                "carry_seq_acc": 0.0,
+                "mean_first_wrong_sum_among_error_seq": 0.9638671875,
+                "mean_first_wrong_carry_among_error_seq": 2.044921875
+              }
+            },
+            "n_digits_25": {
+              "n_digits": 25,
+              "n_test": 1024,
+              "metrics": {
+                "sum_token_acc": 0.4992487980769231,
+                "carry_token_acc": 0.48148287259615385,
+                "joint_token_acc": 0.1177509014423077,
+                "joint_seq_acc": 0.0,
+                "sum_seq_acc": 0.0,
+                "carry_seq_acc": 0.0,
+                "mean_first_wrong_sum_among_error_seq": 1.0751953125,
+                "mean_first_wrong_carry_among_error_seq": 1.8603515625
+              }
+            },
+            "n_digits_50": {
+              "n_digits": 50,
+              "n_test": 1024,
+              "metrics": {
+                "sum_token_acc": 0.5000574448529411,
+                "carry_token_acc": 0.49465762867647056,
+                "joint_token_acc": 0.1253638174019608,
+                "joint_seq_acc": 0.0,
+                "sum_seq_acc": 0.0,
+                "carry_seq_acc": 0.0,
+                "mean_first_wrong_sum_among_error_seq": 0.9794921875,
+                "mean_first_wrong_carry_among_error_seq": 1.92578125
+              }
+            }
+          }
+        },
+        "autoregressive": {
+          "id_metrics": {
+            "sum_token_acc": 0.4876302083333333,
+            "carry_token_acc": 0.41796875,
+            "joint_token_acc": 0.1025390625,
+            "joint_seq_acc": 0.0,
+            "sum_seq_acc": 0.0,
+            "carry_seq_acc": 0.0,
+            "mean_first_wrong_sum_among_error_seq": 0.8515625,
+            "mean_first_wrong_carry_among_error_seq": 1.5419921875
+          },
+          "ood_eval": {
+            "n_digits_10": {
+              "n_digits": 10,
+              "n_test": 1024,
+              "metrics": {
+                "sum_token_acc": 0.4951171875,
+                "carry_token_acc": 0.45836292613636365,
+                "joint_token_acc": 0.11452414772727272,
+                "joint_seq_acc": 0.0,
+                "sum_seq_acc": 0.0,
+                "carry_seq_acc": 0.0,
+                "mean_first_wrong_sum_among_error_seq": 0.9638671875,
+                "mean_first_wrong_carry_among_error_seq": 2.044921875
+              }
+            },
+            "n_digits_25": {
+              "n_digits": 25,
+              "n_test": 1024,
+              "metrics": {
+                "sum_token_acc": 0.4992487980769231,
+                "carry_token_acc": 0.48148287259615385,
+                "joint_token_acc": 0.1177509014423077,
+                "joint_seq_acc": 0.0,
+                "sum_seq_acc": 0.0,
+                "carry_seq_acc": 0.0,
+                "mean_first_wrong_sum_among_error_seq": 1.0751953125,
+                "mean_first_wrong_carry_among_error_seq": 1.8603515625
+              }
+            },
+            "n_digits_50": {
+              "n_digits": 50,
+              "n_test": 1024,
+              "metrics": {
+                "sum_token_acc": 0.5000574448529411,
+                "carry_token_acc": 0.49465762867647056,
+                "joint_token_acc": 0.1253638174019608,
+                "joint_seq_acc": 0.0,
+                "sum_seq_acc": 0.0,
+                "carry_seq_acc": 0.0,
+                "mean_first_wrong_sum_among_error_seq": 0.9794921875,
+                "mean_first_wrong_carry_among_error_seq": 1.92578125
+              }
+            }
+          }
+        }
+      }
+    }
+  ]
+}
