@@ -19,7 +19,8 @@ For every stage, the script reports and saves by default:
 
 By default (run_mode=full), no weights are saved.
 For run_mode=pretrain_only, the script saves pretrain weights and exits.
-For run_mode=finetune_only, the script only runs fine-tuning from saved pretrain weights.
+For run_mode=finetune_only, each --finetune_variant writes its own metrics JSON at out_root and under seed_*:
+  metrics_ste_from_ste.json, metrics_ste_from_cvx.json, or metrics_cvx_from_ste.json.
 
 If --out_root is omitted, results go under sweep_results/carry_hybrid_b{B}_d{D}_L{L}_metrics_{timestamp}.
 STE and CVX pretrain checkpoints can share one out_root (seed_*/pretrain_weights/ste_lambda_*.npz vs
@@ -381,7 +382,7 @@ def _lambda_tag(value: float) -> str:
 
 
 def _pretrain_weights_path(out_root: Path, *, variant: str, seed: int, lambda_carry: float) -> Path:
-    if str(variant) not in ('ste', 'cvx'):
+    if str(variant) not in ('ste', 'cvx', 'cvx_from_ste'):
         raise ValueError(f'Unknown pretrain variant={variant!r}.')
     return out_root / f'seed_{int(seed)}' / 'pretrain_weights' / f'{variant}_lambda_{_lambda_tag(float(lambda_carry))}.npz'
 
@@ -390,6 +391,17 @@ def _metrics_pretrain_only_filename(pretrain_variant: str) -> str:
     if str(pretrain_variant) == 'ste':
         return 'metrics_pretrain_only_ste.json'
     return 'metrics_pretrain_only.json'
+
+
+def _finetune_disk_metrics_filename(finetune_variant: str) -> str:
+    fv = str(finetune_variant)
+    if fv == 'ste_from_ste':
+        return 'metrics_ste_from_ste.json'
+    if fv == 'ste_from_cvx':
+        return 'metrics_ste_from_cvx.json'
+    if fv == 'cvx_from_ste':
+        return 'metrics_cvx_from_ste.json'
+    raise ValueError(f'Unknown finetune_variant={finetune_variant!r} for disk metrics filename.')
 
 
 def _save_weight_list_npz(path: Path, *, weights: Sequence[np.ndarray], metadata: Dict[str, Any]) -> None:
@@ -1169,7 +1181,159 @@ def _aggregate_finetune_only(seed_payloads: List[Dict[str, Any]]) -> List[Dict[s
     return out
 
 
-def _run_finetune_only(args: argparse.Namespace, *, out_root: Path, config_dump: Dict[str, Any]) -> Dict[str, Any]:
+def _aggregate_cvx_from_ste_disk(seed_payloads: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    if not seed_payloads:
+        return []
+    base_grid = [float(e['lambda_carry']) for e in seed_payloads[0]['lambda_sweep']]
+    for sp in seed_payloads[1:]:
+        if [float(e['lambda_carry']) for e in sp['lambda_sweep']] != base_grid:
+            raise ValueError('lambda_carry sweep order differs across seeds')
+    out: List[Dict[str, Any]] = []
+    for idx, lc in enumerate(base_grid):
+        ev_entries = [sp['lambda_sweep'][idx]['cvx_refine_eval'] for sp in seed_payloads]
+        out.append({'lambda_carry': float(lc), 'cvx_refine_eval': _aggregate_stage(ev_entries)})
+    return out
+
+
+def _run_finetune_only_cvx_from_ste(
+    args: argparse.Namespace,
+    *,
+    out_root: Path,
+    cvx_device: Optional[torch.device],
+    config_dump: Dict[str, Any],
+) -> Dict[str, Any]:
+    mname = _finetune_disk_metrics_filename('cvx_from_ste')
+    seed_payloads: List[Dict[str, Any]] = []
+    total_saved = 0
+    for base_seed in args.seeds:
+        pre_seed = int(base_seed)
+        eval_seed = int(base_seed) + int(args.eval_seed_offset)
+        ds_pre = _build_pretrain_dataset(args, pre_seed=pre_seed, eval_seed=eval_seed)
+        lambda_payloads: List[Dict[str, Any]] = []
+        for lambda_carry in [float(x) for x in args.lambda_carry_grid]:
+            ste_path = _pretrain_weights_path(
+                out_root, variant='ste', seed=int(base_seed), lambda_carry=float(lambda_carry)
+            )
+            ste_weights, _ste_meta = _load_weight_list_npz(ste_path)
+            cvx_fs_bundle, cvx_fs_sel, cvx_tf_test = cvx_fit_shared_two_head_init(
+                ds=ds_pre,
+                L=int(args.L),
+                P_rec=int(args.P_rec),
+                P_last=int(args.P_last),
+                K_parallel=int(args.K_parallel),
+                cvx_last_layer_readout=str(args.cvx_last_layer_readout),
+                seed=pre_seed,
+                beta_grid=args.cvx_beta_grid,
+                bias_grid=args.cvx_bias_grid,
+                lambda_sum=float(args.lambda_sum),
+                lambda_carry=float(lambda_carry),
+                cvx_device=cvx_device,
+                cvx_sum_loss=str(args.cvx_sum_loss),
+                cvx_carry_loss=str(args.cvx_carry_loss),
+                cvx_time_loss=str(args.cvx_time_loss),
+                init_mode='pretraining',
+                pretrained_weights=ste_weights,
+                cvx_grid_workers=int(args.cvx_grid_workers),
+                cvx_ovr_workers=int(args.cvx_ovr_workers),
+            )
+            weights = _cvx_bundle_to_carry_weights(
+                bundle=cvx_fs_bundle,
+                d_in=ds_pre.d_in,
+                L=int(args.L),
+                P_rec=int(args.P_rec),
+                P_last=int(args.P_last),
+                K_parallel=int(args.K_parallel),
+                base=int(args.arith_base),
+            )
+            cvx_path = _pretrain_weights_path(
+                out_root, variant='cvx_from_ste', seed=int(base_seed), lambda_carry=float(lambda_carry)
+            )
+            metadata = {
+                'seed': int(base_seed),
+                'lambda_carry': float(lambda_carry),
+                'pretrain_variant': 'cvx_from_ste',
+                'ste_weights_source': str(ste_path),
+                'selected_params': cvx_fs_sel,
+                'arith_base': int(args.arith_base),
+                'n_digits': int(args.n_digits),
+                'L': int(args.L),
+                'P_rec': int(args.P_rec),
+                'P_last': int(args.P_last),
+                'K_parallel': int(args.K_parallel),
+            }
+            _save_weight_list_npz(cvx_path, weights=weights, metadata=metadata)
+            total_saved += 1
+
+            cvx_eval = _eval_stage_all_modes(
+                ds_fit=ds_pre,
+                ds_eval=ds_pre,
+                cvx_bundle=cvx_fs_bundle,
+                ood_digits=args.ood_digits,
+                n_test_ood=int(args.n_test_ood),
+                arith_base=int(args.arith_base),
+                eval_seed=eval_seed,
+                verify_count=int(args.verify_samples),
+                add_initial_carry=str(args.add_initial_carry),
+            )
+            lambda_payloads.append({
+                'lambda_carry': float(lambda_carry),
+                'ste_weights_source': str(ste_path),
+                'cvx_weights_path': str(cvx_path),
+                'selected_params': cvx_fs_sel,
+                'teacher_forcing_pretrain_test_metrics': cvx_tf_test,
+                'cvx_convex': {
+                    'primal_value': float(cvx_fs_bundle['primal_value']),
+                    'dual_value': float(cvx_fs_bundle['dual_value']),
+                    'gap': float(cvx_fs_bundle['gap']),
+                },
+                'cvx_refine_eval': cvx_eval,
+            })
+
+        seed_payload = {
+            'seed': int(base_seed),
+            'finetune_variant': 'cvx_from_ste',
+            'split_seeds': {
+                'pretrain_train': pre_seed + 11,
+                'pretrain_val': pre_seed + 29,
+                'eval_test': eval_seed + 47,
+            },
+            'lambda_sweep': lambda_payloads,
+        }
+        seed_payloads.append(seed_payload)
+        sdir = out_root / f'seed_{int(base_seed)}'
+        sdir.mkdir(parents=True, exist_ok=True)
+        (sdir / mname).write_text(json.dumps(seed_payload, indent=2, default=str) + '\n')
+
+    aggregate = {'n_seeds': int(len(seed_payloads)), 'lambda_sweep': _aggregate_cvx_from_ste_disk(seed_payloads)}
+    root_payload = {
+        'run_config': config_dump,
+        'out_root': str(out_root),
+        'mode': 'finetune_only',
+        'finetune_variant': 'cvx_from_ste',
+        'metrics_file': mname,
+        'loads_disk_weights': 'ste',
+        'produces_disk_weights': 'cvx_from_ste',
+        'n_saved_weight_files': int(total_saved),
+        'seeds': seed_payloads,
+        'aggregate': aggregate,
+    }
+    (out_root / mname).write_text(json.dumps(root_payload, indent=2, default=str) + '\n')
+    return root_payload
+
+
+def _run_finetune_only(
+    args: argparse.Namespace,
+    *,
+    out_root: Path,
+    config_dump: Dict[str, Any],
+    cvx_device: Optional[torch.device],
+) -> Dict[str, Any]:
+    if str(args.finetune_variant) == 'cvx_from_ste':
+        return _run_finetune_only_cvx_from_ste(
+            args, out_root=out_root, cvx_device=cvx_device, config_dump=config_dump
+        )
+
+    mname = _finetune_disk_metrics_filename(str(args.finetune_variant))
     if str(args.finetune_variant) == 'ste_from_ste':
         src_variant = 'ste'
     elif str(args.finetune_variant) == 'ste_from_cvx':
@@ -1295,7 +1459,7 @@ def _run_finetune_only(args: argparse.Namespace, *, out_root: Path, config_dump:
         seed_payloads.append(seed_payload)
         sdir = out_root / f'seed_{int(base_seed)}'
         sdir.mkdir(parents=True, exist_ok=True)
-        (sdir / 'metrics_finetune_only.json').write_text(json.dumps(seed_payload, indent=2, default=str) + '\n')
+        (sdir / mname).write_text(json.dumps(seed_payload, indent=2, default=str) + '\n')
 
     aggregate = {
         'n_seeds': int(len(seed_payloads)),
@@ -1307,10 +1471,11 @@ def _run_finetune_only(args: argparse.Namespace, *, out_root: Path, config_dump:
         'mode': 'finetune_only',
         'finetune_variant': str(args.finetune_variant),
         'loaded_pretrain_variant': src_variant,
+        'metrics_file': mname,
         'seeds': seed_payloads,
         'aggregate': aggregate,
     }
-    (out_root / 'metrics_finetune_only.json').write_text(json.dumps(root_payload, indent=2, default=str) + '\n')
+    (out_root / mname).write_text(json.dumps(root_payload, indent=2, default=str) + '\n')
     return root_payload
 
 
@@ -1367,7 +1532,16 @@ def main() -> None:
     ap.add_argument('--cvx_ovr_workers', type=int, default=1)
     ap.add_argument('--run_mode', choices=['full', 'pretrain_only', 'finetune_only'], default='full')
     ap.add_argument('--pretrain_variant', choices=['ste', 'cvx'], default='ste')
-    ap.add_argument('--finetune_variant', choices=['ste_from_ste', 'ste_from_cvx'], default='ste_from_ste')
+    ap.add_argument(
+        '--finetune_variant',
+        choices=['ste_from_ste', 'ste_from_cvx', 'cvx_from_ste'],
+        default='ste_from_ste',
+        help=(
+            'finetune_only: ste_from_ste loads ste_lambda_*.npz; ste_from_cvx loads cvx_lambda_*.npz; '
+            'cvx_from_ste loads ste_lambda_*.npz and runs CVX refit on split A → cvx_from_ste_lambda_*.npz. '
+            'Metrics JSON name: metrics_ste_from_ste.json | metrics_ste_from_cvx.json | metrics_cvx_from_ste.json.'
+        ),
+    )
 
     ap.add_argument(
         '--out_root',
@@ -1474,16 +1648,32 @@ def main() -> None:
         return
 
     if str(args.run_mode) == 'finetune_only':
-        root_payload = _run_finetune_only(args, out_root=out_root, config_dump=config_dump)
+        root_payload = _run_finetune_only(
+            args, out_root=out_root, config_dump=config_dump, cvx_device=cvx_device
+        )
         if str(args.output_json).strip():
             Path(str(args.output_json)).expanduser().write_text(json.dumps(root_payload, indent=2, default=str) + '\n')
-        print(json.dumps({
-            'mode': 'finetune_only',
-            'finetune_variant': str(args.finetune_variant),
-            'loaded_pretrain_variant': str(root_payload['loaded_pretrain_variant']),
-            'aggregate': root_payload['aggregate'],
-            'out_root': str(out_root),
-        }, indent=2, default=str), flush=True)
+        metrics_file = root_payload.get('metrics_file', _finetune_disk_metrics_filename(str(args.finetune_variant)))
+        if str(args.finetune_variant) == 'cvx_from_ste':
+            print(json.dumps({
+                'mode': 'finetune_only',
+                'finetune_variant': 'cvx_from_ste',
+                'metrics_file': str(root_payload['metrics_file']),
+                'loads_disk_weights': 'ste',
+                'writes_disk_weights': 'cvx_from_ste',
+                'n_saved_weight_files': int(root_payload['n_saved_weight_files']),
+                'aggregate': root_payload['aggregate'],
+                'out_root': str(out_root),
+            }, indent=2, default=str), flush=True)
+        else:
+            print(json.dumps({
+                'mode': 'finetune_only',
+                'finetune_variant': str(args.finetune_variant),
+                'metrics_file': metrics_file,
+                'loaded_pretrain_variant': str(root_payload['loaded_pretrain_variant']),
+                'aggregate': root_payload['aggregate'],
+                'out_root': str(out_root),
+            }, indent=2, default=str), flush=True)
         return
 
     seed_payloads: List[Dict[str, Any]] = []
