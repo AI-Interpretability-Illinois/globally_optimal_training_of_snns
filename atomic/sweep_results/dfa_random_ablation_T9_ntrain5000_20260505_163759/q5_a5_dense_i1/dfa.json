@@ -1,0 +1,161 @@
+{
+  "name": "random_5_5_seed1198103_dense",
+  "start": 0,
+  "accept": [
+    0,
+    1
+  ],
+  "alphabet": [
+    "0",
+    "1",
+    "2",
+    "3",
+    "4"
+  ],
+  "num_states": 5,
+  "num_symbols": 5,
+  "transitions": [
+    {
+      "from": 0,
+      "symbol": "0",
+      "to": 0
+    },
+    {
+      "from": 0,
+      "symbol": "1",
+      "to": 4
+    },
+    {
+      "from": 0,
+      "symbol": "2",
+      "to": 1
+    },
+    {
+      "from": 0,
+      "symbol": "3",
+      "to": 3
+    },
+    {
+      "from": 0,
+      "symbol": "4",
+      "to": 2
+    },
+    {
+      "from": 1,
+      "symbol": "0",
+      "to": 3
+    },
+    {
+      "from": 1,
+      "symbol": "1",
+      "to": 0
+    },
+    {
+      "from": 1,
+      "symbol": "2",
+      "to": 4
+    },
+    {
+      "from": 1,
+      "symbol": "3",
+      "to": 2
+    },
+    {
+      "from": 1,
+      "symbol": "4",
+      "to": 1
+    },
+    {
+      "from": 2,
+      "symbol": "0",
+      "to": 1
+    },
+    {
+      "from": 2,
+      "symbol": "1",
+      "to": 4
+    },
+    {
+      "from": 2,
+      "symbol": "2",
+      "to": 0
+    },
+    {
+      "from": 2,
+      "symbol": "3",
+      "to": 3
+    },
+    {
+      "from": 2,
+      "symbol": "4",
+      "to": 2
+    },
+    {
+      "from": 3,
+      "symbol": "0",
+      "to": 3
+    },
+    {
+      "from": 3,
+      "symbol": "1",
+      "to": 0
+    },
+    {
+      "from": 3,
+      "symbol": "2",
+      "to": 2
+    },
+    {
+      "from": 3,
+      "symbol": "3",
+      "to": 4
+    },
+    {
+      "from": 3,
+      "symbol": "4",
+      "to": 1
+    },
+    {
+      "from": 4,
+      "symbol": "0",
+      "to": 3
+    },
+    {
+      "from": 4,
+      "symbol": "1",
+      "to": 4
+    },
+    {
+      "from": 4,
+      "symbol": "2",
+      "to": 0
+    },
+    {
+      "from": 4,
+      "symbol": "3",
+      "to": 1
+    },
+    {
+      "from": 4,
+      "symbol": "4",
+      "to": 2
+    }
+  ],
+  "generation_metadata": {
+    "selection_seed": 1198103,
+    "construction_seed": 587929433,
+    "aggregate_score": 3.671412726966038,
+    "transition_mode": "uniform_stationary",
+    "stationary_target": "none",
+    "markov_stationary_pi": "0.2,0.2,0.2,0.2,0.2",
+    "column_balance_targets_per_state": 5,
+    "accept_rate_L5": 0.401611328125,
+    "accept_rate_L6": 0.408447265625,
+    "accept_rate_L7": 0.399658203125,
+    "accept_rate_L8": 0.4091796875,
+    "prefix_entropy_L5": 0.9727780574818965,
+    "prefix_entropy_L6": 0.970143896566714,
+    "prefix_entropy_L7": 0.9702354883118804,
+    "prefix_entropy_L8": 0.9707309123450689
+  }
+}

@@ -1,0 +1,13 @@
+{
+  "n_states": 5,
+  "alphabet_size": 2,
+  "dfa_spec": "random_5_2_seed1266057_dense",
+  "dfa_seed": 1266057,
+  "stationary_variant": "dense",
+  "instance_id": 2,
+  "anchor_seed": 70095,
+  "stationary_peak_factor": 2,
+  "T": 9,
+  "n_train": 5000,
+  "n_val": 1111
+}

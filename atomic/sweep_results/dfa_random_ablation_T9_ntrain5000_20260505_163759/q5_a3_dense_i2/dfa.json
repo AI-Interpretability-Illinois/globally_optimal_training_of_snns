@@ -1,0 +1,110 @@
+{
+  "name": "random_5_3_seed1276066_dense",
+  "start": 3,
+  "accept": [
+    0,
+    1,
+    2
+  ],
+  "alphabet": [
+    "0",
+    "1",
+    "2"
+  ],
+  "num_states": 5,
+  "num_symbols": 3,
+  "transitions": [
+    {
+      "from": 0,
+      "symbol": "0",
+      "to": 2
+    },
+    {
+      "from": 0,
+      "symbol": "1",
+      "to": 1
+    },
+    {
+      "from": 0,
+      "symbol": "2",
+      "to": 0
+    },
+    {
+      "from": 1,
+      "symbol": "0",
+      "to": 3
+    },
+    {
+      "from": 1,
+      "symbol": "1",
+      "to": 1
+    },
+    {
+      "from": 1,
+      "symbol": "2",
+      "to": 2
+    },
+    {
+      "from": 2,
+      "symbol": "0",
+      "to": 2
+    },
+    {
+      "from": 2,
+      "symbol": "1",
+      "to": 0
+    },
+    {
+      "from": 2,
+      "symbol": "2",
+      "to": 4
+    },
+    {
+      "from": 3,
+      "symbol": "0",
+      "to": 1
+    },
+    {
+      "from": 3,
+      "symbol": "1",
+      "to": 3
+    },
+    {
+      "from": 3,
+      "symbol": "2",
+      "to": 4
+    },
+    {
+      "from": 4,
+      "symbol": "0",
+      "to": 3
+    },
+    {
+      "from": 4,
+      "symbol": "1",
+      "to": 4
+    },
+    {
+      "from": 4,
+      "symbol": "2",
+      "to": 0
+    }
+  ],
+  "generation_metadata": {
+    "selection_seed": 1276066,
+    "construction_seed": 2025371180,
+    "aggregate_score": 3.5841568053290986,
+    "transition_mode": "uniform_stationary",
+    "stationary_target": "none",
+    "markov_stationary_pi": "0.2,0.2,0.2,0.2,0.2",
+    "column_balance_targets_per_state": 3,
+    "accept_rate_L5": 0.5810546875,
+    "accept_rate_L6": 0.585205078125,
+    "accept_rate_L7": 0.603759765625,
+    "accept_rate_L8": 0.5966796875,
+    "prefix_entropy_L5": 0.9763966701738924,
+    "prefix_entropy_L6": 0.9777341564415781,
+    "prefix_entropy_L7": 0.9738551384517845,
+    "prefix_entropy_L8": 0.9737019869846693
+  }
+}
