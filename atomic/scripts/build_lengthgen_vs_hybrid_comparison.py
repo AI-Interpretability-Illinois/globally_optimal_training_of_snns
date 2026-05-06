@@ -13,9 +13,13 @@ The hybrid bench sweeps ``lambda_carry``; this script reports two reductions per
 - ``best-λ`` (max ``sum_token_acc`` mean across the lambda grid; the chosen ``lambda_carry``
   is shown in parens for traceability).
 
-Both ``teacher_forcing`` and ``autoregressive`` hybrid eval modes are surfaced; TF is the
-fairer apples-to-apples comparison to length-gen (teacher-forced carry input column),
-while AR is the harder rollout regime.
+Hybrid bench sweeps ``lambda_carry``; this script reports two reductions per cell:
+- ``λ=1.0`` (the canonical balanced weight),
+- ``best-λ`` (max ``sum_token_acc`` mean across the lambda grid; the chosen ``lambda_carry``
+  is shown in parens for traceability).
+
+Only **autoregressive (AR)** hybrid eval is included (model uses its own predicted carry as the
+next-step input). Teacher-forcing (TF) rows are omitted.
 
 Numeric format: ``mean ± std`` to 4 decimals; missing cells render as ``-``.
 """
@@ -42,8 +46,7 @@ HYBRID_STAGE_LABELS: Dict[str, str] = {
     "cvx_pretrain": "CVX pretrain (Gaussian)",
     "ste_finetune_from_cvx_pretrain_new_train": "STE finetune (from CVX, split B)",
 }
-EVAL_MODES: Tuple[str, ...] = ("teacher_forcing", "autoregressive")
-EVAL_MODE_LABELS: Dict[str, str] = {"teacher_forcing": "TF", "autoregressive": "AR"}
+EVAL_MODES: Tuple[str, ...] = ("autoregressive",)
 
 # Length-gen stage keys (when --variants=full5). Legacy/minimal runs only have
 # `ste_pretrain` and `cvx_pretrain` (mirrored as ``ste`` / ``cvx`` in older summaries).
@@ -427,11 +430,24 @@ def _build_comparison_md(
         # Fall back to the legacy two-stage layout if probing failed (older summaries).
         available_lg_stages = ["ste_pretrain", "cvx_pretrain"]
 
-    # Decide column structure: include ID column when length-gen has the training-length OOD entry
-    # (n_digits_train) AND hybrid has id_metrics; else fall back to OOD-only.
+    # Decide column structure: include ID column when length-gen has it either as
+    # ``stages[*].id_metrics`` (full5/post-2026-04 layout) OR as an explicit
+    # ``ood_eval[n_digits_<n_train>]`` block (legacy minimal layout). Hybrid always has
+    # ``id_metrics`` per stage / mode, so the column is meaningful whenever length-gen
+    # exposes either one.
     n_train_digits = int(lengthgen_rc.get("n_digits_train", 0)) or None
     lg_id_key = f"n_digits_{n_train_digits}" if n_train_digits is not None else None
-    has_id_pair = bool(lg_id_key and lg_id_key in lengthgen_summary[0].get("ood_eval", {}))
+    sample_seed_for_id = lengthgen_summary[0]
+    sample_stages = sample_seed_for_id.get("stages") if isinstance(sample_seed_for_id, dict) else None
+    has_id_via_stages = False
+    if isinstance(sample_stages, dict):
+        for sk in available_lg_stages:
+            block = (sample_stages.get(sk) or {}).get("id_metrics")
+            if isinstance(block, dict) and block.get("token_acc") is not None:
+                has_id_via_stages = True
+                break
+    has_id_via_ood_key = bool(lg_id_key and lg_id_key in sample_seed_for_id.get("ood_eval", {}))
+    has_id_pair = has_id_via_stages or has_id_via_ood_key
 
     pairs, ood_col_headers = _length_gen_ood_to_hybrid_ood(
         list(lengthgen_summary[0].get("ood_eval", {}).keys()),
@@ -485,9 +501,8 @@ def _build_comparison_md(
         "are mathematically identical.\n"
     )
     lines.append(
-        "- Hybrid eval modes: **TF** = teacher-forced (true carry-in input every step, "
-        "matching the length-gen regime); **AR** = autoregressive rollout (model uses its "
-        "own predicted carry as the next input).\n"
+        "- Hybrid eval: **AR** (autoregressive rollout — model feeds its own predicted carry "
+        "into the next step). Teacher-forcing (TF) hybrid numbers are not listed here.\n"
     )
     lines.append(
         "- Cells render `mean ± std` across seeds. Length-gen uses its own seed list; hybrid "
@@ -527,16 +542,16 @@ def _build_comparison_md(
                     )
                     cells.append(_fmt_mean_std(mu, sd))
                 hybrid_one_rows.append([
-                    HYBRID_STAGE_LABELS[stage], EVAL_MODE_LABELS[mode], *cells
+                    HYBRID_STAGE_LABELS[stage], *cells
                 ])
-    lines.append("## Hybrid sum_token_acc at λ_carry = 1.0\n")
+    lines.append("## Hybrid sum_token_acc at λ_carry = 1.0 (AR eval)\n")
     if one_oh is None:
         lines.append("_λ_carry=1.0 not present in hybrid lambda grid — skipping this table._\n")
     else:
         lines.append(_md_table(
-            ["hybrid stage", "mode", *col_headers],
+            ["hybrid stage", *col_headers],
             hybrid_one_rows,
-            ["l", "l", *(["r"] * len(col_headers))],
+            ["l", *(["r"] * len(col_headers))],
         ) + "\n")
 
     # ---- hybrid table picking best λ per cell (max sum_token_acc mean)
@@ -554,13 +569,13 @@ def _build_comparison_md(
                 lam_str = f" (λ={lam:g})" if lam is not None else ""
                 cells.append(_fmt_mean_std(mu, sd) + lam_str)
             hybrid_best_rows.append([
-                HYBRID_STAGE_LABELS[stage], EVAL_MODE_LABELS[mode], *cells
+                HYBRID_STAGE_LABELS[stage], *cells
             ])
-    lines.append("## Hybrid sum_token_acc — best λ_carry per cell (selection on max mean)\n")
+    lines.append("## Hybrid sum_token_acc — best λ_carry per cell (AR eval; selection on max mean)\n")
     lines.append(_md_table(
-        ["hybrid stage", "mode", *col_headers],
+        ["hybrid stage", *col_headers],
         hybrid_best_rows,
-        ["l", "l", *(["r"] * len(col_headers))],
+        ["l", *(["r"] * len(col_headers))],
     ) + "\n")
 
     return "\n".join(lines) + "\n"

@@ -13,15 +13,22 @@ For each match we read::
 and write ``<dir>/summary_all_seeds.md`` containing:
 - a header with relevant config knobs,
 - a per-seed table of selected hyperparameters,
-- one block per OOD ``n_digits_X`` setting with:
-    * "top-level metrics" table (rows: seed × method, plus mean/std across seeds),
-    * "per 5-timestep block token_acc" table (rows: seed × method, plus mean/std).
+- **In-distribution (ID test)** — when every ``stages[*][vk]`` has ``id_metrics``: one combined table
+  per metric type listing **all** pipeline variants (``vk`` in run order), seed rows + mean ± std per variant.
+- one block per OOD ``n_digits_X`` (legacy top-level ``ood_eval``) with **all** variants (not only the
+  ``ste`` / ``cvx`` shorthand), same layout:
+    * "top-level metrics" table (rows: seed × variant, plus mean ± std across seeds per variant),
+    * "per 5-timestep block token_acc" table (same).
 
 Numbers are 4-decimal floats; counts stay as ints; std is ``ddof=1`` (sample std).
 Floats that are missing (e.g. lr=null) render as ``-``.
+Aggregate rows: **sample mean ± sample std (ddof=1) across seeds** for each metric; with a
+single seed the std is omitted (undefined). Derived ``sum_token_acc`` / ``final_carry_acc``
+must be present for every seed or the script raises (so aggregates are never over a ragged subset).
 """
 from __future__ import annotations
 
+import argparse
 import json
 import math
 import sys
@@ -29,7 +36,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, Sequence, Tuple
 
 
-PATTERN = "arithmetic_add_b2_len_gen_L3_traind5_K2_2026*"
+DEFAULT_PATTERN = "arithmetic_add_b*_len_gen_*"
 
 
 def _fmt_float(x: Any, digits: int = 4) -> str:
@@ -51,15 +58,44 @@ def _fmt_int(x: Any) -> str:
 
 
 def _mean_std(values: Sequence[float]) -> Tuple[Optional[float], Optional[float]]:
+    """Sample mean and **sample** std (``ddof=1``) across ``values``.
+
+    With a single value, std is ``None`` (undefined); do not display ``± 0``.
+    """
     vs = [float(v) for v in values if v is not None]
     if not vs:
         return None, None
     if len(vs) == 1:
-        return vs[0], 0.0
+        return vs[0], None
     n = len(vs)
     mu = sum(vs) / n
     var = sum((v - mu) ** 2 for v in vs) / (n - 1)
     return mu, math.sqrt(var)
+
+
+def _require_sum_carry_metrics(
+    sum_only: Optional[float],
+    final_carry: Optional[float],
+    *,
+    seed: Any,
+    ctx: str,
+) -> Tuple[float, float]:
+    """Require derivable sum-pos and carry metrics so each seed contributes one float to aggregates."""
+    if sum_only is None or final_carry is None:
+        raise ValueError(
+            f"{ctx}: need sum_token_acc and final_carry for seed={seed!r}; "
+            f"got sum_only={sum_only!r} final_carry={final_carry!r}"
+        )
+    return float(sum_only), float(final_carry)
+
+
+def _fmt_mean_pm_std(mu: Optional[float], sd: Optional[float], *, digits: int = 4) -> str:
+    """Format aggregate across seeds: ``mean``, or ``mean ± std`` when ``len(seeds) > 1``."""
+    if mu is None:
+        return "-"
+    if sd is None:
+        return _fmt_float(mu, digits=digits)
+    return f"{_fmt_float(mu, digits=digits)} ± {_fmt_float(sd, digits=digits)}"
 
 
 def _md_table(headers: Sequence[str], rows: Sequence[Sequence[str]], aligns: Sequence[str]) -> str:
@@ -147,8 +183,48 @@ def _ood_keys_sorted(summary: List[Dict[str, Any]]) -> List[str]:
     return sorted(keys, key=_ord)
 
 
+def _stage_keys_ordered(summary: List[Dict[str, Any]]) -> List[str]:
+    """Preserve order from the first seed; require identical stage key sets across seeds."""
+    if not summary:
+        return []
+    st0 = summary[0].get("stages")
+    if not isinstance(st0, dict) or not st0:
+        return []
+    keys = list(st0.keys())
+    key_set = set(keys)
+    for entry in summary[1:]:
+        st = entry["stages"]
+        if not isinstance(st, dict):
+            raise TypeError(f"seed {entry['seed']}: stages must be dict, got {type(st)}")
+        if set(st.keys()) != key_set:
+            raise ValueError(
+                f"stage keys differ: seed {summary[0]['seed']} {sorted(key_set)} vs "
+                f"seed {entry['seed']} {sorted(st.keys())}"
+            )
+    return keys
+
+
+def _pipeline_variant_keys(summary: List[Dict[str, Any]]) -> List[str]:
+    """OOD / combined tables: full ``stages`` key order, or legacy ``ste`` / ``cvx`` only."""
+    keys = _stage_keys_ordered(summary)
+    if keys:
+        return keys
+    return ["ste", "cvx"]
+
+
+def _can_render_id_tables(summary: List[Dict[str, Any]]) -> bool:
+    keys = _stage_keys_ordered(summary)
+    if not keys:
+        return False
+    st0 = summary[0]["stages"]
+    for vk in keys:
+        if not isinstance(st0[vk].get("id_metrics"), dict):
+            return False
+    return True
+
+
 def _top_level_table(summary: List[Dict[str, Any]], ood_key: str) -> str:
-    """Per-seed (seed × method) top-level metrics, plus mean/std across seeds.
+    """Per-seed (seed × variant) top-level metrics, plus mean ± std across seeds per variant.
 
     Columns include sum-only metrics so we can compare directly to the carry/state
     hybrid bench's ``sum_token_acc`` (the carry head's MSD-carry-out token is
@@ -156,7 +232,7 @@ def _top_level_table(summary: List[Dict[str, Any]], ood_key: str) -> str:
     """
     headers = [
         "seed",
-        "method",
+        "variant",
         "T",
         "token_acc",
         "sum_token_acc",
@@ -166,10 +242,11 @@ def _top_level_table(summary: List[Dict[str, Any]], ood_key: str) -> str:
         "mean_first_wrong",
         "std_first_wrong",
     ]
+    variant_keys = _pipeline_variant_keys(summary)
     rows: List[List[str]] = []
 
     accum: Dict[str, Dict[str, List[float]]] = {
-        m: {
+        vk: {
             "token_acc": [],
             "sum_token_acc": [],
             "final_carry_acc": [],
@@ -178,17 +255,23 @@ def _top_level_table(summary: List[Dict[str, Any]], ood_key: str) -> str:
             "mean_first_wrong": [],
             "std_first_wrong": [],
         }
-        for m in ("ste", "cvx")
+        for vk in variant_keys
     }
 
     for entry in summary:
         block = entry["ood_eval"][ood_key]
-        for method in ("ste", "cvx"):
-            sub = block[method]
+        for vk in variant_keys:
+            sub = block[vk]
             sum_only, _sum_seq, final_carry = _extract_sum_only_metrics(sub)
+            sum_only, final_carry = _require_sum_carry_metrics(
+                sum_only,
+                final_carry,
+                seed=entry["seed"],
+                ctx=f"ood_eval[{ood_key!r}] variant={vk!r}",
+            )
             rows.append([
                 _fmt_int(entry["seed"]),
-                method,
+                vk,
                 _fmt_int(sub["n_timesteps"]),
                 _fmt_float(sub["token_acc"]),
                 _fmt_float(sum_only),
@@ -198,36 +281,34 @@ def _top_level_table(summary: List[Dict[str, Any]], ood_key: str) -> str:
                 _fmt_float(sub["mean_first_wrong_timestep_among_wrong"]),
                 _fmt_float(sub["std_first_wrong_timestep_among_wrong"]),
             ])
-            accum[method]["token_acc"].append(float(sub["token_acc"]))
-            if sum_only is not None:
-                accum[method]["sum_token_acc"].append(float(sum_only))
-            if final_carry is not None:
-                accum[method]["final_carry_acc"].append(float(final_carry))
-            accum[method]["seq_acc"].append(float(sub["seq_acc"]))
-            accum[method]["n_seq_w_err"].append(float(sub["n_sequences_with_any_error"]))
-            accum[method]["mean_first_wrong"].append(float(sub["mean_first_wrong_timestep_among_wrong"]))
-            accum[method]["std_first_wrong"].append(float(sub["std_first_wrong_timestep_among_wrong"]))
+            accum[vk]["token_acc"].append(float(sub["token_acc"]))
+            accum[vk]["sum_token_acc"].append(sum_only)
+            accum[vk]["final_carry_acc"].append(final_carry)
+            accum[vk]["seq_acc"].append(float(sub["seq_acc"]))
+            accum[vk]["n_seq_w_err"].append(float(sub["n_sequences_with_any_error"]))
+            accum[vk]["mean_first_wrong"].append(float(sub["mean_first_wrong_timestep_among_wrong"]))
+            accum[vk]["std_first_wrong"].append(float(sub["std_first_wrong_timestep_among_wrong"]))
 
-    n_steps = summary[0]["ood_eval"][ood_key]["ste"]["n_timesteps"]
-    for method in ("ste", "cvx"):
-        mu_tok, sd_tok = _mean_std(accum[method]["token_acc"])
-        mu_sum, sd_sum = _mean_std(accum[method]["sum_token_acc"])
-        mu_fc, sd_fc = _mean_std(accum[method]["final_carry_acc"])
-        mu_seq, sd_seq = _mean_std(accum[method]["seq_acc"])
-        mu_err, sd_err = _mean_std(accum[method]["n_seq_w_err"])
-        mu_fw, sd_fw = _mean_std(accum[method]["mean_first_wrong"])
-        mu_fws, sd_fws = _mean_std(accum[method]["std_first_wrong"])
+    for vk in variant_keys:
+        n_steps = int(summary[0]["ood_eval"][ood_key][vk]["n_timesteps"])
+        mu_tok, sd_tok = _mean_std(accum[vk]["token_acc"])
+        mu_sum, sd_sum = _mean_std(accum[vk]["sum_token_acc"])
+        mu_fc, sd_fc = _mean_std(accum[vk]["final_carry_acc"])
+        mu_seq, sd_seq = _mean_std(accum[vk]["seq_acc"])
+        mu_err, sd_err = _mean_std(accum[vk]["n_seq_w_err"])
+        mu_fw, sd_fw = _mean_std(accum[vk]["mean_first_wrong"])
+        mu_fws, sd_fws = _mean_std(accum[vk]["std_first_wrong"])
         rows.append([
-            "**mean**",
-            f"**{method}**",
+            "**mean ± std**",
+            f"**{vk}**",
             _fmt_int(n_steps),
-            f"{_fmt_float(mu_tok)} ± {_fmt_float(sd_tok)}",
-            f"{_fmt_float(mu_sum)} ± {_fmt_float(sd_sum)}",
-            f"{_fmt_float(mu_fc)} ± {_fmt_float(sd_fc)}",
-            f"{_fmt_float(mu_seq)} ± {_fmt_float(sd_seq)}",
-            f"{_fmt_float(mu_err, digits=1)} ± {_fmt_float(sd_err, digits=1)}",
-            f"{_fmt_float(mu_fw)} ± {_fmt_float(sd_fw)}",
-            f"{_fmt_float(mu_fws)} ± {_fmt_float(sd_fws)}",
+            _fmt_mean_pm_std(mu_tok, sd_tok),
+            _fmt_mean_pm_std(mu_sum, sd_sum),
+            _fmt_mean_pm_std(mu_fc, sd_fc),
+            _fmt_mean_pm_std(mu_seq, sd_seq),
+            _fmt_mean_pm_std(mu_err, sd_err, digits=1),
+            _fmt_mean_pm_std(mu_fw, sd_fw),
+            _fmt_mean_pm_std(mu_fws, sd_fws),
         ])
     return _md_table(
         headers=headers,
@@ -309,33 +390,155 @@ def _block_columns(block_list: Sequence[Dict[str, Any]]) -> List[str]:
 
 
 def _block_table(summary: List[Dict[str, Any]], ood_key: str) -> str:
-    """Per-seed per-method per-block token_acc, with mean/std across seeds."""
-    first_blocks = summary[0]["ood_eval"][ood_key]["ste"]["per_five_timestep_blocks"]
+    """Per-seed per-variant per-block token_acc, mean/std across seeds per variant."""
+    variant_keys = _pipeline_variant_keys(summary)
+    first_blocks = summary[0]["ood_eval"][ood_key][variant_keys[0]]["per_five_timestep_blocks"]
     n_blocks = len(first_blocks)
-    headers = ["seed", "method", *_block_columns(first_blocks)]
+    headers = ["seed", "variant", *_block_columns(first_blocks)]
     rows: List[List[str]] = []
 
-    accum: Dict[str, List[List[float]]] = {m: [[] for _ in range(n_blocks)] for m in ("ste", "cvx")}
+    accum: Dict[str, List[List[float]]] = {vk: [[] for _ in range(n_blocks)] for vk in variant_keys}
 
     for entry in summary:
         block = entry["ood_eval"][ood_key]
-        for method in ("ste", "cvx"):
-            blocks = block[method]["per_five_timestep_blocks"]
+        for vk in variant_keys:
+            blocks = block[vk]["per_five_timestep_blocks"]
             if len(blocks) != n_blocks:
                 raise ValueError(
-                    f"per_five_timestep_blocks length mismatch for seed={entry['seed']} ood={ood_key} method={method}"
+                    f"per_five_timestep_blocks length mismatch for seed={entry['seed']} ood={ood_key} variant={vk!r}"
                 )
-            row = [_fmt_int(entry["seed"]), method]
+            row = [_fmt_int(entry["seed"]), vk]
             for j, b in enumerate(blocks):
                 row.append(_fmt_float(b["token_acc"]))
-                accum[method][j].append(float(b["token_acc"]))
+                accum[vk][j].append(float(b["token_acc"]))
             rows.append(row)
 
-    for method in ("ste", "cvx"):
-        agg_row = ["**mean**", f"**{method}**"]
+    for vk in variant_keys:
+        agg_row = ["**mean ± std**", f"**{vk}**"]
         for j in range(n_blocks):
-            mu, sd = _mean_std(accum[method][j])
-            agg_row.append(f"{_fmt_float(mu)} ± {_fmt_float(sd)}")
+            mu, sd = _mean_std(accum[vk][j])
+            agg_row.append(_fmt_mean_pm_std(mu, sd))
+        rows.append(agg_row)
+
+    return _md_table(headers=headers, rows=rows, aligns=["r", "l", *(["r"] * n_blocks)])
+
+
+def _id_all_variants_top_level_table(
+    summary: List[Dict[str, Any]], variant_keys: Sequence[str]
+) -> str:
+    """In-distribution test: one row per (seed, variant) plus mean ± std across seeds per variant."""
+    headers = [
+        "seed",
+        "variant",
+        "T",
+        "token_acc",
+        "sum_token_acc",
+        "final_carry_acc",
+        "seq_acc",
+        "n_seq_w_err",
+        "mean_first_wrong",
+        "std_first_wrong",
+    ]
+    rows: List[List[str]] = []
+    accum: Dict[str, Dict[str, List[float]]] = {
+        vk: {
+            "token_acc": [],
+            "sum_token_acc": [],
+            "final_carry_acc": [],
+            "seq_acc": [],
+            "n_seq_w_err": [],
+            "mean_first_wrong": [],
+            "std_first_wrong": [],
+        }
+        for vk in variant_keys
+    }
+
+    for entry in summary:
+        for vk in variant_keys:
+            sub = entry["stages"][vk]["id_metrics"]
+            sum_only, _sum_seq, final_carry = _extract_sum_only_metrics(sub)
+            sum_only, final_carry = _require_sum_carry_metrics(
+                sum_only,
+                final_carry,
+                seed=entry["seed"],
+                ctx=f"stages[{vk!r}].id_metrics",
+            )
+            rows.append([
+                _fmt_int(entry["seed"]),
+                vk,
+                _fmt_int(sub["n_timesteps"]),
+                _fmt_float(sub["token_acc"]),
+                _fmt_float(sum_only),
+                _fmt_float(final_carry),
+                _fmt_float(sub["seq_acc"]),
+                _fmt_int(sub["n_sequences_with_any_error"]),
+                _fmt_float(sub["mean_first_wrong_timestep_among_wrong"]),
+                _fmt_float(sub["std_first_wrong_timestep_among_wrong"]),
+            ])
+            accum[vk]["token_acc"].append(float(sub["token_acc"]))
+            accum[vk]["sum_token_acc"].append(sum_only)
+            accum[vk]["final_carry_acc"].append(final_carry)
+            accum[vk]["seq_acc"].append(float(sub["seq_acc"]))
+            accum[vk]["n_seq_w_err"].append(float(sub["n_sequences_with_any_error"]))
+            accum[vk]["mean_first_wrong"].append(float(sub["mean_first_wrong_timestep_among_wrong"]))
+            accum[vk]["std_first_wrong"].append(float(sub["std_first_wrong_timestep_among_wrong"]))
+
+    for vk in variant_keys:
+        n_steps = int(summary[0]["stages"][vk]["id_metrics"]["n_timesteps"])
+        mu_tok, sd_tok = _mean_std(accum[vk]["token_acc"])
+        mu_sum, sd_sum = _mean_std(accum[vk]["sum_token_acc"])
+        mu_fc, sd_fc = _mean_std(accum[vk]["final_carry_acc"])
+        mu_seq, sd_seq = _mean_std(accum[vk]["seq_acc"])
+        mu_err, sd_err = _mean_std(accum[vk]["n_seq_w_err"])
+        mu_fw, sd_fw = _mean_std(accum[vk]["mean_first_wrong"])
+        mu_fws, sd_fws = _mean_std(accum[vk]["std_first_wrong"])
+        rows.append([
+            "**mean ± std**",
+            f"**{vk}**",
+            _fmt_int(n_steps),
+            _fmt_mean_pm_std(mu_tok, sd_tok),
+            _fmt_mean_pm_std(mu_sum, sd_sum),
+            _fmt_mean_pm_std(mu_fc, sd_fc),
+            _fmt_mean_pm_std(mu_seq, sd_seq),
+            _fmt_mean_pm_std(mu_err, sd_err, digits=1),
+            _fmt_mean_pm_std(mu_fw, sd_fw),
+            _fmt_mean_pm_std(mu_fws, sd_fws),
+        ])
+    return _md_table(
+        headers=headers,
+        rows=rows,
+        aligns=["r", "l", "r", "r", "r", "r", "r", "r", "r", "r"],
+    )
+
+
+def _id_all_variants_block_table(
+    summary: List[Dict[str, Any]], variant_keys: Sequence[str]
+) -> str:
+    """Per-block ID token_acc for every variant."""
+    first_blocks = summary[0]["stages"][variant_keys[0]]["id_metrics"]["per_five_timestep_blocks"]
+    n_blocks = len(first_blocks)
+    headers = ["seed", "variant", *_block_columns(first_blocks)]
+    rows: List[List[str]] = []
+    accum: Dict[str, List[List[float]]] = {vk: [[] for _ in range(n_blocks)] for vk in variant_keys}
+
+    for entry in summary:
+        for vk in variant_keys:
+            blocks = entry["stages"][vk]["id_metrics"]["per_five_timestep_blocks"]
+            if len(blocks) != n_blocks:
+                raise ValueError(
+                    f"ID per_five_timestep_blocks length mismatch for seed={entry['seed']!r} variant={vk!r}"
+                )
+            row = [_fmt_int(entry["seed"]), vk]
+            for j, b in enumerate(blocks):
+                row.append(_fmt_float(b["token_acc"]))
+                accum[vk][j].append(float(b["token_acc"]))
+            rows.append(row)
+
+    for vk in variant_keys:
+        agg_row = ["**mean ± std**", f"**{vk}**"]
+        for j in range(n_blocks):
+            mu, sd = _mean_std(accum[vk][j])
+            agg_row.append(_fmt_mean_pm_std(mu, sd))
         rows.append(agg_row)
 
     return _md_table(headers=headers, rows=rows, aligns=["r", "l", *(["r"] * n_blocks)])
@@ -361,6 +564,17 @@ def _build_md(run_dir: Path) -> str:
     parts.append(_config_summary(config, summary) + "\n")
     parts.append("## Selected hyperparameters per seed\n")
     parts.append(_selected_hp_table(summary) + "\n")
+    if _can_render_id_tables(summary):
+        vks = _pipeline_variant_keys(summary)
+        parts.append(
+            "## In-distribution (ID test at train digit length)\n"
+            "The **variant** column lists every pipeline stage (same keys as ``stages`` in "
+            "``summary_all_seeds.json``), in run order.\n"
+        )
+        parts.append("### Top-level metrics\n")
+        parts.append(_id_all_variants_top_level_table(summary, vks) + "\n")
+        parts.append("### Per 5-timestep block token_acc\n")
+        parts.append(_id_all_variants_block_table(summary, vks) + "\n")
     for ood_key in _ood_keys_sorted(summary):
         parts.append(f"## OOD: {ood_key}\n")
         parts.append("### Top-level metrics\n")
@@ -371,13 +585,26 @@ def _build_md(run_dir: Path) -> str:
 
 
 def main() -> int:
+    ap = argparse.ArgumentParser(
+        description="Render summary_all_seeds.md per length-gen sweep dir."
+    )
+    ap.add_argument(
+        "--pattern",
+        type=str,
+        default=DEFAULT_PATTERN,
+        help=(
+            "Glob pattern under atomic/sweep_results/. Default matches every length-gen base. "
+            "Use a stricter pattern (e.g. 'arithmetic_add_b2_len_gen_L3_traind5_K2_2026*') to narrow."
+        ),
+    )
+    args = ap.parse_args()
     repo = Path(__file__).resolve().parent.parent
     sweeps = repo / "sweep_results"
     if not sweeps.exists():
         raise SystemExit(f"sweep_results not found: {sweeps}")
-    matches = sorted(p for p in sweeps.glob(PATTERN) if p.is_dir())
+    matches = sorted(p for p in sweeps.glob(args.pattern) if p.is_dir())
     if not matches:
-        raise SystemExit(f"No directories matched {PATTERN!r} under {sweeps}")
+        raise SystemExit(f"No directories matched {args.pattern!r} under {sweeps}")
     written: List[str] = []
     skipped: List[str] = []
     for d in matches:

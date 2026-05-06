@@ -1595,37 +1595,6 @@ def main() -> None:
             if x_ood.shape[2] != d_in:
                 raise ValueError(f"OOD d_in {x_ood.shape[2]} != train d_in {d_in}")
 
-            pred_ste = _ste_predict_all_tokens(ste_model, x_ood)
-            pred_cvx = _cvx_predict_all_tokens(
-                w=w_cvx,
-                x_train=x_train,
-                x_val=x_val,
-                x_ood=x_ood,
-                y_ood=y_ood,
-                init_cfg=cvx_init,
-            )
-
-            ood_bs = int(args.ood_block_size)
-            ste_m = _detailed_arithmetic_metrics(pred_ste, y_ood, block_size=ood_bs)
-            cvx_m = _detailed_arithmetic_metrics(pred_cvx, y_ood, block_size=ood_bs)
-            ste_rule = add_rule_context_diagnostics(
-                pred_ste,
-                y_ood,
-                x_ood,
-                int(args.arith_base),
-                int(nd),
-                block_size=ood_bs,
-            )
-            cvx_rule = add_rule_context_diagnostics(
-                pred_cvx,
-                y_ood,
-                x_ood,
-                int(args.arith_base),
-                int(nd),
-                block_size=ood_bs,
-            )
-            # Per-OOD all-stage eval: legacy ``ste``/``cvx`` keys map to ste_pretrain /
-            # cvx_pretrain; full5 adds the other 3 stage keys.
             ood_bs = int(args.ood_block_size)
             ood_report[f"n_digits_{nd}"] = {}
             for stage_key, sr in stage_results.items():

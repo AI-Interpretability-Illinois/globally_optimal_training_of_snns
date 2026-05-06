@@ -11,10 +11,11 @@ DFA (Tomita / bounded Dyck) autoregressive hybrid bench — same five-stage stru
 
 State (next transition) targets map to the addition ``sum`` head (CE); per-step accept maps
 to ``carry`` (hinge). The solvers scale **sum** loss by ``lambda_sum`` and **carry** loss by
-``lambda_carry`` — **``lambda_sum`` is the state-head weight** and **``lambda_carry`` is the
-label-head weight**. In this DFA script we **sweep** ``lambda_sum`` (state), and keep
-``lambda_carry`` fixed (label) — the opposite of the addition bench, which sweeps the carry
-slot (there: digit-sum vs carry; here: we care about the state / sum slot).
+``lambda_carry`` — **``lambda_sum`` is the state-head weight** (next-state / “state supervision”)
+and **``lambda_carry`` is the label-head weight** (per-step accept). In this DFA script we
+**sweep** the state head (``--lambda_sum_grid``, alias ``--lambda_carry_grid``) and keep
+``--lambda_carry`` fixed on the label head — the opposite of the addition bench, which sweeps
+the carry slot (there: digit-sum vs carry; here: we care about the state / sum slot).
 """
 from __future__ import annotations
 
@@ -846,8 +847,8 @@ def _run_dfa_finetune_only(
 def main() -> None:
     ap = argparse.ArgumentParser(
         description="DFA autoregressive hybrid (same 5 stages as add carry bench). "
-        "lambda_sum scales the sum/state head; lambda_carry scales the carry/label head. "
-        "Sweep is over lambda_sum (state); lambda_carry is fixed."
+        "lambda_sum scales the sum/state head (next-state CE); lambda_carry scales the carry/label head. "
+        "Sweep is over the state head (--lambda_sum_grid or --lambda_carry_grid); --lambda_carry is fixed."
     )
     ap.add_argument("--seeds", type=int, nargs="*", default=[0, 1, 2])
     ap.add_argument("--dfa_spec", type=str, default="tomita_6")
@@ -905,8 +906,18 @@ def main() -> None:
         "--lambda_sum_grid",
         type=float,
         nargs="*",
-        default=[0.125, 0.75, 1.0, 4.0],
-        help="Swept weight on the sum head = next-state (CE). This is the state / lambda_sum grid.",
+        default=[0.125, 1.0, 4.0, 10.0],
+        help="Swept weight on the sum head = next-state CE (state supervision). Default: cheap 4-point grid.",
+    )
+    ap.add_argument(
+        "--lambda_carry_grid",
+        type=float,
+        nargs="*",
+        default=argparse.SUPPRESS,
+        help=(
+            "Alias for --lambda_sum_grid: same swept weight on the state / next-state head "
+            "(not the label accept head; that stays --lambda_carry). If passed, overrides --lambda_sum_grid."
+        ),
     )
     ap.add_argument("--ste_lr_grid", type=float, nargs="*", default=list(LR_GRID_DEFAULT))
     ap.add_argument("--ste_beta_grid", type=float, nargs="*", default=list(BETA_GRID_DEFAULT))
@@ -978,6 +989,9 @@ def main() -> None:
     ap.add_argument("--out_root", type=str, default="")
     ap.add_argument("--output_json", type=str, default="")
     args = ap.parse_args()
+
+    if hasattr(args, "lambda_carry_grid"):
+        args.lambda_sum_grid = args.lambda_carry_grid
 
     if int(args.cvx_grid_workers) <= 0:
         raise ValueError(f"cvx_grid_workers must be >= 1, got {args.cvx_grid_workers}.")

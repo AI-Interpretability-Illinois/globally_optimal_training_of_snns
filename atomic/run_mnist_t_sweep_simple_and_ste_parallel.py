@@ -7,18 +7,18 @@ import sys
 from pathlib import Path
 
 
-T_LIST = [2,14,28,56]
-L_LIST = [3,5,10,15]
-SEEDS = [0,1]
+T_LIST = [4]
+L_LIST = [10,3]
+SEEDS = [0]
 CVX_BIAS_GRID = [-1.0, -0.5, 0.0, 0.5, 1.0]
-K_PARALLEL_LIST = [2]
+K_PARALLEL_LIST = [2,10,20,50,100,200]
 
 # Requested fixed MNIST configuration.
 # P_rec and P_last must be divisible by every K_parallel in K_PARALLEL_LIST.
 COMMON = {
-    "dataset": "mnist_seq",
-    "P_rec": 4000,
-    "P_last": 7000,
+    "dataset": "cifar_seq",
+    "P_rec": 512,
+    "P_last": 1024,
     "n_train": 6000,
     "n_val": 2000,
     "n_test": 2000,
@@ -58,7 +58,7 @@ def _build_cmd(
         "--mode", "simple",
         "--simple_side", simple_side,
         "--dataset", COMMON["dataset"],
-        "--cvx_method", "cvx",
+        "--cvx_method", "sgd",
         "--loss_type", "ce",
         "--seed", str(seed),
         "--T", str(t),
@@ -87,7 +87,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--side",
         choices=("both", "cvx_only", "ste_only"),
-        default="both",
+        default="cvx_only",
         help="Which simple_testing simple_side to run.",
     )
     parser.add_argument(

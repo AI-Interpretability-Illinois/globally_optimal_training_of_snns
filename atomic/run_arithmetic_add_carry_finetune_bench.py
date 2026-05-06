@@ -20,6 +20,12 @@ For every stage, the script reports and saves by default:
 By default (run_mode=full), no weights are saved.
 For run_mode=pretrain_only, the script saves pretrain weights and exits.
 For run_mode=finetune_only, the script only runs fine-tuning from saved pretrain weights.
+
+If --out_root is omitted, results go under sweep_results/carry_hybrid_b{B}_d{D}_L{L}_metrics_{timestamp}.
+STE and CVX pretrain checkpoints can share one out_root (seed_*/pretrain_weights/ste_lambda_*.npz vs
+cvx_lambda_*.npz do not collide). Run configuration is only stored inside metrics JSON (run_config key),
+not as a separate file in this directory. STE pretrain_only writes metrics_pretrain_only_ste.json;
+CVX pretrain_only writes metrics_pretrain_only.json.
 """
 
 import argparse
@@ -378,6 +384,12 @@ def _pretrain_weights_path(out_root: Path, *, variant: str, seed: int, lambda_ca
     if str(variant) not in ('ste', 'cvx'):
         raise ValueError(f'Unknown pretrain variant={variant!r}.')
     return out_root / f'seed_{int(seed)}' / 'pretrain_weights' / f'{variant}_lambda_{_lambda_tag(float(lambda_carry))}.npz'
+
+
+def _metrics_pretrain_only_filename(pretrain_variant: str) -> str:
+    if str(pretrain_variant) == 'ste':
+        return 'metrics_pretrain_only_ste.json'
+    return 'metrics_pretrain_only.json'
 
 
 def _save_weight_list_npz(path: Path, *, weights: Sequence[np.ndarray], metadata: Dict[str, Any]) -> None:
@@ -1122,7 +1134,8 @@ def _run_pretrain_only(args: argparse.Namespace, *, out_root: Path, cvx_device: 
         seed_payloads.append(seed_payload)
         sdir = out_root / f'seed_{int(base_seed)}'
         sdir.mkdir(parents=True, exist_ok=True)
-        (sdir / 'metrics_pretrain_only.json').write_text(json.dumps(seed_payload, indent=2, default=str) + '\n')
+        _mpre = _metrics_pretrain_only_filename(str(args.pretrain_variant))
+        (sdir / _mpre).write_text(json.dumps(seed_payload, indent=2, default=str) + '\n')
 
     root_payload = {
         'run_config': config_dump,
@@ -1132,7 +1145,8 @@ def _run_pretrain_only(args: argparse.Namespace, *, out_root: Path, cvx_device: 
         'n_saved_weight_files': int(total_saved),
         'seeds': seed_payloads,
     }
-    (out_root / 'metrics_pretrain_only.json').write_text(json.dumps(root_payload, indent=2, default=str) + '\n')
+    _mpre_root = _metrics_pretrain_only_filename(str(args.pretrain_variant))
+    (out_root / _mpre_root).write_text(json.dumps(root_payload, indent=2, default=str) + '\n')
     return root_payload
 
 
@@ -1355,7 +1369,17 @@ def main() -> None:
     ap.add_argument('--pretrain_variant', choices=['ste', 'cvx'], default='ste')
     ap.add_argument('--finetune_variant', choices=['ste_from_ste', 'ste_from_cvx'], default='ste_from_ste')
 
-    ap.add_argument('--out_root', type=str, default='')
+    ap.add_argument(
+        '--out_root',
+        type=str,
+        default='',
+        help=(
+            'Result directory (metrics JSON, checkpoints under seed_*, no standalone run_config file). '
+            'If empty, uses sweep_results/carry_hybrid_b{B}_d{D}_L{L}_metrics_{timestamp} under cwd. '
+            'Use the same path for STE and CVX pretrain_only to store both weight types in one tree. '
+            'Run settings are embedded under run_config in each metrics JSON.'
+        ),
+    )
     ap.add_argument('--output_json', type=str, default='')
     args = ap.parse_args()
 
@@ -1367,14 +1391,14 @@ def main() -> None:
         raise ValueError(f'cvx_grid_workers must be >=1, got {args.cvx_grid_workers}.')
     if int(args.cvx_ovr_workers) <= 0:
         raise ValueError(f'cvx_ovr_workers must be >=1, got {args.cvx_ovr_workers}.')
-    if str(args.run_mode) != 'full' and not str(args.out_root).strip():
-        raise ValueError('For run_mode=pretrain_only or finetune_only, --out_root must be set explicitly.')
-
     stamp = datetime.now().strftime('%Y%m%d_%H%M%S')
     if str(args.out_root).strip():
         out_root = Path(str(args.out_root)).expanduser().resolve()
     else:
-        out_root = Path.cwd() / 'sweep_results' / f'carry_hybrid_b{int(args.arith_base)}_d{int(args.n_digits)}_{stamp}'
+        out_root = Path.cwd() / 'sweep_results' / (
+            f'carry_hybrid_b{int(args.arith_base)}_d{int(args.n_digits)}'
+            f'_L{int(args.L)}_metrics_{stamp}'
+        )
     out_root.mkdir(parents=True, exist_ok=True)
 
     cvx_device = _resolve_cvx_device(str(args.cvx_device))
@@ -1436,7 +1460,6 @@ def main() -> None:
         'evaluation_modes_saved_by_default': ['teacher_forcing', 'autoregressive'],
         'stages': active_stages,
     }
-    (out_root / 'run_config.json').write_text(json.dumps(config_dump, indent=2) + '\n')
 
     if str(args.run_mode) == 'pretrain_only':
         root_payload = _run_pretrain_only(args, out_root=out_root, cvx_device=cvx_device, config_dump=config_dump)

@@ -28,12 +28,14 @@ Usage standalone:
 from __future__ import annotations
 
 import argparse
+import json
 import os
 import re
 import sys
 from dataclasses import dataclass, field
 from functools import lru_cache
-from typing import Dict, FrozenSet, List, Optional, Set, Tuple
+from pathlib import Path
+from typing import Dict, FrozenSet, List, Optional, Set, Tuple, Union
 
 import numpy as np
 
@@ -66,6 +68,9 @@ class DFA:
     transitions: Dict[Tuple[int, str], int]  # (state, symbol) → next_state
     start: int
     accept: Set[int]
+
+    generation_metadata: Dict[str, Union[str, int, float]] = field(default_factory=dict)
+    """Audit trail for synthetic DFAs (e.g. Markov stationary under uniform inputs)."""
 
     # Derived (computed on first use)
     _sym2idx: Optional[Dict[str, int]] = field(default=None, repr=False)
@@ -184,6 +189,32 @@ class DFA:
             f"|Σ|={self.num_symbols} ({self.alphabet}), "
             f"accept={self.accept}"
         )
+
+
+def dfa_to_json_dict(dfa: DFA) -> Dict[str, Union[str, int, List[int], List[str], List[Dict[str, Union[int, str]]]]]:
+    """Serializable dict (transitions as edge records) for analysis pipelines."""
+    edges: List[Dict[str, Union[int, str]]] = []
+    for (q, sym), nq in sorted(dfa.transitions.items(), key=lambda x: (x[0][0], str(x[0][1]))):
+        edges.append({"from": int(q), "symbol": str(sym), "to": int(nq)})
+    d: Dict[str, Union[str, int, List[int], List[str], List[Dict[str, Union[int, str]]], Dict[str, Union[str, int, float]]]] = {
+        "name": str(dfa.name),
+        "start": int(dfa.start),
+        "accept": sorted(int(x) for x in dfa.accept),
+        "alphabet": list(dfa.alphabet),
+        "num_states": int(dfa.num_states),
+        "num_symbols": int(dfa.num_symbols),
+        "transitions": edges,
+    }
+    if dfa.generation_metadata:
+        d["generation_metadata"] = dict(dfa.generation_metadata)
+    return d
+
+
+def save_dfa_json(path: Union[str, Path], dfa: DFA) -> None:
+    """Write :func:`dfa_to_json_dict` to a JSON file (parent dirs created)."""
+    p = Path(path)
+    p.parent.mkdir(parents=True, exist_ok=True)
+    p.write_text(json.dumps(dfa_to_json_dict(dfa), indent=2) + "\n", encoding="utf-8")
 
 
 # ============================================================
@@ -306,27 +337,54 @@ def load_mlregtest_data(
 # ============================================================
 
 _RANDOM_SPEC_RE = re.compile(
-    r"^random_(?P<num_states>\d+)_(?P<alphabet_size>\d+)(?:_seed(?P<seed>\d+))?$"
+    r"^random_(?P<num_states>\d+)_(?P<alphabet_size>\d+)"
+    r"(?:_seed(?P<seed>\d+))?"
+    r"(?P<tag>_dense|_bias_accept|_bias_reject)?"
+    r"(?:_k(?P<peak>\d+))?$"
 )
 
 
-def parse_random_dfa_spec(name: str) -> Optional[Tuple[int, int, int]]:
+def parse_random_dfa_spec(name: str) -> Optional[Tuple[int, int, int, str, float]]:
     """
     Parse dynamic random DFA specs of the form:
         random_{num_states}_{alphabet_size}
         random_{num_states}_{alphabet_size}_seed{seed}
+        random_..._dense  — uniform stationary (column-balanced) under uniform input
+        random_..._bias_accept  — π peaks on an **accepting** state: max_{q∈F} π(q) ≥ k/Q (default k=2)
+        random_..._bias_reject — π peaks on a **rejecting** state: max_{q∉F} π(q) ≥ k/Q (default k=2)
+        random_..._bias_accept_k3 — same with integer peak factor k=3 (2–3× uniform mass 1/Q)
 
     Returns
     -------
-    (num_states, alphabet_size, seed) or None if `name` is not a random spec.
+    (num_states, alphabet_size, seed, variant, peak_factor) or None.
+
+    ``variant`` ∈ {``iid``, ``uniform_stationary``, ``bias_accept``, ``bias_reject``}.
+    ``peak_factor`` applies to bias variants only (else 2.0, unused).
     """
     m = _RANDOM_SPEC_RE.fullmatch(str(name))
     if m is None:
         return None
     q = int(m.group("num_states"))
     a = int(m.group("alphabet_size"))
-    seed = int(m.group("seed")) if m.group("seed") is not None else 0
-    return q, a, seed
+    seed_g = m.group("seed")
+    seed = int(seed_g) if seed_g is not None else 0
+    tag = m.group("tag")
+    peak_g = m.group("peak")
+    if tag is None:
+        if peak_g is not None:
+            raise ValueError(f"Invalid spec (peak suffix without mode tag): {name!r}")
+        return q, a, seed, "iid", 2.0
+    if tag == "_dense":
+        if peak_g is not None:
+            raise ValueError(f"_k peak factor is not valid with _dense: {name!r}")
+        return q, a, seed, "uniform_stationary", 2.0
+    if tag == "_bias_accept":
+        k = float(int(peak_g)) if peak_g is not None else 2.0
+        return q, a, seed, "bias_accept", k
+    if tag == "_bias_reject":
+        k = float(int(peak_g)) if peak_g is not None else 2.0
+        return q, a, seed, "bias_reject", k
+    raise ValueError(f"internal: unhandled tag {tag!r}")
 
 
 def _ensure_random_dfa_support() -> None:
@@ -348,6 +406,12 @@ def _convert_random_dfa_to_string_dfa(rdfa: "RandomDFA", name: str) -> DFA:
         for a in range(int(rdfa.alphabet_size)):
             transitions[(q, str(a))] = int(rdfa.step(q, a))
     accept = {q for q, is_acc in enumerate(rdfa.accepting) if bool(is_acc)}
+    gmeta: Dict[str, Union[str, int, float]] = {}
+    for k, v in rdfa.metadata.items():
+        if isinstance(v, (str, int, float)):
+            gmeta[str(k)] = v
+        else:
+            raise TypeError(f"random DFA metadata must be str|int|float for JSON; got {k}={v!r}")
     return DFA(
         name=name,
         states=states,
@@ -355,6 +419,7 @@ def _convert_random_dfa_to_string_dfa(rdfa: "RandomDFA", name: str) -> DFA:
         transitions=transitions,
         start=int(rdfa.start_state),
         accept=accept,
+        generation_metadata=gmeta,
     )
 
 
@@ -365,13 +430,40 @@ def _cached_random_dfa(name: str) -> DFA:
 
     The default constructor enforces non-trivial short-horizon behavior on lengths 5..8,
     which is the intended train-length regime for these synthetic benchmarks.
+    Each ``_dense`` spec uses ``uniform_stationary`` tables (column-balanced, uniform π).
+
+    ``_bias_accept`` / ``_bias_reject`` use i.i.d. transitions with rejection until, under uniform
+    input, **some** state in the target set (accept / reject) has Markov stationary weight
+    at least ``stationary_peak_factor / |Q|`` (default factor 2 ⇒ twice the uniform ``1/|Q|`` mass;
+    use spec suffix ``_k3`` for three times).
+
+    Plain specs (no suffix) keep legacy i.i.d. tables with no stationary filter.
     """
     parsed = parse_random_dfa_spec(name)
     if parsed is None:
         raise KeyError(f"{name!r} is not a random DFA spec.")
-    q, a, seed = parsed
+    q, a, seed, variant, peak_factor = parsed
     _ensure_random_dfa_support()
-    sel_cfg = RandomDFASelectionConfig(lengths=(5, 6, 7, 8))
+    if variant == "uniform_stationary":
+        transition_mode = "uniform_stationary"
+        stationary_target = "none"
+    elif variant == "bias_accept":
+        transition_mode = "iid"
+        stationary_target = "accept_mass"
+    elif variant == "bias_reject":
+        transition_mode = "iid"
+        stationary_target = "reject_mass"
+    elif variant == "iid":
+        transition_mode = "iid"
+        stationary_target = "none"
+    else:
+        raise KeyError(f"unhandled random variant {variant!r}")
+    sel_cfg = RandomDFASelectionConfig(
+        lengths=(5, 6, 7, 8),
+        transition_mode=transition_mode,
+        stationary_target=stationary_target,
+        stationary_peak_factor=float(peak_factor),
+    )
     rdfa = construct_random_dfa(
         num_states=int(q),
         alphabet_size=int(a),
@@ -791,8 +883,9 @@ def get_dfa(name: str) -> DFA:
 
     raise KeyError(
         f"Unknown DFA '{name}'. Available: {sorted(BUILTIN_DFAS.keys())}\n"
-        f"Dynamic random specs supported: 'random_{{num_states}}_{{alphabet_size}}' or "
-        f"'random_{{num_states}}_{{alphabet_size}}_seed{{seed}}'.\n"
+        f"Dynamic random specs supported: 'random_{{num_states}}_{{alphabet_size}}', "
+        f"'random_{{num_states}}_{{alphabet_size}}_seed{{seed}}', "
+        f"optional suffix '_dense', '_bias_accept', '_bias_reject', optional '_kN' (bias peak factor, default k=2).\n"
         f"Or use 'att:/path/to/file.att' for custom DFAs.\n"
         f"Special non-DFA language specs supported in make_dfa_dataset: ['dyck1_unbounded']."
     )
