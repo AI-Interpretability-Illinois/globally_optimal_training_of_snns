@@ -1,0 +1,68 @@
+{
+  "seeds": [
+    0,
+    1,
+    2
+  ],
+  "dfa_spec": "random_5_3_seed1178085_dense",
+  "T": 9,
+  "n_train_pre": 5000,
+  "n_val_pre": 1111,
+  "n_train_ft": 5000,
+  "n_val_ft": 1111,
+  "n_test": 1024,
+  "n_test_ood": 1024,
+  "ood_T_multipliers": [
+    2,
+    5,
+    10
+  ],
+  "finetune_seed_offset": 1000,
+  "eval_seed_offset": 2000,
+  "L": 3,
+  "P_rec": 256,
+  "P_last": 512,
+  "K_parallel": 16,
+  "last_layer_readout": "spike",
+  "beta_leak": 0.99,
+  "threshold": 1.0,
+  "optimizer_name": "adam",
+  "ste_pretrain_epochs": 100,
+  "ste_finetune_epochs": 100,
+  "ste_lr_grid": [
+    0.001,
+    0.005,
+    0.01,
+    0.1
+  ],
+  "ste_beta_grid": [
+    0.01,
+    0.1,
+    0.5,
+    1.0,
+    5.0,
+    10.0
+  ],
+  "cvx_beta_grid": [
+    0.01,
+    0.1,
+    0.5,
+    1.0,
+    5.0,
+    10.0
+  ],
+  "cvx_bias_grid": [
+    0.0
+  ],
+  "max_train_samples": 0,
+  "max_val_samples": 0,
+  "max_test_samples": 0,
+  "stages": [
+    "ste_pretrain",
+    "cvx_from_ste_pretrain",
+    "ste_finetune_from_ste_pretrain_new_train",
+    "cvx_pretrain_gaussian",
+    "ste_finetune_from_cvx_pretrain_new_train"
+  ],
+  "debug": false
+}

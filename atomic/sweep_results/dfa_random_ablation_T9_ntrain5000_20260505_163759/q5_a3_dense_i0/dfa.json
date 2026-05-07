@@ -1,0 +1,111 @@
+{
+  "name": "random_5_3_seed1080104_dense",
+  "start": 0,
+  "accept": [
+    0,
+    1,
+    2,
+    3
+  ],
+  "alphabet": [
+    "0",
+    "1",
+    "2"
+  ],
+  "num_states": 5,
+  "num_symbols": 3,
+  "transitions": [
+    {
+      "from": 0,
+      "symbol": "0",
+      "to": 2
+    },
+    {
+      "from": 0,
+      "symbol": "1",
+      "to": 1
+    },
+    {
+      "from": 0,
+      "symbol": "2",
+      "to": 3
+    },
+    {
+      "from": 1,
+      "symbol": "0",
+      "to": 3
+    },
+    {
+      "from": 1,
+      "symbol": "1",
+      "to": 0
+    },
+    {
+      "from": 1,
+      "symbol": "2",
+      "to": 1
+    },
+    {
+      "from": 2,
+      "symbol": "0",
+      "to": 0
+    },
+    {
+      "from": 2,
+      "symbol": "1",
+      "to": 4
+    },
+    {
+      "from": 2,
+      "symbol": "2",
+      "to": 1
+    },
+    {
+      "from": 3,
+      "symbol": "0",
+      "to": 4
+    },
+    {
+      "from": 3,
+      "symbol": "1",
+      "to": 2
+    },
+    {
+      "from": 3,
+      "symbol": "2",
+      "to": 3
+    },
+    {
+      "from": 4,
+      "symbol": "0",
+      "to": 0
+    },
+    {
+      "from": 4,
+      "symbol": "1",
+      "to": 4
+    },
+    {
+      "from": 4,
+      "symbol": "2",
+      "to": 2
+    }
+  ],
+  "generation_metadata": {
+    "selection_seed": 1080104,
+    "construction_seed": 1787372178,
+    "aggregate_score": 2.8344695119541163,
+    "transition_mode": "uniform_stationary",
+    "stationary_target": "none",
+    "markov_stationary_pi": "0.2,0.2,0.2,0.2,0.2",
+    "column_balance_targets_per_state": 3,
+    "accept_rate_L5": 0.79052734375,
+    "accept_rate_L6": 0.805908203125,
+    "accept_rate_L7": 0.79541015625,
+    "accept_rate_L8": 0.795654296875,
+    "prefix_entropy_L5": 0.5781096979515924,
+    "prefix_entropy_L6": 0.6060581484641848,
+    "prefix_entropy_L7": 0.6298443606260821,
+    "prefix_entropy_L8": 0.6370228156500062
+  }
+}
