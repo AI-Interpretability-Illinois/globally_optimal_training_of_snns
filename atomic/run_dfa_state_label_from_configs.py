@@ -11,7 +11,8 @@ Run ``run_dfa_state_label_finetune_bench.py`` using:
 
 * ``--run-mode``, ``--pretrain-variant``, ``--finetune-variant``, ``--out-root``, ``--output-json``
 * Optional: ``--lambda-sum-grid`` / ``--lambda-carry-grid``, ``--lambda-carry``, ``--verify-samples``,
-  ``--batch-size``, ``--cvx-device``, ``--cvx-grid-workers``, ``--cvx-ovr-workers``, ``--blas-threads``,
+  ``--batch-size``, ``--cvx-device``, ``--cvx-grid-workers``, ``--cvx-ovr-workers``,
+  ``--cvx-compute-dual`` / ``--no-cvx-compute-dual``, ``--blas-threads``,
   loss / time-objective flags, ``--debug``.
 
 ``last_layer_readout`` from the JSON is copied to both ``--ste-last-layer-readout`` and
@@ -110,6 +111,7 @@ _WRONG_RUN_CONFIG_KEYS = frozenset(
         "cvx_time_loss",
         "cvx_grid_workers",
         "cvx_ovr_workers",
+        "cvx_compute_dual",
         "blas_threads",
     }
 )
@@ -255,6 +257,11 @@ def _merge_to_argv(rc: Dict[str, Any]) -> List[str]:
 
     if rc.get("debug"):
         argv.append("--debug")
+    v_dual = rc.get("cvx_compute_dual")
+    if v_dual is True:
+        argv.append("--cvx-compute-dual")
+    elif v_dual is False:
+        argv.append("--no-cvx-compute-dual")
     return argv
 
 
@@ -278,6 +285,9 @@ def _cli_to_state_optional(ns: argparse.Namespace) -> Dict[str, Any]:
         extra["cvx_ovr_workers"] = int(ns.cvx_ovr_workers)
     if ns.blas_threads is not None:
         extra["blas_threads"] = int(ns.blas_threads)
+    ovr_dual = getattr(ns, "cvx_compute_dual_override", None)
+    if ovr_dual is not None:
+        extra["cvx_compute_dual"] = bool(ovr_dual)
     for k in (
         "ste_sum_loss",
         "ste_carry_loss",
@@ -333,7 +343,7 @@ def build_command(
     return argv, summary
 
 
-_ALL_EMITTED_KEYS = _STATE_SINGLE | _STATE_LIST_FLOAT | _STATE_LIST_INT | {"debug"}
+_ALL_EMITTED_KEYS = _STATE_SINGLE | _STATE_LIST_FLOAT | _STATE_LIST_INT | {"debug", "cvx_compute_dual"}
 
 
 def main() -> None:
@@ -376,6 +386,20 @@ def main() -> None:
     ap.add_argument("--cvx-device", dest="cvx_device", choices=["auto", "cpu", "cuda", "mps"], default=None)
     ap.add_argument("--cvx-grid-workers", dest="cvx_grid_workers", type=int, default=None)
     ap.add_argument("--cvx-ovr-workers", dest="cvx_ovr_workers", type=int, default=None)
+    _cvxd = ap.add_mutually_exclusive_group()
+    _cvxd.add_argument(
+        "--cvx-compute-dual",
+        dest="cvx_compute_dual_override",
+        action="store_true",
+        help="Forward: run CVX dual diagnostics on the state-label bench.",
+    )
+    _cvxd.add_argument(
+        "--no-cvx-compute-dual",
+        dest="cvx_compute_dual_override",
+        action="store_false",
+        help="Forward: skip CVX dual solves (matches bench default).",
+    )
+    ap.set_defaults(cvx_compute_dual_override=None)
     ap.add_argument("--blas-threads", dest="blas_threads", type=int, default=None)
     ap.add_argument("--ste-sum-loss", dest="ste_sum_loss", default=None)
     ap.add_argument("--ste-carry-loss", dest="ste_carry_loss", default=None)

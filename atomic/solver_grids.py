@@ -13,6 +13,6 @@ def cvx_lr_sweep_values(cvx_method: str, lr_grid: Sequence[float]) -> tuple[floa
     For SolveConfig.method == \"cvx\", the convex solver ignores learning rate; sweep beta × bias only.
     For method == \"sgd\", include the full lr grid (beta × lr × bias).
     """
-    if cvx_method == "cvx":
+    if cvx_method in ("cvx", "cvx_lite"):
         return (0.0,)
     return tuple(float(x) for x in lr_grid)

@@ -298,6 +298,7 @@ def _eval_cvx_candidate_on_features(
     lambda_sum: float,
     lambda_carry: float,
     ovr_workers: int,
+    compute_dual: bool = True,
 ) -> Dict[str, Any]:
     rho_sum = float(beta) / max(float(lambda_sum), 1e-12)
     rho_carry = float(beta) / max(float(lambda_carry), 1e-12)
@@ -310,6 +311,7 @@ def _eval_cvx_candidate_on_features(
             d_train, y_pm1, rho_sum,
             'hinge' if str(sum_n) == 'hinge' else 'ce',
             sample_weight=sw_train,
+            compute_dual=compute_dual,
         )
         w_sum = np.asarray(sol.w, dtype=np.float64)
         p_sum, d_sum, g_sum = float(sol.primal_obj), float(sol.dual_obj), float(sol.gap)
@@ -322,6 +324,7 @@ def _eval_cvx_candidate_on_features(
         if str(sum_n) == 'ce':
             w_sum, p_sum, d_sum, g_sum = cvx_cts.solve_multiclass_softmax_ce_l1_primal_dual(
                 d_train, y_sum_tr, rho_sum, int(num_sum_classes), sample_weight=sw_train,
+                compute_dual=compute_dual,
             )
             w_sum = np.asarray(w_sum, dtype=np.float64)
             sum_scores_val = d_val @ w_sum
@@ -332,7 +335,7 @@ def _eval_cvx_candidate_on_features(
                 p_sum, d_sum = 0.0, 0.0
                 def _solve_class(c_idx: int) -> Tuple[int, np.ndarray, float, float]:
                     y_bin = np.where(y_sum_tr == c_idx, 1.0, -1.0).astype(np.float64)
-                    sol = cvx_cts.solve_binary_l1_primal_dual(d_train, y_bin, rho_sum, 'hinge', sample_weight=sw_train)
+                    sol = cvx_cts.solve_binary_l1_primal_dual(d_train, y_bin, rho_sum, 'hinge', sample_weight=sw_train, compute_dual=compute_dual)
                     return c_idx, np.asarray(sol.w, dtype=np.float64), float(sol.primal_obj), float(sol.dual_obj)
                 with ThreadPoolExecutor(max_workers=min(int(ovr_workers), int(num_sum_classes))) as ex:
                     for c_idx, w_c, p_c, d_c in (f.result() for f in as_completed([ex.submit(_solve_class, c) for c in range(int(num_sum_classes))])):
@@ -342,7 +345,7 @@ def _eval_cvx_candidate_on_features(
                 g_sum = float(p_sum - d_sum) if np.isfinite(d_sum) else float('nan')
                 w_sum = w_sum_col
             else:
-                w_sum, p_sum, d_sum, g_sum = cvx_cts._ovr_hinge_solve(d_train, y_sum_tr, rho_sum, int(num_sum_classes), sample_weight=sw_train)
+                w_sum, p_sum, d_sum, g_sum = cvx_cts._ovr_hinge_solve(d_train, y_sum_tr, rho_sum, int(num_sum_classes), sample_weight=sw_train, compute_dual=compute_dual)
                 w_sum = np.asarray(w_sum, dtype=np.float64)
             sum_scores_val = d_val @ w_sum
             sum_val_loss = cvx_cts.multiclass_ovr_cvx_data_loss('hinge_ovr', sum_scores_val, y_sum_va) if a_val is None else cvx_cts._ramped_ovr_hinge_val(sum_scores_val, y_sum_va, a_val)
@@ -355,6 +358,7 @@ def _eval_cvx_candidate_on_features(
         rho_carry,
         'hinge' if str(carry_n) == 'hinge' else 'ce',
         sample_weight=sw_train,
+        compute_dual=compute_dual,
     )
     w_carry = np.asarray(sol_carry.w, dtype=np.float64)
     p_carry, d_carry, g_carry = float(sol_carry.primal_obj), float(sol_carry.dual_obj), float(sol_carry.gap)
@@ -619,6 +623,7 @@ def cvx_fit_shared_two_head_init(
     pretrained_weights: Optional[Sequence[np.ndarray]] = None,
     cvx_grid_workers: int = 1,
     cvx_ovr_workers: int = 1,
+    cvx_compute_dual: bool = True,
 ) -> Tuple[Dict[str, Any], Dict[str, float], Dict[str, float]]:
     _ = cvx_device
     best_score = float('inf')
@@ -699,6 +704,7 @@ def cvx_fit_shared_two_head_init(
             lambda_sum=float(lambda_sum),
             lambda_carry=float(lambda_carry),
             ovr_workers=int(ovr_workers),
+            compute_dual=bool(cvx_compute_dual),
         )
         eval_payload['init_cfg'] = init_cfg
         eval_payload['bias'] = float(bias)

@@ -16,6 +16,9 @@ and **``lambda_carry`` is the label-head weight** (per-step accept). In this DFA
 **sweep** the state head (``--lambda_sum_grid``, alias ``--lambda_carry_grid``) and keep
 ``--lambda_carry`` fixed on the label head — the opposite of the addition bench, which sweeps
 the carry slot (there: digit-sum vs carry; here: we care about the state / sum slot).
+
+CVX head fitting (stages 2 / 4) runs **primal** solves only by default; pass ``--cvx_compute_dual``
+if you want dual objectives / gaps (extra conic solves).
 """
 from __future__ import annotations
 
@@ -584,6 +587,7 @@ def _run_dfa_pretrain_only(
                     pretrained_weights=None,
                     cvx_grid_workers=int(args.cvx_grid_workers),
                     cvx_ovr_workers=int(args.cvx_ovr_workers),
+                    cvx_compute_dual=bool(args.cvx_compute_dual),
                 )
                 weights = ARITH._cvx_bundle_to_carry_weights(
                     bundle=cvx_pre_bundle,
@@ -946,6 +950,23 @@ def main() -> None:
             "typically 1 for joint CE solves."
         ),
     )
+    _cvxd = ap.add_mutually_exclusive_group()
+    _cvxd.add_argument(
+        "--cvx_compute_dual",
+        dest="cvx_compute_dual",
+        action="store_true",
+        help=(
+            "After each binary / multiclass CVX primal solve, also solve the conic dual for "
+            "primal_value / dual_value / gap diagnostics (slower). Default: off for this bench."
+        ),
+    )
+    _cvxd.add_argument(
+        "--no_cvx_compute_dual",
+        dest="cvx_compute_dual",
+        action="store_false",
+        help="Do not run CVX dual solves (default). primal_value is still computed; dual_value/gap are NaN.",
+    )
+    ap.set_defaults(cvx_compute_dual=False)
     ap.add_argument(
         "--blas_threads",
         type=int,
@@ -1092,6 +1113,7 @@ def main() -> None:
         "cvx_time_loss": str(args.cvx_time_loss),
         "cvx_grid_workers": int(args.cvx_grid_workers),
         "cvx_ovr_workers": int(args.cvx_ovr_workers),
+        "cvx_compute_dual": bool(args.cvx_compute_dual),
         "blas_threads": int(args.blas_threads) if args.blas_threads is not None else None,
         "max_train_samples": int(mtr),
         "max_val_samples": int(mva),
@@ -1249,6 +1271,7 @@ def main() -> None:
                 pretrained_weights=ste_pre_weights,
                 cvx_grid_workers=int(args.cvx_grid_workers),
                 cvx_ovr_workers=int(args.cvx_ovr_workers),
+                cvx_compute_dual=bool(args.cvx_compute_dual),
             )
             _print_dfa_hybrid_train_ok(
                 base_seed=base_seed, lambda_sum=lambda_sum, stage_key="cvx_from_ste_pretrain"
@@ -1303,6 +1326,7 @@ def main() -> None:
                 pretrained_weights=None,
                 cvx_grid_workers=int(args.cvx_grid_workers),
                 cvx_ovr_workers=int(args.cvx_ovr_workers),
+                cvx_compute_dual=bool(args.cvx_compute_dual),
             )
             cvx_pre_weights = ARITH._cvx_bundle_to_carry_weights(
                 bundle=cvx_pre_bundle,

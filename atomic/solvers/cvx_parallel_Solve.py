@@ -43,7 +43,7 @@ class InitializationConfig:
 @dataclass
 class SolveConfig:
     loss_name: str = "hinge_ovr"
-    method: str = "cvx"  # cvx | sgd
+    method: str = "cvx"  # cvx | cvx_lite | sgd
     beta: float = 1e-2
     lr: float = 1e-3
     optimizer_name: str = "adam"
@@ -52,6 +52,8 @@ class SolveConfig:
     log_every: int = 10
     compute_ce_dual: bool = False
     cvx_ovr_workers: int = 1
+    lite_max_iter: int = 5000
+    lite_tol: float = 1e-6
 
 
 @dataclass
@@ -504,6 +506,8 @@ def solve_binary_l1_primal_dual(
     rho: float,
     loss_name: str,
     solver_order: Tuple[str, ...] = ("CLARABEL", "OSQP", "SCS"),
+    *,
+    compute_dual: bool = False,
 ) -> BinaryCvxSolution:
     """
     Solve binary convex objective with L1 output regularization:
@@ -543,6 +547,14 @@ def solve_binary_l1_primal_dual(
     primal_val = float(primal_prob.value)
     if not np.isfinite(w_star).all() or not np.isfinite(primal_val):
         raise FloatingPointError("Non-finite primal solution.")
+
+    if not compute_dual:
+        return BinaryCvxSolution(
+            w=w_star,
+            primal_obj=primal_val,
+            dual_obj=float("nan"),
+            gap=float("nan"),
+        )
 
     # ---------- Dual ----------
     u = cp.Variable(n)
@@ -633,6 +645,7 @@ def _solve_one_ovr_class(
     y_train: np.ndarray,
     rho: float,
     loss_name: str,
+    compute_dual: bool = False,
 ) -> Tuple[int, np.ndarray, float, float]:
     y_bin = np.where(y_train == int(class_idx), 1.0, -1.0).astype(np.float64)
     sol = solve_binary_l1_primal_dual(
@@ -640,6 +653,7 @@ def _solve_one_ovr_class(
         y_bin,
         rho=rho,
         loss_name=loss_name,
+        compute_dual=bool(compute_dual),
     )
     return int(class_idx), np.asarray(sol.w, dtype=np.float64), float(sol.primal_obj), float(sol.dual_obj)
 
@@ -662,13 +676,31 @@ def _run_cvx_method(
         raise ValueError(f"cvx_ovr_workers must be >= 1, got {ovr_workers}.")
     print(
         (
-            f"[cvx-run] method=cvx beta={float(solve_cfg.beta):.6g} lr={float(solve_cfg.lr):.6g} "
+            f"[cvx-run] method={solve_cfg.method} beta={float(solve_cfg.beta):.6g} lr={float(solve_cfg.lr):.6g} "
             f"bias={float(init_bias):.6g} "
-            f"batch_size=full ovr_workers={ovr_workers}"
+            f"batch_size=full ovr_workers={ovr_workers} "
+            f"n={d_train.shape[0]} p={d_train.shape[1]} K={num_classes} "
+            f"loss={solve_cfg.loss_name} dual={bool(solve_cfg.compute_ce_dual)}"
         ),
         flush=True,
     )
-    if solve_cfg.loss_name == "ce":
+    dual_sum = float("nan")
+    lite_hist: List[float] = []
+    if solve_cfg.method == "cvx_lite":
+        from .cvx_lite import solve_multiclass_primal_lite
+
+        w, primal_sum, n_lite_iter = solve_multiclass_primal_lite(
+            d_train,
+            y_train,
+            rho=rho,
+            loss_name=str(solve_cfg.loss_name),
+            num_classes=num_classes,
+            max_iter=int(solve_cfg.lite_max_iter),
+            tol=float(solve_cfg.lite_tol),
+            history=lite_hist,
+        )
+        print(f"[cvx-lite] primal_obj={float(primal_sum):.8g} n_iter={int(n_lite_iter)} history={len(lite_hist)}", flush=True)
+    elif solve_cfg.loss_name == "ce":
         w, primal_sum, dual_sum, _ = solve_multiclass_softmax_ce_l1_primal_dual(
             d_train,
             y_train,
@@ -689,6 +721,7 @@ def _run_cvx_method(
                     y_train=y_train,
                     rho=rho,
                     loss_name=solve_cfg.loss_name,
+                    compute_dual=bool(solve_cfg.compute_ce_dual),
                 )
                 w[:, c] = w_c
                 primal_sum += p_c
@@ -704,6 +737,7 @@ def _run_cvx_method(
                         y_train=y_train,
                         rho=rho,
                         loss_name=solve_cfg.loss_name,
+                        compute_dual=bool(solve_cfg.compute_ce_dual),
                     )
                     for c in range(num_classes)
                 ]
@@ -741,8 +775,8 @@ def _run_cvx_method(
     if branch_slices is not None:
         weights_blocks = [w[s:e, :].copy() for (s, e) in branch_slices]
     return CvxSolveResult(
-        trained_model={"weights": w, "weights_blocks": weights_blocks, "method": "cvx"},
-        loss_history=[train_loss],
+        trained_model={"weights": w, "weights_blocks": weights_blocks, "method": str(solve_cfg.method)},
+        loss_history=list(lite_hist) if (str(solve_cfg.method) == "cvx_lite" and len(lite_hist) > 0) else [train_loss],
         final_losses={
             "train_loss": train_loss,
             "val_loss": val_loss,
@@ -939,7 +973,7 @@ def cvx_solve(
             init_cfg=init_cfg,
             all_timesteps=supervise_all_timesteps,
         )
-    if solve_cfg.method == "cvx":
+    if solve_cfg.method in ("cvx", "cvx_lite"):
         out = _run_cvx_method(
             d_train=d_train,
             y_train=ytr,

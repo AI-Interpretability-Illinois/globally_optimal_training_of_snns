@@ -550,7 +550,7 @@ def _finetune_pipeline_to_simple_style_json(
         "ste_beta_grid": list(BETA_GRID_DEFAULT),
         "cvx_lr_grid_effective": list(cvx_lr_eff),
     }
-    if args.cvx_method == "cvx":
+    if args.cvx_method in ("cvx", "cvx_lite"):
         fixed_grids["cvx_lr_sweep_note"] = (
             "For method=cvx, lr is not swept (single placeholder 0.0); sweep is beta × bias only."
         )
@@ -670,7 +670,7 @@ def _layer_wise_pipeline_to_simple_style_json(
         "ste_lr_grid": list(LR_GRID_DEFAULT),
         "ste_beta_grid": list(BETA_GRID_DEFAULT),
     }
-    if args.cvx_method == "cvx":
+    if args.cvx_method in ("cvx", "cvx_lite"):
         fixed_grids["cvx_lr_sweep_note"] = (
             "For method=cvx, lr is not swept (single placeholder 0.0); sweep is beta × bias only."
         )
@@ -1222,7 +1222,7 @@ def _run_simple_mode(args: argparse.Namespace, data: Dict[str, Any]) -> Tuple[Di
                 out = cvx_solve(**cvx_kwargs)
             score = float(out.final_losses.get("val_objective", out.final_losses["val_loss"]))
             params = {
-                "lr": None if args.cvx_method == "cvx" else float(cvx_lr),
+                "lr": None if args.cvx_method in ("cvx", "cvx_lite") else float(cvx_lr),
                 "beta": float(cvx_beta),
                 "bias": float(cvx_bias),
             }
@@ -1469,7 +1469,7 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument("--loss_type", choices=("ce", "hinge", "hinge_ovr", "squared"), default="hinge_ovr")
     parser.add_argument("--optimizer_name", choices=("adam", "sgd"), default="adam")
-    parser.add_argument("--cvx_method", choices=("cvx", "sgd"), default="cvx")
+    parser.add_argument("--cvx_method", choices=("cvx", "cvx_lite", "sgd"), default="cvx")
     parser.add_argument(
         "--cvx_device",
         choices=("auto", "cpu", "cuda", "mps"),

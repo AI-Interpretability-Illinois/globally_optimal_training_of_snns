@@ -1,71 +1,103 @@
+"""
+LSM baseline + R-CVX fine-tune pipeline.
+
+Ditto structural copy of :func:`atomic.fine_tune.run_fine_tune_pipeline` with the STE
+surrogate-gradient backbone (``ste_solve``) swapped out for the reservoir-computing
+:mod:`atomic.solvers.LSM`. Reproduces exactly the same five-stage schedule; the CVX
+initialization stage is what we call **R-CVX** — CVX with the LSM's frozen reservoir
+weights transferred in as ``pretrained_weights``.
+
+Stages
+------
+1. **LSM pretrain** (``lsm_solve`` on the pretrain split): sweep learning rate and readout
+   L2 shrinkage; the L reservoirs are frozen at init (seeded deterministically by
+   ``LSMModelConfig.reservoir_seed``), so this only trains the shared linear ``classifier``.
+2. **R-CVX** (``cvx_solve`` with ``mode="pretraining"``): CVX L1 readout solve on the LSM's
+   frozen reservoir features. The reservoir weights extracted from the trained LSM feed
+   the ``pretrained_weights`` slot of :class:`solvers.cvx_solve.InitializationConfig`;
+   this replaces the Gaussian-init path in the STE pipeline.
+3. **LSM post-train** (``lsm_solve`` on the same pretrained weights again): re-fit the
+   readout starting from the identical frozen reservoir. Structurally parallel to the
+   STE post-train stage; semantically it just re-runs the classifier fit under a
+   potentially different sweep (equivalent to a warm-start baseline for the readout).
+
+Design notes
+------------
+* API surface mirrors ``fine_tune.py``: same :class:`FineTuneConfig` fields are honored
+  (``L``, ``P_rec``, ``P_last``, ``K_parallel``, ``ste_pretrain_epochs``, ``ste_lr_grid``,
+  ``ste_beta_grid``, ``beta_grid``, ``lr_grid``, ``bias_grid`` etc.). LSM-specific knobs
+  (``reservoir_seed``, ``reservoir_variant``) live on :class:`LSMFineTuneConfig`.
+* Weight I/O uses the same npz layout (``w0, w1, ...``) as ``fine_tune._extract_weight_list``
+  so LSM-pretrain checkpoints and STE-pretrain checkpoints are drop-in interchangeable at
+  the R-CVX / CVX-from-pretraining step.
+* Weight-list ordering is branch-major identical to
+  ``ste_parallel_Solve.SNNBaselineSeq`` — see :func:`solvers.LSM.extract_lsm_weight_list`.
+"""
+
 from __future__ import annotations
 
 import json
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Dict, List, Mapping, Sequence, Tuple
+from typing import Any, Dict, List, Mapping, Tuple
 
 import numpy as np
 import torch
 
 if __package__ in (None, ""):
-    from finetune_manifest import assert_finetune_manifest_matches_runtime, validate_finetune_weight_shapes_against_manifest
+    from fine_tune import (
+        FineTuneConfig,
+        load_finetune_weight_checkpoint,
+        load_snn_weight_arrays_from_npz,
+    )
+    from finetune_manifest import (
+        assert_finetune_manifest_matches_runtime,
+        validate_finetune_weight_shapes_against_manifest,
+    )
     from solver_grids import BETA_GRID_DEFAULT, BIAS_GRID_DEFAULT, LR_GRID_DEFAULT, cvx_lr_sweep_values
-    from solvers import ste_parallel_Solve as ste_par
     from solvers.cvx_solve import InitializationConfig, SolveConfig, cvx_solve
-    from solvers.ste_solve import SNNBaselineSeq, SteModelConfig, SteSolveConfig, ste_solve
+    from solvers.LSM import (
+        LSMBaselineSeq,
+        LSMModelConfig,
+        LSMSolveConfig,
+        extract_lsm_weight_list,
+        lsm_solve,
+    )
 else:
-    from .finetune_manifest import assert_finetune_manifest_matches_runtime, validate_finetune_weight_shapes_against_manifest
+    from .fine_tune import (
+        FineTuneConfig,
+        load_finetune_weight_checkpoint,
+        load_snn_weight_arrays_from_npz,
+    )
+    from .finetune_manifest import (
+        assert_finetune_manifest_matches_runtime,
+        validate_finetune_weight_shapes_against_manifest,
+    )
     from .solver_grids import BETA_GRID_DEFAULT, BIAS_GRID_DEFAULT, LR_GRID_DEFAULT, cvx_lr_sweep_values
-    from .solvers import ste_parallel_Solve as ste_par
     from .solvers.cvx_solve import InitializationConfig, SolveConfig, cvx_solve
-    from .solvers.ste_solve import SNNBaselineSeq, SteModelConfig, SteSolveConfig, ste_solve
+    from .solvers.LSM import (
+        LSMBaselineSeq,
+        LSMModelConfig,
+        LSMSolveConfig,
+        extract_lsm_weight_list,
+        lsm_solve,
+    )
 
 
 @dataclass
-class FineTuneConfig:
-    # architecture
-    T: int
-    P_in: int
-    P_rec: int
-    P_last: int
-    L: int
-    K_parallel: int = 1
+class LSMFineTuneConfig(FineTuneConfig):
+    """Same schema as :class:`FineTuneConfig` plus LSM-specific reservoir knobs.
 
-    # names/shape aligned to snn_generalized_pt2/snn_convex_fine_tune.py arguments
-    loss_type: str = "hinge_ovr"
-    epochs: int = 100
-    batch_size: int = -1
-    cvx_optimizer: str = "adam"
-    cvx_method: str = "cvx"  # cvx | cvx_lite | sgd
-    cvx_step_size: int = 30
-    cvx_gamma: float = 0.5
-    beta_grid: Sequence[float] = BETA_GRID_DEFAULT
-    lr_grid: Sequence[float] = LR_GRID_DEFAULT
-    bias_grid: Sequence[float] = BIAS_GRID_DEFAULT
-    pretrain_lr: float = 1e-3
-    pretrain_beta_path_reg: float = 0.0
-    ste_lr_grid: Sequence[float] = LR_GRID_DEFAULT
-    ste_beta_grid: Sequence[float] = BETA_GRID_DEFAULT
-    ste_step_size: int = 30
-    ste_gamma: float = 0.5
-    learn_beta: bool = False
-    learn_threshold: bool = False
-    init_method: str = "pretrain"
-    target_act_rate: float | None = None
-    last_layer_readout: str = "membrane"
-    readout_modes: Sequence[str] = ("membrane", "spike")
-    beta_dist: str = "fixed"
-    cvx_feature_source: str = "threshold_dict"
-    compare_all_cvx_sources: bool = True
-    cvx_sources: Sequence[str] = ("pretraining",)
-    ste_pretrain_epochs: int = 80
-    ste_post_epochs: int = 100
-    # If set, save STE pretrain SNN weights under this directory (per readout subfolder) right after pretrain.
-    weights_save_dir: str | None = None
-    # If set, load SNN weights from a prior export (directory containing finetune_manifest.json).
-    init_weights_dir: str | None = None
-    init_weights_variant: str = "pretrain"  # pretrain | ste_post (which .npz to load)
+    ``reservoir_seed`` seeds each branch reservoir deterministically (branch ``k`` uses
+    ``reservoir_seed + k``); pass a distinct integer per outer ``seed`` if you want the
+    LSM reservoir to co-vary with the training seed. ``reservoir_variant`` selects the
+    entry distribution of each frozen ``W_in`` (``standard`` / ``normalized`` /
+    ``orthogonal``); ``standard`` matches the CVX Gaussian-init distribution so R-CVX
+    on a fresh reservoir is identical in law to CVX with Gaussian init.
+    """
+
+    reservoir_seed: int = 0
+    reservoir_variant: str = "standard"
 
 
 def _set_global_seed(seed: int) -> None:
@@ -73,52 +105,6 @@ def _set_global_seed(seed: int) -> None:
     torch.manual_seed(seed)
     if torch.cuda.is_available():
         torch.cuda.manual_seed_all(seed)
-
-
-def load_snn_weight_arrays_from_npz(path: Path) -> List[np.ndarray]:
-    """Load w0, w1, ... arrays from a compressed npz (order by numeric suffix)."""
-    p = path.expanduser().resolve()
-    z = np.load(p)
-    keys = sorted((k for k in z.files if k.startswith("w")), key=lambda s: int(s[1:]))
-    if not keys:
-        raise ValueError(f"No w0, w1, ... keys in {p}.")
-    return [np.asarray(z[k]) for k in keys]
-
-
-def load_finetune_weight_checkpoint(checkpoint_dir: Path | str, variant: str) -> Tuple[Dict[str, Any], List[np.ndarray]]:
-    """Load manifest + SNN weight list from a fine-tune export subdirectory (e.g. .../membrane/)."""
-    root = Path(checkpoint_dir).expanduser().resolve()
-    man_path = root / "finetune_manifest.json"
-    if not man_path.is_file():
-        raise ValueError(f"Missing finetune_manifest.json under {root}.")
-    manifest: Dict[str, Any] = json.loads(man_path.read_text())
-    if variant == "pretrain":
-        npz_name = "pretrain_snn_weights.npz"
-    elif variant == "ste_post":
-        npz_name = "ste_post_snn_weights.npz"
-    else:
-        raise ValueError(f"Unknown variant={variant!r}; use 'pretrain' or 'ste_post'.")
-    wpath = root / npz_name
-    if not wpath.is_file():
-        raise ValueError(f"Missing {npz_name} under {root}.")
-    weights = load_snn_weight_arrays_from_npz(wpath)
-    return manifest, weights
-
-
-def _extract_weight_list(model: torch.nn.Module) -> List[np.ndarray]:
-    weights: List[np.ndarray] = []
-    if hasattr(model, "fcs") and hasattr(model, "classifier"):
-        for fc in model.fcs:
-            weights.append(fc.weight.detach().cpu().numpy().copy())
-        weights.append(model.classifier.weight.detach().cpu().numpy().copy())
-        return weights
-    if hasattr(model, "branches") and hasattr(model, "classifier"):
-        for br in model.branches:
-            for fc in br.fcs:
-                weights.append(fc.weight.detach().cpu().numpy().copy())
-        weights.append(model.classifier.weight.detach().cpu().numpy().copy())
-        return weights
-    raise TypeError(f"Unsupported SNN layout for weight export: {type(model)}")
 
 
 def _last_step_acc(model: torch.nn.Module, x: np.ndarray, y: np.ndarray) -> float:
@@ -134,30 +120,56 @@ def _last_step_acc(model: torch.nn.Module, x: np.ndarray, y: np.ndarray) -> floa
     return float(np.mean(preds == y_last))
 
 
-def _save_finetune_pretrain_artifacts(
+def _extract_weight_list_lsm(model: torch.nn.Module) -> List[np.ndarray]:
+    """Dispatch to :func:`solvers.LSM.extract_lsm_weight_list` for ``LSMBaselineSeq``.
+
+    Also accepts a bare ``SNNBaselineSeq``-shaped model (attributes ``branches`` /
+    ``classifier`` or ``fcs`` / ``classifier``) so a reload path can round-trip either.
+    """
+    if isinstance(model, LSMBaselineSeq):
+        return extract_lsm_weight_list(model)
+    weights: List[np.ndarray] = []
+    if hasattr(model, "branches") and hasattr(model, "classifier"):
+        for br in model.branches:
+            for fc in br.fcs:
+                weights.append(fc.weight.detach().cpu().numpy().copy())
+        weights.append(model.classifier.weight.detach().cpu().numpy().copy())
+        return weights
+    if hasattr(model, "fcs") and hasattr(model, "classifier"):
+        for fc in model.fcs:
+            weights.append(fc.weight.detach().cpu().numpy().copy())
+        weights.append(model.classifier.weight.detach().cpu().numpy().copy())
+        return weights
+    raise TypeError(f"Unsupported LSM/SNN layout for weight export: {type(model)}")
+
+
+def _save_lsm_pretrain_artifacts(
     save_root: Path,
     *,
     readout_mode: str,
     seed: int,
-    cfg: FineTuneConfig,
+    cfg: LSMFineTuneConfig,
     num_classes: int,
     transferred_weights: List[np.ndarray],
     pretrain_selected: Mapping[str, float],
 ) -> Dict[str, str]:
-    """Save SNN weights right after pretrain (before CVX and STE post). No CVX readout or post-STE files."""
+    """Same npz + manifest layout as the STE pretrain export, tagged for LSM lineage."""
     root = save_root.expanduser().resolve()
     root.mkdir(parents=True, exist_ok=True)
     sub = root / readout_mode
     sub.mkdir(parents=True, exist_ok=True)
 
-    np.savez_compressed(sub / "pretrain_snn_weights.npz", **{f"w{i}": w for i, w in enumerate(transferred_weights)})
+    np.savez_compressed(
+        sub / "pretrain_lsm_weights.npz", **{f"w{i}": w for i, w in enumerate(transferred_weights)}
+    )
 
     snn_weight_shapes = [[int(x) for x in w.shape] for w in transferred_weights]
 
     manifest: Dict[str, Any] = {
         "readout_mode": readout_mode,
         "last_layer_readout": readout_mode,
-        "checkpoint_stage": "pretrain_only",
+        "checkpoint_stage": "lsm_pretrain_only",
+        "backbone": "lsm",
         "seed": seed,
         "T": cfg.T,
         "L": cfg.L,
@@ -166,29 +178,61 @@ def _save_finetune_pretrain_artifacts(
         "P_last": cfg.P_last,
         "K_parallel": int(cfg.K_parallel),
         "num_classes": num_classes,
+        "reservoir_seed": int(cfg.reservoir_seed),
+        "reservoir_variant": str(cfg.reservoir_variant),
         "snn_weight_shapes": snn_weight_shapes,
         "loss_type": cfg.loss_type,
         "cvx_method": cfg.cvx_method,
-        "pretrain_ste_selected": dict(pretrain_selected),
+        "lsm_selected": dict(pretrain_selected),
         "reload": {
-            "pretrain_for_ste_solve": (
-                "pretrain_snn_weights.npz keys w0,w1,... in branch-major order: for each branch k=0..K-1, "
-                "each hidden fc.weight in order; the final key is the single shared classifier.weight "
-                "(shape num_classes x P_last). Total tensors = K_parallel * n_hidden_layers + 1."
+            "pretrain_for_r_cvx_init": (
+                "pretrain_lsm_weights.npz keys w0,w1,... in branch-major order: for each branch "
+                "k=0..K-1, each hidden fc.weight in order; the final key is the LSM's shared "
+                "classifier.weight (shape num_classes x P_last). Total tensors = "
+                "K_parallel * n_hidden_layers + 1. All fc.weight tensors are the frozen reservoir "
+                "matrices — pass the branch-major hidden weights (i.e. drop the classifier tail) "
+                "to InitializationConfig.pretrained_weights for R-CVX."
             ),
-            "pretrain_for_cvx_init": "Same arrays as a Python list passed to InitializationConfig.pretrained_weights.",
-            "note": "Export is written immediately after STE pretrain; CVX readout and ste_post weights are not stored.",
+            "note": (
+                "Structurally identical layout to STE's pretrain_snn_weights.npz — R-CVX can be "
+                "seeded from either an LSM export or an STE export, though R-CVX-from-STE is "
+                "semantically the standard CVX-from-STE-pretrain path."
+            ),
         },
     }
     (sub / "finetune_manifest.json").write_text(json.dumps(manifest, indent=2, default=str) + "\n")
     return {
         "dir": str(sub),
         "manifest": str(sub / "finetune_manifest.json"),
-        "pretrain_snn_weights": str(sub / "pretrain_snn_weights.npz"),
+        "pretrain_lsm_weights": str(sub / "pretrain_lsm_weights.npz"),
     }
 
 
-def run_fine_tune_pipeline(
+def _load_lsm_pretrain_weight_checkpoint(
+    checkpoint_dir: Path | str,
+) -> Tuple[Dict[str, Any], List[np.ndarray]]:
+    """Load an LSM pretrain checkpoint directory (contains ``pretrain_lsm_weights.npz``).
+
+    Falls back to the STE pretrain npz name so a mixed lineage (e.g. reloading STE weights
+    into R-CVX for a direct STE-vs-LSM head-to-head) works out of the box.
+    """
+    root = Path(checkpoint_dir).expanduser().resolve()
+    man_path = root / "finetune_manifest.json"
+    if not man_path.is_file():
+        raise ValueError(f"Missing finetune_manifest.json under {root}.")
+    manifest: Dict[str, Any] = json.loads(man_path.read_text())
+    lsm_npz = root / "pretrain_lsm_weights.npz"
+    ste_npz = root / "pretrain_snn_weights.npz"
+    if lsm_npz.is_file():
+        weights = load_snn_weight_arrays_from_npz(lsm_npz)
+    elif ste_npz.is_file():
+        weights = load_snn_weight_arrays_from_npz(ste_npz)
+    else:
+        raise ValueError(f"Neither pretrain_lsm_weights.npz nor pretrain_snn_weights.npz under {root}.")
+    return manifest, weights
+
+
+def run_lsm_r_cvx_pipeline(
     *,
     x_train: np.ndarray,
     y_train: np.ndarray,
@@ -198,8 +242,26 @@ def run_fine_tune_pipeline(
     y_test: np.ndarray,
     num_classes: int,
     seed: int,
-    cfg: FineTuneConfig,
+    cfg: LSMFineTuneConfig,
 ) -> Dict[str, object]:
+    """Ditto-copy of :func:`fine_tune.run_fine_tune_pipeline` with LSM in place of STE.
+
+    Runs, for each ``readout_mode`` in ``cfg.readout_modes``:
+
+    1. LSM pretrain: sweep ``ste_lr_grid`` × ``ste_beta_grid`` (interpreted as LSM readout
+       learning rate × L2 shrinkage on the classifier); select by validation loss +
+       shrinkage penalty (mirrors STE's model-selection criterion).
+    2. R-CVX: CVX solve on the LSM's frozen reservoir feature map (mode ``pretraining``,
+       ``pretrained_weights`` = the LSM's branch-major hidden weights). Sweep
+       ``beta_grid`` × ``lr_grid`` × ``bias_grid``, select by ``val_objective``, then
+       re-run the winner with logging enabled.
+    3. LSM post-train: sweep again with the same grids; the LSM reservoir is re-seeded
+       identically so this is a fresh readout fit under the (possibly different) selected
+       hyperparameters. Included for structural parity with the STE post-train stage.
+
+    Returns the same nested structure as :func:`fine_tune.run_fine_tune_pipeline`, with
+    the stage labels renamed to ``lsm_pretrain`` / ``r_cvx_by_source`` / ``lsm_post``.
+    """
     if x_train.ndim != 3 or x_val.ndim != 3 or x_test.ndim != 3:
         raise ValueError("Expected x_train/x_val/x_test to be rank-3 arrays shaped (N, T, d_in).")
     if x_train.shape[1] != cfg.T:
@@ -209,7 +271,7 @@ def run_fine_tune_pipeline(
 
     readout_modes = tuple(dict.fromkeys(cfg.readout_modes))
     if len(readout_modes) == 0:
-        raise ValueError("FineTuneConfig.readout_modes cannot be empty.")
+        raise ValueError("LSMFineTuneConfig.readout_modes cannot be empty.")
     for mode in readout_modes:
         if mode not in ("membrane", "spike"):
             raise ValueError(f"Unsupported readout mode: {mode}. Expected membrane|spike.")
@@ -219,9 +281,7 @@ def run_fine_tune_pipeline(
     for readout_mode in readout_modes:
         _set_global_seed(seed)
         if cfg.init_weights_dir:
-            ckpt_manifest, loaded_w = load_finetune_weight_checkpoint(
-                Path(cfg.init_weights_dir), cfg.init_weights_variant
-            )
+            ckpt_manifest, loaded_w = _load_lsm_pretrain_weight_checkpoint(Path(cfg.init_weights_dir))
             assert_finetune_manifest_matches_runtime(
                 ckpt_manifest,
                 readout_mode=readout_mode,
@@ -234,21 +294,23 @@ def run_fine_tune_pipeline(
             )
             validate_finetune_weight_shapes_against_manifest(ckpt_manifest, loaded_w)
             transferred_weights = [np.asarray(w, dtype=np.float32) for w in loaded_w]
-            if cfg.init_weights_variant == "ste_post":
-                pre_sel = ckpt_manifest["ste_post_selected"]
-            else:
-                pre_sel = ckpt_manifest["pretrain_ste_selected"]
+            pre_sel = ckpt_manifest.get("lsm_selected") or ckpt_manifest.get("pretrain_ste_selected")
+            if pre_sel is None:
+                raise ValueError(
+                    f"Checkpoint manifest under {cfg.init_weights_dir!r} has no 'lsm_selected' "
+                    "or 'pretrain_ste_selected' block."
+                )
             best_pre_lr = float(pre_sel["lr"])
             best_pre_beta = float(pre_sel["beta"])
             _set_global_seed(seed)
-            best_pre = ste_solve(
+            best_pre = lsm_solve(
                 x_train=x_train,
                 y_train=y_train,
                 x_val=x_val,
                 y_val=y_val,
                 x_test=x_test,
                 y_test=y_test,
-                model_cfg=SteModelConfig(
+                model_cfg=LSMModelConfig(
                     d_in=cfg.P_in,
                     num_classes=num_classes,
                     L=cfg.L,
@@ -256,8 +318,10 @@ def run_fine_tune_pipeline(
                     P_last=cfg.P_last,
                     K_parallel=cfg.K_parallel,
                     last_layer_readout=readout_mode,
+                    reservoir_seed=int(cfg.reservoir_seed),
+                    reservoir_variant=str(cfg.reservoir_variant),
                 ),
-                solve_cfg=SteSolveConfig(
+                solve_cfg=LSMSolveConfig(
                     loss_name=cfg.loss_type,
                     optimizer_name=cfg.cvx_optimizer if cfg.cvx_optimizer in ("adam", "sgd") else "adam",
                     lr=float(best_pre_lr),
@@ -270,8 +334,8 @@ def run_fine_tune_pipeline(
                 pretrained_weights=transferred_weights,
             )
             pretrained_model = best_pre.model
-            if not isinstance(pretrained_model, (SNNBaselineSeq, ste_par.SNNBaselineSeq)):
-                raise TypeError("Expected SNNBaselineSeq from ste_solve.")
+            if not isinstance(pretrained_model, LSMBaselineSeq):
+                raise TypeError("Expected LSMBaselineSeq from lsm_solve.")
             pre_acc = {
                 "train_last_step_acc": _last_step_acc(pretrained_model, x_train, y_train),
                 "val_last_step_acc": _last_step_acc(pretrained_model, x_val, y_val),
@@ -279,8 +343,8 @@ def run_fine_tune_pipeline(
             }
             print(
                 (
-                    f"[fine-tune][{readout_mode}] init from checkpoint {cfg.init_weights_dir!r} "
-                    f"variant={cfg.init_weights_variant!r} pretrain_acc "
+                    f"[lsm-r-cvx][{readout_mode}] init from checkpoint {cfg.init_weights_dir!r} "
+                    f"lsm_pretrain_acc "
                     f"train={pre_acc['train_last_step_acc']:.4f} "
                     f"val={pre_acc['val_last_step_acc']:.4f} "
                     f"test={pre_acc['test_last_step_acc']:.4f}"
@@ -292,17 +356,17 @@ def run_fine_tune_pipeline(
             best_pre_val = float("inf")
             best_pre_lr = None
             best_pre_beta = None
-            for ste_lr in cfg.ste_lr_grid:
-                for ste_beta in cfg.ste_beta_grid:
+            for lsm_lr in cfg.ste_lr_grid:
+                for lsm_beta in cfg.ste_beta_grid:
                     _set_global_seed(seed)
-                    out = ste_solve(
+                    out = lsm_solve(
                         x_train=x_train,
                         y_train=y_train,
                         x_val=x_val,
                         y_val=y_val,
                         x_test=x_test,
                         y_test=y_test,
-                        model_cfg=SteModelConfig(
+                        model_cfg=LSMModelConfig(
                             d_in=cfg.P_in,
                             num_classes=num_classes,
                             L=cfg.L,
@@ -310,30 +374,32 @@ def run_fine_tune_pipeline(
                             P_last=cfg.P_last,
                             K_parallel=cfg.K_parallel,
                             last_layer_readout=readout_mode,
+                            reservoir_seed=int(cfg.reservoir_seed),
+                            reservoir_variant=str(cfg.reservoir_variant),
                         ),
-                        solve_cfg=SteSolveConfig(
+                        solve_cfg=LSMSolveConfig(
                             loss_name=cfg.loss_type,
                             optimizer_name=cfg.cvx_optimizer if cfg.cvx_optimizer in ("adam", "sgd") else "adam",
-                            lr=float(ste_lr),
+                            lr=float(lsm_lr),
                             epochs=cfg.ste_pretrain_epochs,
                             batch_size=None if cfg.batch_size == -1 else int(cfg.batch_size),
                             log_every=0,
                             weight_decay=0.0,
-                            beta_path_reg=float(ste_beta),
+                            beta_path_reg=float(lsm_beta),
                         ),
                     )
-                    val_loss = out.best_losses["val_loss"] + float(ste_beta)
+                    val_loss = out.best_losses["val_loss"] + float(lsm_beta)
                     if val_loss < best_pre_val:
                         best_pre_val = val_loss
                         best_pre = out
-                        best_pre_lr = float(ste_lr)
-                        best_pre_beta = float(ste_beta)
+                        best_pre_lr = float(lsm_lr)
+                        best_pre_beta = float(lsm_beta)
             if best_pre is None or best_pre_lr is None or best_pre_beta is None:
-                raise RuntimeError("Fine-tune pretraining failed to produce any candidate.")
+                raise RuntimeError("LSM pretraining failed to produce any candidate.")
             pretrained_model = best_pre.model
-            if not isinstance(pretrained_model, (SNNBaselineSeq, ste_par.SNNBaselineSeq)):
-                raise TypeError("Expected SNNBaselineSeq from ste_solve.")
-            transferred_weights = _extract_weight_list(pretrained_model)
+            if not isinstance(pretrained_model, LSMBaselineSeq):
+                raise TypeError("Expected LSMBaselineSeq from lsm_solve.")
+            transferred_weights = _extract_weight_list_lsm(pretrained_model)
             pre_acc = {
                 "train_last_step_acc": _last_step_acc(pretrained_model, x_train, y_train),
                 "val_last_step_acc": _last_step_acc(pretrained_model, x_val, y_val),
@@ -341,7 +407,7 @@ def run_fine_tune_pipeline(
             }
             print(
                 (
-                    f"[fine-tune][{readout_mode}] pretrain_acc "
+                    f"[lsm-r-cvx][{readout_mode}] lsm_pretrain_acc "
                     f"train={pre_acc['train_last_step_acc']:.4f} "
                     f"val={pre_acc['val_last_step_acc']:.4f} "
                     f"test={pre_acc['test_last_step_acc']:.4f}"
@@ -350,11 +416,8 @@ def run_fine_tune_pipeline(
             )
 
         if cfg.weights_save_dir:
-            pre_m = best_pre.model
-            if not isinstance(pre_m, (SNNBaselineSeq, ste_par.SNNBaselineSeq)):
-                raise TypeError("Expected SNNBaselineSeq for weight export.")
-            tw_save = _extract_weight_list(pre_m)
-            weight_paths_root[readout_mode] = _save_finetune_pretrain_artifacts(
+            tw_save = _extract_weight_list_lsm(best_pre.model)
+            weight_paths_root[readout_mode] = _save_lsm_pretrain_artifacts(
                 Path(cfg.weights_save_dir),
                 readout_mode=readout_mode,
                 seed=seed,
@@ -364,21 +427,22 @@ def run_fine_tune_pipeline(
                 pretrain_selected={"lr": float(best_pre_lr), "beta": float(best_pre_beta)},
             )
             print(
-                f"[fine-tune][{readout_mode}] saved pretrain weights to {weight_paths_root[readout_mode]['dir']}",
+                f"[lsm-r-cvx][{readout_mode}] saved lsm pretrain weights to "
+                f"{weight_paths_root[readout_mode]['dir']}",
                 flush=True,
             )
 
         cvx_sources = tuple(dict.fromkeys(cfg.cvx_sources))
         if len(cvx_sources) == 0:
-            raise ValueError("FineTuneConfig.cvx_sources cannot be empty.")
+            raise ValueError("LSMFineTuneConfig.cvx_sources cannot be empty.")
         if any(source != "pretraining" for source in cvx_sources):
             raise ValueError(
-                "Fine-tune mode requires CVX initialization from pretraining weights only. "
+                "R-CVX mode requires CVX initialization from LSM-pretraining weights only. "
                 "Set cvx_sources=('pretraining',)."
             )
 
-        cvx_results: Dict[str, object] = {}
-        cvx_selected_params: Dict[str, Dict[str, float | None]] = {}
+        r_cvx_results: Dict[str, object] = {}
+        r_cvx_selected_params: Dict[str, Dict[str, float | None]] = {}
         cvx_lr_grid_eff = cvx_lr_sweep_values(cfg.cvx_method, cfg.lr_grid)
         for source in cvx_sources:
             init_cfg = InitializationConfig(
@@ -439,13 +503,12 @@ def run_fine_tune_pipeline(
                             best_cvx_val = float(val_obj)
                             best_cvx = out
                             best_beta = float(cvx_beta)
-                            best_lr = None if cfg.cvx_method in ("cvx", "cvx_lite") else float(cvx_lr)
+                            best_lr = None if cfg.cvx_method == "cvx" else float(cvx_lr)
                             best_bias = float(cvx_bias)
             if best_cvx is None or best_beta is None or best_bias is None:
-                raise RuntimeError(f"CVX sweep failed for source={source}.")
+                raise RuntimeError(f"R-CVX sweep failed for source={source}.")
             if cfg.cvx_method == "sgd" and best_lr is None:
-                raise RuntimeError(f"CVX-SGD sweep failed to record lr for source={source}.")
-            # Rerun selected best CVX config with logging enabled so the selected curve is captured.
+                raise RuntimeError(f"R-CVX(SGD) sweep failed to record lr for source={source}.")
             init_cfg_best = InitializationConfig(
                 mode=init_cfg.mode,
                 variant=init_cfg.variant,
@@ -480,24 +543,24 @@ def run_fine_tune_pipeline(
                     log_every=10,
                 ),
             )
-            cvx_results[source] = best_cvx
-            cvx_selected_params[source] = {"beta": best_beta, "lr": best_lr, "bias": best_bias}
+            r_cvx_results[source] = best_cvx
+            r_cvx_selected_params[source] = {"beta": best_beta, "lr": best_lr, "bias": best_bias}
 
         best_post = None
         best_post_val = float("inf")
         best_post_lr = None
         best_post_beta = None
-        for ste_lr in cfg.ste_lr_grid:
-            for ste_beta in cfg.ste_beta_grid:
+        for lsm_lr in cfg.ste_lr_grid:
+            for lsm_beta in cfg.ste_beta_grid:
                 _set_global_seed(seed)
-                out = ste_solve(
+                out = lsm_solve(
                     x_train=x_train,
                     y_train=y_train,
                     x_val=x_val,
                     y_val=y_val,
                     x_test=x_test,
                     y_test=y_test,
-                    model_cfg=SteModelConfig(
+                    model_cfg=LSMModelConfig(
                         d_in=cfg.P_in,
                         num_classes=num_classes,
                         L=cfg.L,
@@ -505,37 +568,38 @@ def run_fine_tune_pipeline(
                         P_last=cfg.P_last,
                         K_parallel=cfg.K_parallel,
                         last_layer_readout=readout_mode,
+                        reservoir_seed=int(cfg.reservoir_seed),
+                        reservoir_variant=str(cfg.reservoir_variant),
                     ),
-                    solve_cfg=SteSolveConfig(
+                    solve_cfg=LSMSolveConfig(
                         loss_name=cfg.loss_type,
                         optimizer_name=cfg.cvx_optimizer if cfg.cvx_optimizer in ("adam", "sgd") else "adam",
-                        lr=float(ste_lr),
+                        lr=float(lsm_lr),
                         epochs=cfg.ste_post_epochs,
                         batch_size=None if cfg.batch_size == -1 else int(cfg.batch_size),
                         log_every=0,
                         weight_decay=0.0,
-                        beta_path_reg=float(ste_beta),
+                        beta_path_reg=float(lsm_beta),
                     ),
                     pretrained_weights=transferred_weights,
                 )
-                val_loss = out.best_losses["val_loss"] + float(ste_beta)
+                val_loss = out.best_losses["val_loss"] + float(lsm_beta)
                 if val_loss < best_post_val:
                     best_post_val = val_loss
                     best_post = out
-                    best_post_lr = float(ste_lr)
-                    best_post_beta = float(ste_beta)
+                    best_post_lr = float(lsm_lr)
+                    best_post_beta = float(lsm_beta)
         if best_post is None or best_post_lr is None or best_post_beta is None:
-            raise RuntimeError("Fine-tune STE post-training sweep failed.")
-        # Rerun selected best STE post config with logging enabled so selected curve is captured.
+            raise RuntimeError("LSM post-training sweep failed.")
         _set_global_seed(seed)
-        best_post = ste_solve(
+        best_post = lsm_solve(
             x_train=x_train,
             y_train=y_train,
             x_val=x_val,
             y_val=y_val,
             x_test=x_test,
             y_test=y_test,
-            model_cfg=SteModelConfig(
+            model_cfg=LSMModelConfig(
                 d_in=cfg.P_in,
                 num_classes=num_classes,
                 L=cfg.L,
@@ -543,8 +607,10 @@ def run_fine_tune_pipeline(
                 P_last=cfg.P_last,
                 K_parallel=cfg.K_parallel,
                 last_layer_readout=readout_mode,
+                reservoir_seed=int(cfg.reservoir_seed),
+                reservoir_variant=str(cfg.reservoir_variant),
             ),
-            solve_cfg=SteSolveConfig(
+            solve_cfg=LSMSolveConfig(
                 loss_name=cfg.loss_type,
                 optimizer_name=cfg.cvx_optimizer if cfg.cvx_optimizer in ("adam", "sgd") else "adam",
                 lr=float(best_post_lr),
@@ -557,34 +623,39 @@ def run_fine_tune_pipeline(
             pretrained_weights=transferred_weights,
         )
         by_readout[readout_mode] = {
-            "ste_pretrain": best_pre,
-            "ste_pretrain_selected_params": {"lr": best_pre_lr, "beta": best_pre_beta},
+            "lsm_pretrain": best_pre,
+            "lsm_pretrain_selected_params": {"lr": best_pre_lr, "beta": best_pre_beta},
             "pretrain_accuracy": pre_acc,
-            "cvx_by_source": cvx_results,
-            "cvx_selected_params": cvx_selected_params,
-            "ste_post": best_post,
-            "ste_post_selected_params": {"lr": best_post_lr, "beta": best_post_beta},
-            "ste_post_loss_curve": [float(v) for v in best_post.loss_history],
-            "cvx_loss_curves": {name: [float(v) for v in cvx_out.loss_history] for name, cvx_out in cvx_results.items()},
+            "r_cvx_by_source": r_cvx_results,
+            "r_cvx_selected_params": r_cvx_selected_params,
+            "lsm_post": best_post,
+            "lsm_post_selected_params": {"lr": best_post_lr, "beta": best_post_beta},
+            "lsm_post_loss_curve": [float(v) for v in best_post.loss_history],
+            "r_cvx_loss_curves": {
+                name: [float(v) for v in r_cvx_out.loss_history]
+                for name, r_cvx_out in r_cvx_results.items()
+            },
         }
 
     selected_mode = cfg.last_layer_readout if cfg.last_layer_readout in by_readout else readout_modes[0]
     selected = by_readout[selected_mode]
     json_report: Dict[str, object] = {
+        "backbone": "lsm",
         "selected_readout": selected_mode,
         "by_readout": {
             mode: {
                 "pretrain_accuracy": readout_data["pretrain_accuracy"],
-                "ste_pretrain_selected_params": dict(readout_data["ste_pretrain_selected_params"]),
-                "ste_post_selected_params": readout_data["ste_post_selected_params"],
-                "ste_post_best_losses": dict(readout_data["ste_post"].best_losses),
-                "ste_post_loss_curve": list(readout_data["ste_post_loss_curve"]),
-                "cvx_selected_params": dict(readout_data["cvx_selected_params"]),
-                "cvx_final_losses": {
-                    src: dict(cvx_out.final_losses) for src, cvx_out in readout_data["cvx_by_source"].items()
+                "lsm_pretrain_selected_params": dict(readout_data["lsm_pretrain_selected_params"]),
+                "lsm_post_selected_params": readout_data["lsm_post_selected_params"],
+                "lsm_post_best_losses": dict(readout_data["lsm_post"].best_losses),
+                "lsm_post_loss_curve": list(readout_data["lsm_post_loss_curve"]),
+                "r_cvx_selected_params": dict(readout_data["r_cvx_selected_params"]),
+                "r_cvx_final_losses": {
+                    src: dict(r_cvx_out.final_losses)
+                    for src, r_cvx_out in readout_data["r_cvx_by_source"].items()
                 },
-                "cvx_loss_curves": {
-                    src: list(curve) for src, curve in readout_data["cvx_loss_curves"].items()
+                "r_cvx_loss_curves": {
+                    src: list(curve) for src, curve in readout_data["r_cvx_loss_curves"].items()
                 },
             }
             for mode, readout_data in by_readout.items()
@@ -594,13 +665,13 @@ def run_fine_tune_pipeline(
     out_main: Dict[str, Any] = {
         "seed": seed,
         "cfg": cfg,
+        "backbone": "lsm",
         "selected_readout": selected_mode,
         "by_readout": by_readout,
         "json_report": json_report,
-        # Backward-compatible aliases (selected readout)
-        "ste_pretrain": selected["ste_pretrain"],
-        "cvx_by_source": selected["cvx_by_source"],
-        "ste_post": selected["ste_post"],
+        "lsm_pretrain": selected["lsm_pretrain"],
+        "r_cvx_by_source": selected["r_cvx_by_source"],
+        "lsm_post": selected["lsm_post"],
     }
     if weight_paths_root:
         out_main["weight_artifact_paths"] = weight_paths_root

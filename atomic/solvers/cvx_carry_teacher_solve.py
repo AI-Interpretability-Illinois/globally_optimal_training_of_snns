@@ -181,6 +181,8 @@ def _ovr_hinge_solve(
     rho: float,
     num_classes: int,
     sample_weight: np.ndarray | None = None,
+    *,
+    compute_dual: bool = True,
 ) -> Tuple[np.ndarray, float, float, float]:
     w = np.zeros((d_train.shape[1], num_classes), dtype=np.float64)
     primal_sum = 0.0
@@ -193,6 +195,7 @@ def _ovr_hinge_solve(
             rho=rho,
             loss_name="hinge",
             sample_weight=sample_weight,
+            compute_dual=compute_dual,
         )
         w[:, c] = sol.w
         primal_sum += sol.primal_obj
