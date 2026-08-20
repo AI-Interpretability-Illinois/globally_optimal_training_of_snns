@@ -97,6 +97,16 @@ class CarryAugmentedSNN(nn.Module):
         self.sum_head = nn.Linear(int(P_last), int(sum_out_dim), bias=False)
         self.carry_head = nn.Linear(int(P_last), 1, bias=False)
 
+    def hidden_weight_list(self) -> List[np.ndarray]:
+        """LIF-stack weights in CVX pretraining order (branch-major, layer-major)."""
+        weights: List[np.ndarray] = []
+        for br in self.branches:
+            for fc in br.fcs:
+                weights.append(fc.weight.detach().cpu().numpy().copy())
+        if len(weights) == 0:
+            raise RuntimeError("CarryAugmentedSNN has no hidden Linear layers.")
+        return weights
+
     def forward(self, x_seq: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
         _, steps, _ = x_seq.shape
         branch_mems = [
@@ -253,6 +263,15 @@ def _eval_ste(
             beta=float(beta_path_reg),
             tf_objective=tf_objective,
         )
+        data_loss = LossFunction.carry_teacher_forcing_total(
+            loss_sum,
+            loss_carry,
+            torch.zeros((), device=device, dtype=loss_sum.dtype),
+            lambda_sum=lambda_sum,
+            lambda_carry=lambda_carry,
+            beta=0.0,
+            tf_objective=tf_objective,
+        )
         if model.base == 2:
             sum_pred = _binary_preds_from_logits(sum_logits).cpu().numpy().astype(np.int64)
         else:
@@ -265,6 +284,7 @@ def _eval_ste(
         "loss_sum_mean_t": float(loss_sum_u.item()),
         "loss_carry_mean_t": float(loss_carry_u.item()),
         "loss_total": float(total.item()),
+        "loss_data": float(data_loss.item()),
         "ste_time_loss": str(ste_time_loss),
     })
     return metrics
@@ -331,10 +351,15 @@ def ste_sweep_and_train(
                 opt = torch.optim.SGD(params, lr=float(lr))
             else:
                 opt = torch.optim.Adam(params, lr=float(lr))
-            sched = ReduceLROnPlateau(opt, mode="min", factor=0.5, patience=20)
+            sched = ReduceLROnPlateau(opt, mode="min", factor=0.5, patience=10)
             n = ds.X_train.shape[0]
-            bs = n if batch_size == -1 or batch_size is None else int(batch_size)
+            if batch_size is None or int(batch_size) <= 0 or int(batch_size) >= n:
+                bs = n
+            else:
+                bs = int(batch_size)
             rng = np.random.default_rng(seed)
+            run_best_score = float("inf")
+            run_best_state: Optional[Dict[str, Any]] = None
             for _epoch in range(int(ste_epochs)):
                 model.train()
                 perm = np.arange(n) if bs >= n else rng.permutation(n)
@@ -380,25 +405,22 @@ def ste_sweep_and_train(
                     tf_objective=tf_objective,
                     ste_time_loss=str(ste_time_loss),
                 )
-                sched.step(va["loss_total"])
-            val_metrics = _eval_ste(
-                model,
-                ds.X_val,
-                ds.y_sum_val,
-                ds.y_carry_val,
-                lambda_sum=lambda_sum,
-                lambda_carry=lambda_carry,
-                beta_path_reg=float(beta),
-                sum_loss_name=sum_n,
-                carry_loss_name=carry_n,
-                tf_objective=tf_objective,
-                ste_time_loss=str(ste_time_loss),
+                data_score = float(va["loss_data"])
+                sched.step(data_score)
+                if data_score < run_best_score:
+                    run_best_score = data_score
+                    run_best_state = {k: v.detach().cpu().clone() for k, v in model.state_dict().items()}
+            if run_best_state is None:
+                raise RuntimeError(f"STE run produced no checkpoint lr={lr} beta={beta}.")
+            print(
+                f"[ste-ar] lr={float(lr):.4g} beta={float(beta):.4g} bs={bs} "
+                f"best_val_data={run_best_score:.6f} last_val_data={float(va['loss_data']):.6f}",
+                flush=True,
             )
-            score = float(val_metrics["loss_total"])
-            if score < best_score:
-                best_score = score
+            if run_best_score < best_score:
+                best_score = run_best_score
                 best_params = {"lr": float(lr), "beta": float(beta)}
-                best_state = {k: v.detach().cpu().clone() for k, v in model.state_dict().items()}
+                best_state = run_best_state
     if best_params is None or best_state is None:
         raise RuntimeError("No STE candidate found.")
 

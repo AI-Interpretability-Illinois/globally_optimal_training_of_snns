@@ -42,7 +42,7 @@ import numpy as np
 import torch
 
 if __package__ in (None, ""):
-    from cvx_side_ckpt import ckpt_path, load_weight_list, save_weight_list
+    from cvx_side_ckpt import ckpt_path, load_weight_list, require_ckpt_task, save_weight_list
     from data_loaders.arithmetic_data_loader import SUPPORTED_BASES, load_arithmetic_dataset
     from data_loaders.dfa_data_loader import make_dfa_dataset
     from data_loaders.image_data_loader import ImageSequenceDataset, load_mnist_seq_dataset
@@ -56,7 +56,7 @@ if __package__ in (None, ""):
         tune_reservoir_criticality,
     )
 else:
-    from .cvx_side_ckpt import ckpt_path, load_weight_list, save_weight_list
+    from .cvx_side_ckpt import ckpt_path, load_weight_list, require_ckpt_task, save_weight_list
     from .data_loaders.arithmetic_data_loader import SUPPORTED_BASES, load_arithmetic_dataset
     from .data_loaders.dfa_data_loader import make_dfa_dataset
     from .data_loaders.image_data_loader import ImageSequenceDataset, load_mnist_seq_dataset
@@ -445,7 +445,7 @@ def _run_R_and_R_CVX_single(
     d_in = int(data["d_in"])
     num_classes = int(data["num_classes"])
     device = None
-    lsm_ckpt = ckpt_path(ckpt_dir, seed=seed, T=T, L=L, K=K_parallel, tag="lsm")
+    lsm_ckpt = ckpt_path(ckpt_dir, seed=seed, T=T, L=L, K=K_parallel, tag="lsm", task=preset.name)
 
     if run_ridge:
         base_cfg = LSMModelConfig(
@@ -535,6 +535,7 @@ def _run_R_and_R_CVX_single(
         )
     else:
         weights, meta = load_weight_list(lsm_ckpt)
+        require_ckpt_task(meta, expected_task=preset.name, path=lsm_ckpt)
         tuned_cfg = LSMModelConfig(
             d_in=int(meta["d_in"]),
             num_classes=int(meta["num_classes"]),

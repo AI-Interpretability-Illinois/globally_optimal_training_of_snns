@@ -614,3 +614,11 @@ def extract_lsm_weight_list(model: LSMBaselineSeq) -> List[np.ndarray]:
             weights.append(fc.weight.detach().cpu().numpy().copy())
     weights.append(model.classifier.weight.detach().cpu().numpy().copy())
     return weights
+
+
+def extract_lsm_hidden_weight_list(model: LSMBaselineSeq) -> List[np.ndarray]:
+    """Hidden LIF-stack only (no classifier). Same order as CarryAugmentedSNN.hidden_weight_list."""
+    hidden = extract_lsm_weight_list(model)[:-1]
+    if len(hidden) == 0:
+        raise RuntimeError("LSM has no hidden Linear layers.")
+    return hidden

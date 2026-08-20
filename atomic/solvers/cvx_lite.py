@@ -72,30 +72,55 @@ def _power_iteration_dtd(D: np.ndarray, *, n_iter: int = 20, seed: int = 0) -> f
     return smax * smax
 
 
-def _logistic_loss_and_grad(D: np.ndarray, y_pm1: np.ndarray, w: np.ndarray) -> Tuple[float, np.ndarray]:
-    """Mean logistic ``(1/n) Σ log(1 + exp(-y ⊙ Dw))`` and its gradient."""
+def _row_weights(n: int, sample_weight: Optional[np.ndarray]) -> np.ndarray:
+    """Nonnegative weights ``a`` with ``sum(a)=1``. Unweighted ⇒ ``a_i = 1/n``."""
+    if sample_weight is None:
+        return np.full(int(n), 1.0 / float(n), dtype=np.float64)
+    sw = np.asarray(sample_weight, dtype=np.float64).reshape(-1)
+    if sw.shape[0] != int(n):
+        raise ValueError(f"sample_weight length {sw.shape[0]} != n={n}.")
+    if np.any(sw <= 0.0) or (not np.isfinite(sw).all()):
+        raise ValueError("sample_weight must be finite and strictly positive on every row.")
+    return sw / float(sw.sum())
+
+
+def _logistic_loss_and_grad(
+    D: np.ndarray,
+    y_pm1: np.ndarray,
+    w: np.ndarray,
+    sample_weight: Optional[np.ndarray] = None,
+) -> Tuple[float, np.ndarray]:
+    """Weighted logistic ``Σ a_i log(1 + exp(-y ⊙ Dw))`` and its gradient."""
     n = D.shape[0]
+    a = _row_weights(n, sample_weight)
     scores = D @ w
     margins = y_pm1 * scores
     # log1p(exp(-m)) = max(-m, 0) + log1p(exp(-|m|))  (stable)
-    loss = float(np.mean(np.maximum(-margins, 0.0) + np.log1p(np.exp(-np.abs(margins)))))
+    per = np.maximum(-margins, 0.0) + np.log1p(np.exp(-np.abs(margins)))
+    loss = float(np.dot(a, per))
     # d/ds log(1+exp(-y s)) = -y * sigmoid(-y s) = -y / (1 + exp(y s))
     sig_neg = 1.0 / (1.0 + np.exp(np.clip(margins, -60.0, 60.0)))
-    resid = -y_pm1 * sig_neg
-    grad = (D.T @ resid) / float(n)
+    resid = a * (-y_pm1 * sig_neg)
+    grad = D.T @ resid
     return loss, grad
 
 
-def _hinge_loss_and_subgrad(D: np.ndarray, y_pm1: np.ndarray, w: np.ndarray) -> Tuple[float, np.ndarray]:
-    """Mean hinge ``(1/n) Σ max(0, 1 - y ⊙ Dw)`` and a subgradient."""
+def _hinge_loss_and_subgrad(
+    D: np.ndarray,
+    y_pm1: np.ndarray,
+    w: np.ndarray,
+    sample_weight: Optional[np.ndarray] = None,
+) -> Tuple[float, np.ndarray]:
+    """Weighted hinge ``Σ a_i max(0, 1 - y ⊙ Dw)`` and a subgradient."""
     n = D.shape[0]
+    a = _row_weights(n, sample_weight)
     scores = D @ w
     margins = y_pm1 * scores
     viol = 1.0 - margins
-    loss = float(np.mean(np.maximum(viol, 0.0)))
+    loss = float(np.dot(a, np.maximum(viol, 0.0)))
     active = (viol > 0.0).astype(np.float64)
-    resid = -y_pm1 * active
-    grad = (D.T @ resid) / float(n)
+    resid = a * (-y_pm1 * active)
+    grad = D.T @ resid
     return loss, grad
 
 
@@ -109,20 +134,24 @@ def _squared_loss_and_grad(D: np.ndarray, y: np.ndarray, w: np.ndarray) -> Tuple
 
 
 def _softmax_ce_loss_and_grad(
-    D: np.ndarray, y: np.ndarray, W: np.ndarray
+    D: np.ndarray,
+    y: np.ndarray,
+    W: np.ndarray,
+    sample_weight: Optional[np.ndarray] = None,
 ) -> Tuple[float, np.ndarray]:
-    """Mean softmax CE ``(1/n) Σ (lse(D_i W) - (D_i W)_{y_i})`` and d/dW."""
+    """Weighted softmax CE ``Σ a_i (lse(D_i W) - (D_i W)_{y_i})`` and d/dW."""
     n = D.shape[0]
+    a = _row_weights(n, sample_weight)
     scores = D @ W
     shifted = scores - scores.max(axis=1, keepdims=True)
     exp_s = np.exp(shifted)
     Z = exp_s.sum(axis=1, keepdims=True)
     log_z = np.log(Z) + scores.max(axis=1, keepdims=True)
     row_ce = log_z.reshape(-1) - scores[np.arange(n), y]
-    loss = float(np.mean(row_ce))
+    loss = float(np.dot(a, row_ce))
     P = exp_s / Z
     P[np.arange(n), y] -= 1.0
-    grad = (D.T @ P) / float(n)
+    grad = D.T @ (P * a[:, None])
     return loss, grad
 
 
@@ -197,6 +226,7 @@ def _fista_binary(
     w0: Optional[np.ndarray] = None,
     lipschitz_seed: int = 0,
     history: Optional[List[float]] = None,
+    sample_weight: Optional[np.ndarray] = None,
 ) -> Tuple[np.ndarray, float, int]:
     """Proximal-gradient + L1 prox for binary hinge / logistic / squared (primal only).
 
@@ -210,17 +240,21 @@ def _fista_binary(
         raise ValueError(f"y length {y_pm1.shape[0]} != n={n}.")
     if rho < 0.0:
         raise ValueError(f"rho must be >= 0, got {rho}.")
+    a = _row_weights(n, sample_weight)
+    a_max = float(a.max())
     if loss_name == "squared":
+        if sample_weight is not None:
+            raise ValueError("cvx_lite squared does not accept sample_weight.")
         loss_grad = lambda w: _squared_loss_and_grad(D, y_pm1, w)
         lip_factor = 2.0 / float(n)
         nesterov = True
     elif loss_name == "ce":
-        loss_grad = lambda w: _logistic_loss_and_grad(D, y_pm1, w)
-        lip_factor = 0.25 / float(n)
+        loss_grad = lambda w: _logistic_loss_and_grad(D, y_pm1, w, sample_weight=sample_weight)
+        lip_factor = 0.25 * a_max
         nesterov = True
     elif loss_name in ("hinge", "hinge_ovr"):
-        loss_grad = lambda w: _hinge_loss_and_subgrad(D, y_pm1, w)
-        lip_factor = 1.0 / float(n)
+        loss_grad = lambda w: _hinge_loss_and_subgrad(D, y_pm1, w, sample_weight=sample_weight)
+        lip_factor = a_max
         nesterov = False
     else:
         raise ValueError(f"Unsupported binary lite loss_name={loss_name}.")
@@ -294,8 +328,9 @@ def fista_softmax_ce_l1(
     W0: Optional[np.ndarray] = None,
     lipschitz_seed: int = 0,
     history: Optional[List[float]] = None,
+    sample_weight: Optional[np.ndarray] = None,
 ) -> Tuple[np.ndarray, float, int]:
-    """FISTA + elementwise L1 prox for mean softmax-CE + ρ||W||_1 (primal only)."""
+    """FISTA + elementwise L1 prox for softmax-CE + ρ||W||_1 (primal only)."""
     D = np.asarray(D, dtype=np.float64)
     y = np.asarray(y, dtype=np.int64).reshape(-1)
     n, p = D.shape
@@ -305,8 +340,9 @@ def fista_softmax_ce_l1(
         raise ValueError(f"Invalid labels or num_classes={num_classes}.")
     if rho < 0.0:
         raise ValueError(f"rho must be >= 0, got {rho}.")
+    a = _row_weights(n, sample_weight)
     spec = _power_iteration_dtd(D, seed=int(lipschitz_seed))
-    L = (1.0 / float(n)) * spec
+    L = float(a.max()) * spec
     step = 1.0 / L if L > 0.0 else 1.0
     W = (
         np.zeros((p, num_classes), dtype=np.float64)
@@ -320,7 +356,7 @@ def fista_softmax_ce_l1(
     prev_obj = float("inf")
     n_iter = 0
     for n_iter in range(1, int(max_iter) + 1):
-        data_loss, grad = _softmax_ce_loss_and_grad(D, y, Z)
+        data_loss, grad = _softmax_ce_loss_and_grad(D, y, Z, sample_weight=sample_weight)
         if (not np.isfinite(data_loss)) or (not np.isfinite(grad).all()):
             raise FloatingPointError(
                 f"Non-finite softmax loss/grad at iter={n_iter}: loss={data_loss}."
@@ -331,7 +367,7 @@ def fista_softmax_ce_l1(
         obj_next = prev_obj
         for _bt in range(30):
             W_next = _soft_threshold(Z - step_try * grad, step_try * float(rho))
-            data_next, _ = _softmax_ce_loss_and_grad(D, y, W_next)
+            data_next, _ = _softmax_ce_loss_and_grad(D, y, W_next, sample_weight=sample_weight)
             obj_next = float(data_next + float(rho) * float(np.abs(W_next).sum()))
             if (not np.isfinite(obj_next)) or (not np.isfinite(W_next).all()):
                 raise FloatingPointError(
@@ -354,7 +390,7 @@ def fista_softmax_ce_l1(
         if rel <= float(tol):
             return W, obj_next, n_iter
         prev_obj = obj_next
-    data_loss, _ = _softmax_ce_loss_and_grad(D, y, W)
+    data_loss, _ = _softmax_ce_loss_and_grad(D, y, W, sample_weight=sample_weight)
     obj = float(data_loss + float(rho) * float(np.abs(W).sum()))
     return W, obj, n_iter
 
@@ -368,12 +404,22 @@ def solve_binary_l1_primal_lite(
     max_iter: int = 5000,
     tol: float = 1e-6,
     history: Optional[List[float]] = None,
+    sample_weight: Optional[np.ndarray] = None,
 ) -> Tuple[np.ndarray, float, int]:
     """Primal-only binary L1 readout. Returns ``(w, primal_obj, n_iter)``."""
     if loss_name == "squared":
+        if sample_weight is not None:
+            raise ValueError("cvx_lite squared does not accept sample_weight.")
         return lasso_cd_squared(D, y_pm1, rho, max_iter=max_iter, tol=tol, history=history)
     return _fista_binary(
-        D, y_pm1, rho, loss_name=loss_name, max_iter=max_iter, tol=tol, history=history
+        D,
+        y_pm1,
+        rho,
+        loss_name=loss_name,
+        max_iter=max_iter,
+        tol=tol,
+        history=history,
+        sample_weight=sample_weight,
     )
 
 
@@ -387,6 +433,7 @@ def solve_multiclass_primal_lite(
     max_iter: int = 5000,
     tol: float = 1e-6,
     history: Optional[List[float]] = None,
+    sample_weight: Optional[np.ndarray] = None,
 ) -> Tuple[np.ndarray, float, int]:
     """Primal-only multiclass L1 readout. Returns ``(W, primal_obj, n_iter)``.
 
@@ -400,7 +447,14 @@ def solve_multiclass_primal_lite(
         if num_classes < 2:
             raise ValueError(f"Softmax CE requires num_classes>=2, got {num_classes}.")
         return fista_softmax_ce_l1(
-            D, y, rho, num_classes, max_iter=max_iter, tol=tol, history=history
+            D,
+            y,
+            rho,
+            num_classes,
+            max_iter=max_iter,
+            tol=tol,
+            history=history,
+            sample_weight=sample_weight,
         )
     W = np.zeros((D.shape[1], int(num_classes)), dtype=np.float64)
     primal_sum = 0.0
@@ -409,7 +463,14 @@ def solve_multiclass_primal_lite(
     for c in range(int(num_classes)):
         y_bin = np.where(y == int(c), 1.0, -1.0).astype(np.float64)
         w_c, p_c, n_it = solve_binary_l1_primal_lite(
-            D, y_bin, rho, loss_name, max_iter=max_iter, tol=tol, history=history
+            D,
+            y_bin,
+            rho,
+            loss_name,
+            max_iter=max_iter,
+            tol=tol,
+            history=history,
+            sample_weight=sample_weight,
         )
         W[:, c] = w_c
         primal_sum += float(p_c)

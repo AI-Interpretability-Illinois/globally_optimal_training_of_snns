@@ -1,28 +1,51 @@
 """Save / load frozen-weight checkpoints so CVX-family jobs can run on another machine.
 
 Layout (one cell):
-    <ckpt_dir>/seed{S}_T{T}_L{L}_K{K}_{tag}.npz          # w0, w1, ...
-    <ckpt_dir>/seed{S}_T{T}_L{L}_K{K}_{tag}.meta.json    # architecture + knobs
+    <ckpt_dir>/seed{S}_T{T}_L{L}_K{K}_{task}_{tag}.npz       # w0, w1, ...
+    <ckpt_dir>/seed{S}_T{T}_L{L}_K{K}_{task}_{tag}.meta.json # architecture + knobs
 
-``tag`` is ``sg`` for the STE/SG snapshot used by SG-CVX, or ``lsm`` for the
-criticality-tuned reservoir used by R-CVX.
+``task`` is the TaskPreset name (xor, mnist, add_b2, …) so cells that share
+(T, L, K) across tasks do not overwrite each other. ``tag`` is ``sg`` for the
+STE/SG snapshot used by SG-CVX, or ``lsm`` for the criticality-tuned reservoir
+used by R-CVX.
 """
 
 from __future__ import annotations
 
 import json
+import re
 from pathlib import Path
 from typing import Any, Dict, List, Tuple
 
 import numpy as np
 
-
-def cell_stem(*, seed: int, T: int, L: int, K: int) -> str:
-    return f"seed{int(seed)}_T{int(T)}_L{int(L)}_K{int(K)}"
+_TASK_TOKEN = re.compile(r"^[A-Za-z0-9_]+$")
 
 
-def ckpt_path(ckpt_dir: Path, *, seed: int, T: int, L: int, K: int, tag: str) -> Path:
-    return Path(ckpt_dir) / f"{cell_stem(seed=seed, T=T, L=L, K=K)}_{tag}.npz"
+def _validate_task(task: str) -> str:
+    name = str(task).strip()
+    if not name:
+        raise ValueError("Checkpoint task name is empty.")
+    if _TASK_TOKEN.fullmatch(name) is None:
+        raise ValueError(f"Checkpoint task name must be [A-Za-z0-9_]+, got {task!r}.")
+    return name
+
+
+def cell_stem(*, seed: int, T: int, L: int, K: int, task: str) -> str:
+    return f"seed{int(seed)}_T{int(T)}_L{int(L)}_K{int(K)}_{_validate_task(task)}"
+
+
+def ckpt_path(ckpt_dir: Path, *, seed: int, T: int, L: int, K: int, tag: str, task: str) -> Path:
+    return Path(ckpt_dir) / f"{cell_stem(seed=seed, T=T, L=L, K=K, task=task)}_{tag}.npz"
+
+
+def require_ckpt_task(meta: Dict[str, Any], *, expected_task: str, path: Path) -> None:
+    got = meta["task"]
+    exp = _validate_task(expected_task)
+    if str(got) != exp:
+        raise ValueError(
+            f"Checkpoint task mismatch at {path}: meta task={got!r} expected {exp!r}."
+        )
 
 
 def save_weight_list(

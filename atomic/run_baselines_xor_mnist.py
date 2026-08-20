@@ -42,7 +42,7 @@ import numpy as np
 import torch
 
 if __package__ in (None, ""):
-    from cvx_side_ckpt import ckpt_path, load_weight_list, save_weight_list
+    from cvx_side_ckpt import ckpt_path, load_weight_list, require_ckpt_task, save_weight_list
     from fine_tune import _extract_weight_list, _last_step_acc
     from run_lsm_xor_mnist import TASK_NAMES, TASK_PRESETS, TaskPreset, _load_task_data
     from solvers.cvx_solve import InitializationConfig, SolveConfig, cvx_solve
@@ -50,7 +50,7 @@ if __package__ in (None, ""):
     from solvers.cvx_parallel_Solve import _build_feature_map as _build_feature_map_kp
     from solvers.ste_solve import SteModelConfig, SteSolveConfig, ste_solve
 else:
-    from .cvx_side_ckpt import ckpt_path, load_weight_list, save_weight_list
+    from .cvx_side_ckpt import ckpt_path, load_weight_list, require_ckpt_task, save_weight_list
     from .fine_tune import _extract_weight_list, _last_step_acc
     from .run_lsm_xor_mnist import TASK_NAMES, TASK_PRESETS, TaskPreset, _load_task_data
     from .solvers.cvx_solve import InitializationConfig, SolveConfig, cvx_solve
@@ -160,8 +160,8 @@ def _cvx_split_accs_from_config(
 
 @dataclass
 class BaselineGrids:
-    sg_lr_grid: Tuple[float, ...] = (1e-3, 5e-3, 1e-2, 5e-2)
-    sg_epochs: int = 100
+    sg_lr_grid: Tuple[float, ...] = (1e-3, 5e-3, 1e-2, 5e-2, 1e-1)
+    sg_epochs: int = 200
     cvx_beta_grid: Tuple[float, ...] = (1e-2, 1e-1, 1.0)
     cvx_bias_grid: Tuple[float, ...] = (0.0,)
 
@@ -381,7 +381,7 @@ def _run_cell(
         "cvx_method": str(cvx_method),
     }
 
-    sg_ckpt = ckpt_path(ckpt_dir, seed=seed, T=T, L=L, K=K_parallel, tag="sg")
+    sg_ckpt = ckpt_path(ckpt_dir, seed=seed, T=T, L=L, K=K_parallel, tag="sg", task=preset.name)
     need_sg_train = "sg" in which or ("sg_cvx" in which and side != "cvx")
     sg_block: Optional[Dict[str, Any]] = None
     pretrained_for_sg_cvx: Optional[List[np.ndarray]] = None
@@ -414,6 +414,7 @@ def _run_cell(
         )
     elif "sg_cvx" in which:
         pretrained_for_sg_cvx, sg_meta = load_weight_list(sg_ckpt)
+        require_ckpt_task(sg_meta, expected_task=preset.name, path=sg_ckpt)
         sg_block = {
             "selected_params": sg_meta["selected_params"],
             "split_accs": sg_meta["split_accs"],
@@ -579,8 +580,8 @@ def _parse_args() -> argparse.Namespace:
     )
 
     # SG
-    ap.add_argument("--sg_lr_grid", type=float, nargs="+", default=[1e-3, 5e-3, 1e-2, 5e-2])
-    ap.add_argument("--sg_epochs", type=int, default=100)
+    ap.add_argument("--sg_lr_grid", type=float, nargs="+", default=[1e-3, 5e-3, 1e-2, 5e-2, 1e-1])
+    ap.add_argument("--sg_epochs", type=int, default=200)
 
     # CVX / SG-CVX
     ap.add_argument(

@@ -204,6 +204,103 @@ def _ovr_hinge_solve(
     return w, float(primal_sum), float(dual_sum), gap
 
 
+def _solve_binary_head(
+    *,
+    D: np.ndarray,
+    y_pm1: np.ndarray,
+    rho: float,
+    loss_name: str,
+    sample_weight: np.ndarray | None,
+    cvx_method: str,
+    compute_dual: bool,
+    lite_max_iter: int,
+    lite_tol: float,
+) -> Tuple[np.ndarray, float, float, float]:
+    method = str(cvx_method)
+    if method == "cvx_lite":
+        from .cvx_lite import solve_binary_l1_primal_lite
+
+        w, primal, _n_it = solve_binary_l1_primal_lite(
+            D,
+            y_pm1,
+            rho,
+            loss_name,
+            max_iter=int(lite_max_iter),
+            tol=float(lite_tol),
+            sample_weight=sample_weight,
+        )
+        return np.asarray(w, dtype=np.float64), float(primal), float("nan"), float("nan")
+    if method != "cvx":
+        raise ValueError(f"Unknown cvx_method={cvx_method!r}. Expected cvx or cvx_lite.")
+    sol = solve_binary_l1_primal_dual(
+        D,
+        y_pm1,
+        rho,
+        loss_name,
+        sample_weight=sample_weight,
+        compute_dual=bool(compute_dual),
+    )
+    return np.asarray(sol.w, dtype=np.float64), float(sol.primal_obj), float(sol.dual_obj), float(sol.gap)
+
+
+def _solve_multiclass_sum_head(
+    *,
+    D: np.ndarray,
+    y: np.ndarray,
+    rho: float,
+    loss_name: str,
+    num_classes: int,
+    sample_weight: np.ndarray | None,
+    cvx_method: str,
+    compute_dual: bool,
+    lite_max_iter: int,
+    lite_tol: float,
+) -> Tuple[np.ndarray, float, float, float]:
+    method = str(cvx_method)
+    if loss_name == "ce":
+        if method == "cvx_lite":
+            from .cvx_lite import solve_multiclass_primal_lite
+
+            W, primal, _n_it = solve_multiclass_primal_lite(
+                D,
+                y,
+                rho,
+                "ce",
+                int(num_classes),
+                max_iter=int(lite_max_iter),
+                tol=float(lite_tol),
+                sample_weight=sample_weight,
+            )
+            return np.asarray(W, dtype=np.float64), float(primal), float("nan"), float("nan")
+        if method != "cvx":
+            raise ValueError(f"Unknown cvx_method={cvx_method!r}. Expected cvx or cvx_lite.")
+        W, p, d, g = solve_multiclass_softmax_ce_l1_primal_dual(
+            D, y, rho, int(num_classes), sample_weight=sample_weight, compute_dual=bool(compute_dual)
+        )
+        return np.asarray(W, dtype=np.float64), float(p), float(d), float(g)
+    if loss_name == "hinge_ovr":
+        if method == "cvx_lite":
+            from .cvx_lite import solve_multiclass_primal_lite
+
+            W, primal, _n_it = solve_multiclass_primal_lite(
+                D,
+                y,
+                rho,
+                "hinge",
+                int(num_classes),
+                max_iter=int(lite_max_iter),
+                tol=float(lite_tol),
+                sample_weight=sample_weight,
+            )
+            return np.asarray(W, dtype=np.float64), float(primal), float("nan"), float("nan")
+        if method != "cvx":
+            raise ValueError(f"Unknown cvx_method={cvx_method!r}. Expected cvx or cvx_lite.")
+        return _ovr_hinge_solve(
+            D, y, rho, int(num_classes), sample_weight=sample_weight, compute_dual=bool(compute_dual)
+        )
+    raise ValueError(f"Unsupported multiclass sum loss_name={loss_name!r}.")
+
+
 def cvx_fit_shared_two_head(
     *,
     ds: _CarryTFData,
@@ -221,6 +318,14 @@ def cvx_fit_shared_two_head(
     cvx_sum_loss: str = "auto",
     cvx_carry_loss: str = "auto",
     cvx_time_loss: str = "ramp",
+    init_mode: str = "gaussian",
+    pretrained_weights: Optional[Sequence[np.ndarray]] = None,
+    cvx_method: str = "cvx",
+    compute_dual: bool = False,
+    lite_max_iter: int = 5000,
+    lite_tol: float = 1e-6,
+    beta_leak: float = 0.99,
+    threshold: float = 1.0,
 ) -> Tuple[Dict[str, Any], Dict[str, float], Dict[str, float]]:
     _ = cvx_device
     best_score = float("inf")
@@ -248,6 +353,21 @@ def cvx_fit_shared_two_head(
     if T_va != T:
         raise ValueError(f"Train/val T mismatch: T_train={T}, T_val={T_va}.")
 
+    if str(init_mode) not in ("gaussian", "pretraining"):
+        raise ValueError(f"init_mode must be gaussian or pretraining, got {init_mode!r}.")
+    if str(init_mode) == "pretraining":
+        if pretrained_weights is None or len(pretrained_weights) == 0:
+            raise ValueError("init_mode='pretraining' requires pretrained_weights.")
+    elif pretrained_weights is not None:
+        raise ValueError("pretrained_weights is only valid when init_mode='pretraining'.")
+    _pretrained_w = (
+        None
+        if pretrained_weights is None
+        else [np.asarray(w, dtype=np.float64) for w in pretrained_weights]
+    )
+    if str(cvx_method) not in ("cvx", "cvx_lite"):
+        raise ValueError(f"cvx_method must be cvx or cvx_lite, got {cvx_method!r}.")
+
     sw_train: np.ndarray | None
     a_val: np.ndarray | None
     if ctl == "ramp":
@@ -262,7 +382,7 @@ def cvx_fit_shared_two_head(
         for bias in bias_grid:
             np.random.seed(seed)
             init_cfg = InitializationConfig(
-                mode="gaussian",
+                mode=str(init_mode),
                 seed=seed,
                 L=L,
                 P_rec=P_rec,
@@ -271,6 +391,9 @@ def cvx_fit_shared_two_head(
                 feature_count=P_last,
                 last_layer_readout=cvx_last_layer_readout,
                 bias=float(bias),
+                pretrained_weights=_pretrained_w,
+                beta_leak=float(beta_leak),
+                threshold=float(threshold),
             )
             d_train, d_val, d_test = _build_cvx_features_for_all_timesteps(ds.X_train, ds.X_val, ds.X_test, init_cfg)
 
@@ -289,17 +412,17 @@ def cvx_fit_shared_two_head(
                 if sum_n not in ("hinge", "ce"):
                     raise ValueError("For binary sum (base 2) cvx_sum_loss must be auto, hinge, or ce.")
                 y_tr_pm1 = np.where(y_sum_tr == 1, 1.0, -1.0).astype(np.float64)
-                sol = solve_binary_l1_primal_dual(
-                    d_train,
-                    y_tr_pm1,
-                    rho_sum,
-                    "hinge" if sum_n == "hinge" else "ce",
+                w_sum, p_sum, d_sum, g_sum = _solve_binary_head(
+                    D=d_train,
+                    y_pm1=y_tr_pm1,
+                    rho=rho_sum,
+                    loss_name="hinge" if sum_n == "hinge" else "ce",
                     sample_weight=sw_train,
+                    cvx_method=str(cvx_method),
+                    compute_dual=bool(compute_dual),
+                    lite_max_iter=int(lite_max_iter),
+                    lite_tol=float(lite_tol),
                 )
-                w_sum = sol.w
-                p_sum = sol.primal_obj
-                d_sum = sol.dual_obj
-                g_sum = sol.gap
                 sum_scores_val = d_val @ w_sum
                 if sum_n == "hinge":
                     if a_val is None:
@@ -316,50 +439,46 @@ def cvx_fit_shared_two_head(
                             sum_scores_val, y_sum_va, n_va, T, kind="logistic"
                         )
             else:
+                if sum_n not in ("ce", "hinge_ovr"):
+                    raise ValueError("For base>2, cvx_sum_loss must be auto, ce, or hinge_ovr.")
+                w_sum, p_sum, d_sum, g_sum = _solve_multiclass_sum_head(
+                    D=d_train,
+                    y=y_sum_tr,
+                    rho=rho_sum,
+                    loss_name=sum_n,
+                    num_classes=int(ds.num_sum_classes),
+                    sample_weight=sw_train,
+                    cvx_method=str(cvx_method),
+                    compute_dual=bool(compute_dual),
+                    lite_max_iter=int(lite_max_iter),
+                    lite_tol=float(lite_tol),
+                )
+                sum_scores_val = d_val @ w_sum
                 if sum_n == "ce":
-                    W_sum, p_sum, d_sum, g_sum = solve_multiclass_softmax_ce_l1_primal_dual(
-                        d_train,
-                        y_sum_tr,
-                        rho_sum,
-                        ds.num_sum_classes,
-                        sample_weight=sw_train,
-                    )
-                    w_sum = W_sum
-                    sum_scores_val = d_val @ w_sum
                     if a_val is None:
                         logits = torch.tensor(sum_scores_val, dtype=torch.float32)
                         labels = torch.tensor(y_sum_va, dtype=torch.long)
                         sum_val_loss = float(LossFunction.ce(labels, logits).item())
                     else:
                         sum_val_loss = _ramped_multiclass_ce_val(sum_scores_val, y_sum_va, n_va, T)
-                elif sum_n == "hinge_ovr":
-                    w_sum, p_sum, d_sum, g_sum = _ovr_hinge_solve(
-                        d_train,
-                        y_sum_tr,
-                        rho_sum,
-                        ds.num_sum_classes,
-                        sample_weight=sw_train,
-                    )
-                    sum_scores_val = d_val @ w_sum
+                else:
                     if a_val is None:
                         sum_val_loss = multiclass_ovr_cvx_data_loss("hinge_ovr", sum_scores_val, y_sum_va)
                     else:
                         sum_val_loss = _ramped_ovr_hinge_val(sum_scores_val, y_sum_va, a_val)
-                else:
-                    raise ValueError("For base>2, cvx_sum_loss must be auto, ce, or hinge_ovr.")
 
             c_loss_name = "hinge" if carry_n == "hinge" else "ce"
-            sol_carry = solve_binary_l1_primal_dual(
-                d_train,
-                np.where(y_carry_tr == 1, 1.0, -1.0).astype(np.float64),
-                rho_carry,
-                c_loss_name,
+            w_carry, p_carry, d_carry, g_carry = _solve_binary_head(
+                D=d_train,
+                y_pm1=np.where(y_carry_tr == 1, 1.0, -1.0).astype(np.float64),
+                rho=rho_carry,
+                loss_name=c_loss_name,
                 sample_weight=sw_train,
+                cvx_method=str(cvx_method),
+                compute_dual=bool(compute_dual),
+                lite_max_iter=int(lite_max_iter),
+                lite_tol=float(lite_tol),
             )
-            w_carry = sol_carry.w
-            p_carry = sol_carry.primal_obj
-            d_carry = sol_carry.dual_obj
-            g_carry = sol_carry.gap
             carry_scores_val = d_val @ w_carry
             if carry_n == "hinge":
                 if a_val is None:
@@ -391,6 +510,8 @@ def cvx_fit_shared_two_head(
                     "cvx_sum_loss": sum_n,
                     "cvx_carry_loss": carry_n,
                     "cvx_time_loss": ctl,
+                    "cvx_method": str(cvx_method),
+                    "init_mode": str(init_mode),
                 }
     if best_bundle is None or best_params is None:
         raise RuntimeError("No CVX candidate found.")

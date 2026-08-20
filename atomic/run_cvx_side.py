@@ -1,17 +1,17 @@
-"""Non-CVX side: SG + LSM ridge (xor/mnist) and STE + LSM AR addition.
+"""CVX side: CVX + SG-CVX + R-CVX (xor/mnist) and AR two-head CVX (addition).
+
+Loads checkpoints written by ``run_non_cvx_side.py``. Default readout solver is
+``cvx_lite``.
 
 Runs, in order:
 
-1. ``run_baselines_xor_mnist.py --side non_cvx`` on xor/mnist — surrogate-gradient;
-   writes ``*_sg.npz``.
-2. ``run_lsm_xor_mnist.py --side non_cvx`` on xor/mnist — criticality + ridge;
-   writes ``*_lsm.npz``.
-3. ``run_arithmetic_add_carry_autoregressive_rollout_matched.py --side non_cvx``
-   for every addition base — carry-augmented STE **and** LSM ridge, both AR-eval'd;
-   writes ``*_add_ar_b{B}_ste.npz`` and ``*_add_ar_b{B}_lsm.npz``. Default ``n_train=10000``.
-
-Rsync ``--ckpt_dir`` (default ``<out_root>/ckpts``) onto the CVX machine, then
-run ``run_cvx_side.py``.
+1. ``run_baselines_xor_mnist.py --side cvx --cvx_method cvx_lite`` — Gaussian CVX
+   and SG-CVX on xor/mnist.
+2. ``run_lsm_xor_mnist.py --side cvx --cvx_method cvx_lite`` — R-CVX on xor/mnist.
+3. ``run_arithmetic_add_carry_autoregressive_rollout_matched.py --side cvx
+   --cvx_method cvx_lite`` for every addition base — Gaussian two-head CVX,
+   STE-CVX, and R-CVX, all evaluated with autoregressive rollout. Default
+   ``n_train=10000``.
 """
 
 from __future__ import annotations
@@ -36,12 +36,12 @@ def _parse_args() -> argparse.Namespace:
         nargs="*",
         choices=_CLASSIFICATION_TASKS,
         default=list(_CLASSIFICATION_TASKS),
-        help="xor/mnist SG+LSM. Pass --tasks with no values to skip (AR only).",
+        help="xor/mnist CVX. Pass --tasks with no values to skip (AR only).",
     )
     ap.add_argument(
         "--only_arith",
         action="store_true",
-        help="Skip xor/mnist. Only run carry-AR STE + LSM ridge.",
+        help="Skip xor/mnist. Only run carry-AR Gaussian CVX + STE-CVX + R-CVX.",
     )
     ap.add_argument("--arith_bases", type=int, nargs="*", default=list(SUPPORTED_BASES))
     ap.add_argument("--arith_L", type=int, nargs="+", default=[3, 5])
@@ -49,14 +49,16 @@ def _parse_args() -> argparse.Namespace:
     ap.add_argument("--K_parallel", type=int, default=10)
     ap.add_argument("--seeds", type=int, nargs="+", default=[0])
     ap.add_argument("--debug", action="store_true")
-    ap.add_argument("--out_root", type=str, default="sweep_results/non_cvx_side")
+    ap.add_argument("--out_root", type=str, default="sweep_results/cvx_side")
     ap.add_argument(
         "--ckpt_dir",
         type=str,
-        default="",
-        help="Shared SG / LSM / STE-AR checkpoints. Default: <out_root>/ckpts.",
+        required=True,
+        help="Directory rsynced from the non-CVX machine (SG / LSM / STE-AR npz files).",
     )
-    ap.add_argument("--sg_epochs", type=int, default=None)
+    ap.add_argument("--cvx_method", choices=("cvx", "cvx_lite"), default="cvx_lite")
+    ap.add_argument("--lite_max_iter", type=int, default=5000)
+    ap.add_argument("--lite_tol", type=float, default=1e-6)
     return ap.parse_args()
 
 
@@ -75,13 +77,14 @@ def main() -> None:
     atomic_dir = Path(__file__).resolve().parent
     py = sys.executable
     out_root = Path(args.out_root).expanduser().resolve()
-    ckpt_dir = Path(args.ckpt_dir).expanduser().resolve() if args.ckpt_dir else (out_root / "ckpts")
+    ckpt_dir = Path(args.ckpt_dir).expanduser().resolve()
+    if not ckpt_dir.is_dir():
+        raise FileNotFoundError(f"ckpt_dir does not exist: {ckpt_dir}")
     out_root.mkdir(parents=True, exist_ok=True)
-    ckpt_dir.mkdir(parents=True, exist_ok=True)
 
     print(
-        f"[non-cvx] ckpt_dir={ckpt_dir} tasks={list(args.tasks)} arith_bases={list(args.arith_bases)} "
-        f"n_train={int(args.n_train)} seeds={list(args.seeds)}",
+        f"[cvx] ckpt_dir={ckpt_dir} method={args.cvx_method} tasks={list(args.tasks)} "
+        f"arith_bases={list(args.arith_bases)} n_train={int(args.n_train)}",
         flush=True,
     )
 
@@ -89,7 +92,13 @@ def main() -> None:
         shared = [
             py,
             "--side",
-            "non_cvx",
+            "cvx",
+            "--cvx_method",
+            str(args.cvx_method),
+            "--lite_max_iter",
+            str(int(args.lite_max_iter)),
+            "--lite_tol",
+            str(float(args.lite_tol)),
             "--tasks",
             *list(args.tasks),
             "--seeds",
@@ -99,24 +108,26 @@ def main() -> None:
         ]
         if args.debug:
             shared.append("--debug")
-        sg_cmd = [
-            shared[0],
-            str(atomic_dir / "run_baselines_xor_mnist.py"),
-            *shared[1:],
-            "--out_root",
-            str(out_root / "baselines"),
-        ]
-        if args.sg_epochs is not None:
-            sg_cmd.extend(["--sg_epochs", str(int(args.sg_epochs))])
-        lsm_cmd = [
-            shared[0],
-            str(atomic_dir / "run_lsm_xor_mnist.py"),
-            *shared[1:],
-            "--out_root",
-            str(out_root / "lsm"),
-        ]
-        _run(sg_cmd, cwd=atomic_dir)
-        _run(lsm_cmd, cwd=atomic_dir)
+        _run(
+            [
+                shared[0],
+                str(atomic_dir / "run_baselines_xor_mnist.py"),
+                *shared[1:],
+                "--out_root",
+                str(out_root / "baselines"),
+            ],
+            cwd=atomic_dir,
+        )
+        _run(
+            [
+                shared[0],
+                str(atomic_dir / "run_lsm_xor_mnist.py"),
+                *shared[1:],
+                "--out_root",
+                str(out_root / "lsm"),
+            ],
+            cwd=atomic_dir,
+        )
 
     for base in args.arith_bases:
         for L in args.arith_L:
@@ -124,7 +135,13 @@ def main() -> None:
                 py,
                 str(atomic_dir / "run_arithmetic_add_carry_autoregressive_rollout_matched.py"),
                 "--side",
-                "non_cvx",
+                "cvx",
+                "--cvx_method",
+                str(args.cvx_method),
+                "--lite_max_iter",
+                str(int(args.lite_max_iter)),
+                "--lite_tol",
+                str(float(args.lite_tol)),
                 "--arith_base",
                 str(int(base)),
                 "--L",
@@ -146,16 +163,12 @@ def main() -> None:
                 "--lambda_carry_grid",
                 "2",
                 "12",
-                "--ste_epochs",
-                "200",
-                "--batch_size",
-                "256",
             ]
             if args.debug:
                 ar_cmd.append("--debug")
             _run(ar_cmd, cwd=atomic_dir)
 
-    print(f"[non-cvx] done. rsync {ckpt_dir} onto the CVX machine.", flush=True)
+    print(f"[cvx] done. wrote {out_root}", flush=True)
 
 
 if __name__ == "__main__":
