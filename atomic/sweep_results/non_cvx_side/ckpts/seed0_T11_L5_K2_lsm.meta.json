@@ -1,0 +1,31 @@
+{
+  "tag": "lsm",
+  "task": "xor",
+  "dataset": "dfa",
+  "arith_op": null,
+  "arith_base": null,
+  "n_digits": null,
+  "d_in": 2,
+  "num_classes": 2,
+  "T": 11,
+  "L": 5,
+  "K_parallel": 2,
+  "P_rec": 500,
+  "P_last": 1000,
+  "last_layer_readout": "membrane",
+  "reservoir_seed": 1,
+  "reservoir_variant": "normalized",
+  "beta_leak": 0.9,
+  "threshold": 0.5,
+  "input_scale": 4.0,
+  "branching_ratio": 1.0100247775534414,
+  "ridge": {
+    "best_losses": {
+      "ridge_lambda": 10.0,
+      "val_mse": 2.8857500553131104,
+      "train_acc": 0.6370000243186951,
+      "val_acc": 0.5440000295639038,
+      "test_acc": 0.5387499928474426
+    }
+  }
+}

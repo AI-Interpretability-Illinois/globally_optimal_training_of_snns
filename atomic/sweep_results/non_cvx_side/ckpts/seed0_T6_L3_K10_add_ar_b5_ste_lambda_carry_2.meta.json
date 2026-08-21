@@ -1,0 +1,17 @@
+{
+  "tag": "ste_lambda_carry_2",
+  "task": "add_ar_b5",
+  "arith_base": 5,
+  "n_digits": 5,
+  "T": 6,
+  "L": 3,
+  "K_parallel": 10,
+  "P_rec": 500,
+  "P_last": 1000,
+  "seed": 0,
+  "lambda_carry": 2.0,
+  "selected_params": {
+    "lr": 0.001,
+    "beta": 0.01
+  }
+}

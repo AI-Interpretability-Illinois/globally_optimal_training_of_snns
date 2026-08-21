@@ -1,0 +1,37 @@
+{
+  "tag": "lsm",
+  "task": "add_b2",
+  "dataset": "arithmetic_seq",
+  "arith_op": "add",
+  "arith_base": 2,
+  "n_digits": 5,
+  "d_in": 3,
+  "num_classes": 2,
+  "T": 6,
+  "L": 3,
+  "K_parallel": 2,
+  "P_rec": 500,
+  "P_last": 1000,
+  "last_layer_readout": "spike",
+  "reservoir_seed": 1,
+  "reservoir_variant": "normalized",
+  "beta_leak": 0.9,
+  "threshold": 1.5,
+  "input_scale": 2.0,
+  "branching_ratio": 0.9907866001181777,
+  "ridge": {
+    "best_losses": {
+      "ridge_lambda": 10.0,
+      "val_mse": 0.3384621739387512,
+      "train_acc": 0.9558333158493042,
+      "val_acc": 0.9398333430290222,
+      "test_acc": 0.9419999718666077,
+      "train_token_acc": 0.9558333158493042,
+      "train_seq_acc": 0.7580000162124634,
+      "val_token_acc": 0.9398333430290222,
+      "val_seq_acc": 0.6880000233650208,
+      "test_token_acc": 0.9419999718666077,
+      "test_seq_acc": 0.6940000057220459
+    }
+  }
+}

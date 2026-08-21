@@ -1,0 +1,22 @@
+{
+  "tag": "sg",
+  "task": "add_b2",
+  "dataset": "arithmetic_seq",
+  "arith_op": "add",
+  "arith_base": 2,
+  "n_digits": 5,
+  "T": 6,
+  "L": 5,
+  "K_parallel": 2,
+  "P_rec": 500,
+  "P_last": 1000,
+  "seed": 0,
+  "selected_params": {
+    "lr": 0.01
+  },
+  "split_accs": {
+    "train_acc": 0.5661666666666667,
+    "val_acc": 0.5659166666666666,
+    "test_acc": 0.5725
+  }
+}

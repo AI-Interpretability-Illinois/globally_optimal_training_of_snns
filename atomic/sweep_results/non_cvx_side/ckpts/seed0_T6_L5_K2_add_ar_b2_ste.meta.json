@@ -1,0 +1,17 @@
+{
+  "tag": "ste",
+  "task": "add_ar_b2",
+  "arith_base": 2,
+  "n_digits": 5,
+  "T": 6,
+  "L": 5,
+  "K_parallel": 2,
+  "P_rec": 500,
+  "P_last": 1000,
+  "seed": 0,
+  "lambda_carry": 2.0,
+  "selected_params": {
+    "lr": 0.01,
+    "beta": 1.0
+  }
+}
