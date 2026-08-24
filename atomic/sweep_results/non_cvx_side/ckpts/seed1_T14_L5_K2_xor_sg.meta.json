@@ -1,0 +1,22 @@
+{
+  "tag": "sg",
+  "task": "xor",
+  "dataset": "dfa",
+  "arith_op": null,
+  "arith_base": null,
+  "n_digits": null,
+  "T": 14,
+  "L": 5,
+  "K_parallel": 2,
+  "P_rec": 500,
+  "P_last": 1000,
+  "seed": 1,
+  "selected_params": {
+    "lr": 0.001
+  },
+  "split_accs": {
+    "train_acc": 0.587,
+    "val_acc": 0.5205,
+    "test_acc": 0.5185
+  }
+}

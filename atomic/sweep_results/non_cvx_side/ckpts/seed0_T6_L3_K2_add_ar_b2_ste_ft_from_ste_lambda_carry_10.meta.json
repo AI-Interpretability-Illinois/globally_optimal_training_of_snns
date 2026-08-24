@@ -1,0 +1,19 @@
+{
+  "tag": "ste_ft_from_ste_lambda_carry_10",
+  "task": "add_ar_b2",
+  "arith_base": 2,
+  "n_digits": 5,
+  "T": 6,
+  "L": 3,
+  "K_parallel": 2,
+  "P_rec": 256,
+  "P_last": 512,
+  "seed": 0,
+  "ft_seed": 1000,
+  "lambda_carry": 10.0,
+  "init_from": "ste_pretrain_hidden_and_heads",
+  "selected_params": {
+    "lr": 0.005,
+    "beta": 0.01
+  }
+}
