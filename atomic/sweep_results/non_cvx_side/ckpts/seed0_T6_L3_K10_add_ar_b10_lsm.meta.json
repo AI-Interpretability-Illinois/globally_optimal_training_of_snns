@@ -1,0 +1,26 @@
+{
+  "tag": "lsm",
+  "task": "add_ar_b10",
+  "arith_base": 10,
+  "n_digits": 5,
+  "T": 6,
+  "L": 3,
+  "K_parallel": 10,
+  "P_rec": 500,
+  "P_last": 1000,
+  "seed": 0,
+  "beta_leak": 0.9,
+  "threshold": 0.5,
+  "input_scale": 4.0,
+  "branching_ratio": 1.0130895715846917,
+  "selected_params": {
+    "ridge_lambda_sum": 10.0,
+    "ridge_lambda_carry": 10.0,
+    "val_mse_sum": 1.2951899766921997,
+    "val_mse_carry": 3.5936923027038574,
+    "beta_leak": 0.9,
+    "threshold": 0.5,
+    "input_scale": 4.0,
+    "branching_ratio": 1.0130895715846917
+  }
+}
