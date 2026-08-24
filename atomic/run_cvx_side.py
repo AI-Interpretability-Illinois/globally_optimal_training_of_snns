@@ -57,6 +57,8 @@ def _parse_args() -> argparse.Namespace:
         help="Must match the STE ckpt lambda tags written by the non-CVX side.",
     )
     ap.add_argument("--seeds", type=int, nargs="+", default=[0, 1, 2])
+    ap.add_argument("--T", type=int, nargs="+", default=None, help="Override xor/mnist preset T_list.")
+    ap.add_argument("--L", type=int, nargs="+", default=None, help="Override xor/mnist preset L_list.")
     ap.add_argument("--debug", action="store_true")
     ap.add_argument("--out_root", type=str, default="sweep_results/cvx_side")
     ap.add_argument(
@@ -93,7 +95,7 @@ def main() -> None:
 
     print(
         f"[cvx] ckpt_dir={ckpt_dir} method={args.cvx_method} tasks={list(args.tasks)} "
-        f"arith_bases={list(args.arith_bases)} n_train={int(args.n_train)}",
+        f"T={args.T} L={args.L} arith_bases={list(args.arith_bases)} n_train={int(args.n_train)}",
         flush=True,
     )
 
@@ -117,6 +119,10 @@ def main() -> None:
         ]
         if args.debug:
             shared.append("--debug")
+        if args.T is not None:
+            shared.extend(["--T", *[str(int(t)) for t in args.T]])
+        if args.L is not None:
+            shared.extend(["--L", *[str(int(x)) for x in args.L]])
         _run(
             [
                 shared[0],
