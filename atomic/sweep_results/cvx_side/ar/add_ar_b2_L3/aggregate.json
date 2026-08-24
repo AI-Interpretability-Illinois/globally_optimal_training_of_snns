@@ -1,0 +1,653 @@
+{
+  "n_seeds": 1,
+  "seeds": [
+    0
+  ],
+  "description": "For each float metric, mean and std (ddof=1) across seeds. Same lambda_carry order per seed required.",
+  "sweep_aggregated": [
+    {
+      "lambda_carry": 2.0,
+      "ste": null,
+      "lsm": null,
+      "cvx": {
+        "test_metrics": {
+          "sum_token_acc": {
+            "mean": 0.787109375,
+            "std": 0.0,
+            "n": 1
+          },
+          "carry_token_acc": {
+            "mean": 0.923828125,
+            "std": 0.0,
+            "n": 1
+          },
+          "joint_token_acc": {
+            "mean": 0.7701822916666666,
+            "std": 0.0,
+            "n": 1
+          },
+          "joint_seq_acc": {
+            "mean": 0.2578125,
+            "std": 0.0,
+            "n": 1
+          },
+          "sum_seq_acc": {
+            "mean": 0.2734375,
+            "std": 0.0,
+            "n": 1
+          },
+          "carry_seq_acc": {
+            "mean": 0.703125,
+            "std": 0.0,
+            "n": 1
+          },
+          "mean_first_wrong_sum_among_error_seq": {
+            "mean": 2.704301075268817,
+            "std": 0.0,
+            "n": 1
+          },
+          "mean_first_wrong_carry_among_error_seq": {
+            "mean": 2.013157894736842,
+            "std": 0.0,
+            "n": 1
+          }
+        },
+        "diagnostics": {
+          "primal_value": {
+            "mean": 1.2269449857710386,
+            "std": 0.0,
+            "n": 1
+          },
+          "dual_value": {
+            "mean": NaN,
+            "std": 0.0,
+            "n": 1
+          },
+          "gap": {
+            "mean": NaN,
+            "std": 0.0,
+            "n": 1
+          }
+        }
+      },
+      "sg_cvx": {
+        "test_metrics": {
+          "sum_token_acc": {
+            "mean": 0.56591796875,
+            "std": 0.0,
+            "n": 1
+          },
+          "carry_token_acc": {
+            "mean": 0.73681640625,
+            "std": 0.0,
+            "n": 1
+          },
+          "joint_token_acc": {
+            "mean": 0.4034830729166667,
+            "std": 0.0,
+            "n": 1
+          },
+          "joint_seq_acc": {
+            "mean": 0.001953125,
+            "std": 0.0,
+            "n": 1
+          },
+          "sum_seq_acc": {
+            "mean": 0.0400390625,
+            "std": 0.0,
+            "n": 1
+          },
+          "carry_seq_acc": {
+            "mean": 0.28125,
+            "std": 0.0,
+            "n": 1
+          },
+          "mean_first_wrong_sum_among_error_seq": {
+            "mean": 0.8240081383519837,
+            "std": 0.0,
+            "n": 1
+          },
+          "mean_first_wrong_carry_among_error_seq": {
+            "mean": 0.7119565217391305,
+            "std": 0.0,
+            "n": 1
+          }
+        },
+        "diagnostics": {
+          "primal_value": {
+            "mean": 1.8647500546035507,
+            "std": 0.0,
+            "n": 1
+          },
+          "dual_value": {
+            "mean": NaN,
+            "std": 0.0,
+            "n": 1
+          },
+          "gap": {
+            "mean": NaN,
+            "std": 0.0,
+            "n": 1
+          }
+        }
+      },
+      "r_cvx": {
+        "test_metrics": {
+          "sum_token_acc": {
+            "mean": 0.71630859375,
+            "std": 0.0,
+            "n": 1
+          },
+          "carry_token_acc": {
+            "mean": 0.87841796875,
+            "std": 0.0,
+            "n": 1
+          },
+          "joint_token_acc": {
+            "mean": 0.69677734375,
+            "std": 0.0,
+            "n": 1
+          },
+          "joint_seq_acc": {
+            "mean": 0.2021484375,
+            "std": 0.0,
+            "n": 1
+          },
+          "sum_seq_acc": {
+            "mean": 0.2333984375,
+            "std": 0.0,
+            "n": 1
+          },
+          "carry_seq_acc": {
+            "mean": 0.5556640625,
+            "std": 0.0,
+            "n": 1
+          },
+          "mean_first_wrong_sum_among_error_seq": {
+            "mean": 1.805095541401274,
+            "std": 0.0,
+            "n": 1
+          },
+          "mean_first_wrong_carry_among_error_seq": {
+            "mean": 2.074725274725275,
+            "std": 0.0,
+            "n": 1
+          }
+        },
+        "diagnostics": {
+          "primal_value": {
+            "mean": 1.3531168477068407,
+            "std": 0.0,
+            "n": 1
+          },
+          "dual_value": {
+            "mean": NaN,
+            "std": 0.0,
+            "n": 1
+          },
+          "gap": {
+            "mean": NaN,
+            "std": 0.0,
+            "n": 1
+          }
+        }
+      },
+      "ood_eval": {
+        "cvx": {
+          "n_digits_10": {
+            "n_digits": 10,
+            "n_test": 1024,
+            "cvx": {
+              "sum_token_acc": 0.6792436079545454,
+              "carry_token_acc": 0.8848544034090909,
+              "joint_token_acc": 0.6385830965909091,
+              "joint_seq_acc": 0.0068359375,
+              "sum_seq_acc": 0.0107421875,
+              "carry_seq_acc": 0.2919921875,
+              "mean_first_wrong_sum_among_error_seq": 3.715695952615992,
+              "mean_first_wrong_carry_among_error_seq": 5.187586206896552
+            }
+          },
+          "n_digits_20": {
+            "n_digits": 20,
+            "n_test": 1024,
+            "cvx": {
+              "sum_token_acc": 0.6146763392857143,
+              "carry_token_acc": 0.8314732142857143,
+              "joint_token_acc": 0.5445963541666666,
+              "joint_seq_acc": 0.0,
+              "sum_seq_acc": 0.0,
+              "carry_seq_acc": 0.0302734375,
+              "mean_first_wrong_sum_among_error_seq": 3.712890625,
+              "mean_first_wrong_carry_among_error_seq": 7.032225579053374
+            }
+          },
+          "n_digits_50": {
+            "n_digits": 50,
+            "n_test": 1024,
+            "cvx": {
+              "sum_token_acc": 0.5683976715686274,
+              "carry_token_acc": 0.7917432598039216,
+              "joint_token_acc": 0.47087545955882354,
+              "joint_seq_acc": 0.0,
+              "sum_seq_acc": 0.0,
+              "carry_seq_acc": 0.0,
+              "mean_first_wrong_sum_among_error_seq": 3.7890625,
+              "mean_first_wrong_carry_among_error_seq": 7.8720703125
+            }
+          }
+        },
+        "sg_cvx": {
+          "n_digits_10": {
+            "n_digits": 10,
+            "n_test": 1024,
+            "sg_cvx": {
+              "sum_token_acc": 0.5432350852272727,
+              "carry_token_acc": 0.7394353693181818,
+              "joint_token_acc": 0.3984375,
+              "joint_seq_acc": 0.0,
+              "sum_seq_acc": 0.0009765625,
+              "carry_seq_acc": 0.0712890625,
+              "mean_first_wrong_sum_among_error_seq": 1.1065493646138806,
+              "mean_first_wrong_carry_among_error_seq": 1.7697160883280758
+            }
+          },
+          "n_digits_20": {
+            "n_digits": 20,
+            "n_test": 1024,
+            "sg_cvx": {
+              "sum_token_acc": 0.5388764880952381,
+              "carry_token_acc": 0.74609375,
+              "joint_token_acc": 0.4167596726190476,
+              "joint_seq_acc": 0.0,
+              "sum_seq_acc": 0.0,
+              "carry_seq_acc": 0.00390625,
+              "mean_first_wrong_sum_among_error_seq": 1.0283203125,
+              "mean_first_wrong_carry_among_error_seq": 2.6245098039215686
+            }
+          },
+          "n_digits_50": {
+            "n_digits": 50,
+            "n_test": 1024,
+            "sg_cvx": {
+              "sum_token_acc": 0.5384880514705882,
+              "carry_token_acc": 0.7547296262254902,
+              "joint_token_acc": 0.4264322916666667,
+              "joint_seq_acc": 0.0,
+              "sum_seq_acc": 0.0,
+              "carry_seq_acc": 0.0,
+              "mean_first_wrong_sum_among_error_seq": 1.103515625,
+              "mean_first_wrong_carry_among_error_seq": 2.6904296875
+            }
+          }
+        },
+        "r_cvx": {
+          "n_digits_10": {
+            "n_digits": 10,
+            "n_test": 1024,
+            "r_cvx": {
+              "sum_token_acc": 0.662109375,
+              "carry_token_acc": 0.8607954545454546,
+              "joint_token_acc": 0.6218039772727273,
+              "joint_seq_acc": 0.0107421875,
+              "sum_seq_acc": 0.0166015625,
+              "carry_seq_acc": 0.248046875,
+              "mean_first_wrong_sum_among_error_seq": 2.6703078450844093,
+              "mean_first_wrong_carry_among_error_seq": 4.275324675324676
+            }
+          },
+          "n_digits_20": {
+            "n_digits": 20,
+            "n_test": 1024,
+            "r_cvx": {
+              "sum_token_acc": 0.6302083333333334,
+              "carry_token_acc": 0.8390531994047619,
+              "joint_token_acc": 0.5705450148809523,
+              "joint_seq_acc": 0.0,
+              "sum_seq_acc": 0.0,
+              "carry_seq_acc": 0.041015625,
+              "mean_first_wrong_sum_among_error_seq": 2.904296875,
+              "mean_first_wrong_carry_among_error_seq": 6.322810590631365
+            }
+          },
+          "n_digits_50": {
+            "n_digits": 50,
+            "n_test": 1024,
+            "r_cvx": {
+              "sum_token_acc": 0.6040517769607843,
+              "carry_token_acc": 0.8198146446078431,
+              "joint_token_acc": 0.5288947610294118,
+              "joint_seq_acc": 0.0,
+              "sum_seq_acc": 0.0,
+              "carry_seq_acc": 0.0,
+              "mean_first_wrong_sum_among_error_seq": 2.814453125,
+              "mean_first_wrong_carry_among_error_seq": 7.2041015625
+            }
+          }
+        }
+      }
+    },
+    {
+      "lambda_carry": 12.0,
+      "ste": null,
+      "lsm": null,
+      "cvx": {
+        "test_metrics": {
+          "sum_token_acc": {
+            "mean": 0.79248046875,
+            "std": 0.0,
+            "n": 1
+          },
+          "carry_token_acc": {
+            "mean": 0.9441731770833334,
+            "std": 0.0,
+            "n": 1
+          },
+          "joint_token_acc": {
+            "mean": 0.7840169270833334,
+            "std": 0.0,
+            "n": 1
+          },
+          "joint_seq_acc": {
+            "mean": 0.265625,
+            "std": 0.0,
+            "n": 1
+          },
+          "sum_seq_acc": {
+            "mean": 0.2783203125,
+            "std": 0.0,
+            "n": 1
+          },
+          "carry_seq_acc": {
+            "mean": 0.796875,
+            "std": 0.0,
+            "n": 1
+          },
+          "mean_first_wrong_sum_among_error_seq": {
+            "mean": 2.691474966170501,
+            "std": 0.0,
+            "n": 1
+          },
+          "mean_first_wrong_carry_among_error_seq": {
+            "mean": 1.5048076923076923,
+            "std": 0.0,
+            "n": 1
+          }
+        },
+        "diagnostics": {
+          "primal_value": {
+            "mean": 2.0448946731240936,
+            "std": 0.0,
+            "n": 1
+          },
+          "dual_value": {
+            "mean": NaN,
+            "std": 0.0,
+            "n": 1
+          },
+          "gap": {
+            "mean": NaN,
+            "std": 0.0,
+            "n": 1
+          }
+        }
+      },
+      "sg_cvx": {
+        "test_metrics": {
+          "sum_token_acc": {
+            "mean": 0.5289713541666666,
+            "std": 0.0,
+            "n": 1
+          },
+          "carry_token_acc": {
+            "mean": 0.734375,
+            "std": 0.0,
+            "n": 1
+          },
+          "joint_token_acc": {
+            "mean": 0.3684895833333333,
+            "std": 0.0,
+            "n": 1
+          },
+          "joint_seq_acc": {
+            "mean": 0.0,
+            "std": 0.0,
+            "n": 1
+          },
+          "sum_seq_acc": {
+            "mean": 0.03125,
+            "std": 0.0,
+            "n": 1
+          },
+          "carry_seq_acc": {
+            "mean": 0.2783203125,
+            "std": 0.0,
+            "n": 1
+          },
+          "mean_first_wrong_sum_among_error_seq": {
+            "mean": 0.8225806451612904,
+            "std": 0.0,
+            "n": 1
+          },
+          "mean_first_wrong_carry_among_error_seq": {
+            "mean": 0.530446549391069,
+            "std": 0.0,
+            "n": 1
+          }
+        },
+        "diagnostics": {
+          "primal_value": {
+            "mean": 6.361543179500771,
+            "std": 0.0,
+            "n": 1
+          },
+          "dual_value": {
+            "mean": NaN,
+            "std": 0.0,
+            "n": 1
+          },
+          "gap": {
+            "mean": NaN,
+            "std": 0.0,
+            "n": 1
+          }
+        }
+      },
+      "r_cvx": {
+        "test_metrics": {
+          "sum_token_acc": {
+            "mean": 0.72412109375,
+            "std": 0.0,
+            "n": 1
+          },
+          "carry_token_acc": {
+            "mean": 0.90478515625,
+            "std": 0.0,
+            "n": 1
+          },
+          "joint_token_acc": {
+            "mean": 0.7145182291666666,
+            "std": 0.0,
+            "n": 1
+          },
+          "joint_seq_acc": {
+            "mean": 0.2294921875,
+            "std": 0.0,
+            "n": 1
+          },
+          "sum_seq_acc": {
+            "mean": 0.2353515625,
+            "std": 0.0,
+            "n": 1
+          },
+          "carry_seq_acc": {
+            "mean": 0.6806640625,
+            "std": 0.0,
+            "n": 1
+          },
+          "mean_first_wrong_sum_among_error_seq": {
+            "mean": 1.7994891443167305,
+            "std": 0.0,
+            "n": 1
+          },
+          "mean_first_wrong_carry_among_error_seq": {
+            "mean": 1.492354740061162,
+            "std": 0.0,
+            "n": 1
+          }
+        },
+        "diagnostics": {
+          "primal_value": {
+            "mean": 2.5253108775769175,
+            "std": 0.0,
+            "n": 1
+          },
+          "dual_value": {
+            "mean": NaN,
+            "std": 0.0,
+            "n": 1
+          },
+          "gap": {
+            "mean": NaN,
+            "std": 0.0,
+            "n": 1
+          }
+        }
+      },
+      "ood_eval": {
+        "cvx": {
+          "n_digits_10": {
+            "n_digits": 10,
+            "n_test": 1024,
+            "cvx": {
+              "sum_token_acc": 0.6811967329545454,
+              "carry_token_acc": 0.8984375,
+              "joint_token_acc": 0.6468394886363636,
+              "joint_seq_acc": 0.0107421875,
+              "sum_seq_acc": 0.015625,
+              "carry_seq_acc": 0.3564453125,
+              "mean_first_wrong_sum_among_error_seq": 3.7182539682539684,
+              "mean_first_wrong_carry_among_error_seq": 5.522003034901366
+            }
+          },
+          "n_digits_20": {
+            "n_digits": 20,
+            "n_test": 1024,
+            "cvx": {
+              "sum_token_acc": 0.6122116815476191,
+              "carry_token_acc": 0.8330078125,
+              "joint_token_acc": 0.5445498511904762,
+              "joint_seq_acc": 0.0,
+              "sum_seq_acc": 0.0,
+              "carry_seq_acc": 0.041015625,
+              "mean_first_wrong_sum_among_error_seq": 3.724609375,
+              "mean_first_wrong_carry_among_error_seq": 7.6181262729124235
+            }
+          },
+          "n_digits_50": {
+            "n_digits": 50,
+            "n_test": 1024,
+            "cvx": {
+              "sum_token_acc": 0.5667317708333334,
+              "carry_token_acc": 0.7752757352941176,
+              "joint_token_acc": 0.4631969975490196,
+              "joint_seq_acc": 0.0,
+              "sum_seq_acc": 0.0,
+              "carry_seq_acc": 0.0,
+              "mean_first_wrong_sum_among_error_seq": 3.84375,
+              "mean_first_wrong_carry_among_error_seq": 8.67578125
+            }
+          }
+        },
+        "sg_cvx": {
+          "n_digits_10": {
+            "n_digits": 10,
+            "n_test": 1024,
+            "sg_cvx": {
+              "sum_token_acc": 0.5265447443181818,
+              "carry_token_acc": 0.7283380681818182,
+              "joint_token_acc": 0.37730823863636365,
+              "joint_seq_acc": 0.0,
+              "sum_seq_acc": 0.0009765625,
+              "carry_seq_acc": 0.046875,
+              "mean_first_wrong_sum_among_error_seq": 1.0439882697947214,
+              "mean_first_wrong_carry_among_error_seq": 1.7172131147540983
+            }
+          },
+          "n_digits_20": {
+            "n_digits": 20,
+            "n_test": 1024,
+            "sg_cvx": {
+              "sum_token_acc": 0.5192057291666666,
+              "carry_token_acc": 0.7331194196428571,
+              "joint_token_acc": 0.39611235119047616,
+              "joint_seq_acc": 0.0,
+              "sum_seq_acc": 0.0,
+              "carry_seq_acc": 0.0009765625,
+              "mean_first_wrong_sum_among_error_seq": 1.0087890625,
+              "mean_first_wrong_carry_among_error_seq": 2.257086999022483
+            }
+          },
+          "n_digits_50": {
+            "n_digits": 50,
+            "n_test": 1024,
+            "sg_cvx": {
+              "sum_token_acc": 0.5213311887254902,
+              "carry_token_acc": 0.7334367340686274,
+              "joint_token_acc": 0.4088924632352941,
+              "joint_seq_acc": 0.0,
+              "sum_seq_acc": 0.0,
+              "carry_seq_acc": 0.0,
+              "mean_first_wrong_sum_among_error_seq": 1.0517578125,
+              "mean_first_wrong_carry_among_error_seq": 2.2783203125
+            }
+          }
+        },
+        "r_cvx": {
+          "n_digits_10": {
+            "n_digits": 10,
+            "n_test": 1024,
+            "r_cvx": {
+              "sum_token_acc": 0.6691228693181818,
+              "carry_token_acc": 0.8772194602272727,
+              "joint_token_acc": 0.6313920454545454,
+              "joint_seq_acc": 0.0146484375,
+              "sum_seq_acc": 0.0205078125,
+              "carry_seq_acc": 0.3056640625,
+              "mean_first_wrong_sum_among_error_seq": 2.6719840478564305,
+              "mean_first_wrong_carry_among_error_seq": 4.6736990154711675
+            }
+          },
+          "n_digits_20": {
+            "n_digits": 20,
+            "n_test": 1024,
+            "r_cvx": {
+              "sum_token_acc": 0.6351376488095238,
+              "carry_token_acc": 0.8530505952380952,
+              "joint_token_acc": 0.5793805803571429,
+              "joint_seq_acc": 0.0,
+              "sum_seq_acc": 0.0009765625,
+              "carry_seq_acc": 0.078125,
+              "mean_first_wrong_sum_among_error_seq": 2.916911045943304,
+              "mean_first_wrong_carry_among_error_seq": 7.219279661016949
+            }
+          },
+          "n_digits_50": {
+            "n_digits": 50,
+            "n_test": 1024,
+            "r_cvx": {
+              "sum_token_acc": 0.6092601102941176,
+              "carry_token_acc": 0.8372012867647058,
+              "joint_token_acc": 0.5416666666666666,
+              "joint_seq_acc": 0.0,
+              "sum_seq_acc": 0.0,
+              "carry_seq_acc": 0.0009765625,
+              "mean_first_wrong_sum_among_error_seq": 2.8447265625,
+              "mean_first_wrong_carry_among_error_seq": 8.635386119257086
+            }
+          }
+        }
+      }
+    }
+  ]
+}

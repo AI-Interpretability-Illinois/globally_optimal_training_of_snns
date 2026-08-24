@@ -1,0 +1,35 @@
+{
+  "seeds": [
+    0
+  ],
+  "arith_base": 2,
+  "n_digits": 5,
+  "n_train": 10000,
+  "n_val": 512,
+  "n_test": 1024,
+  "n_test_ood": 1024,
+  "ood_digits": [
+    10,
+    20,
+    50
+  ],
+  "lambda_sum": 1.0,
+  "lambda_carry_sweep": [
+    2.0,
+    12.0
+  ],
+  "L": 5,
+  "P_rec": 500,
+  "P_last": 1000,
+  "K_parallel": 10,
+  "add_initial_carry": "random",
+  "ste_time_loss": "ramp",
+  "cvx_time_loss": "ramp",
+  "tf_objective": "joint",
+  "out_root": "/home/azureuser/snn_paper_1/atomic/sweep_results/cvx_side/ar/add_ar_b2_L5",
+  "ckpt_dir": "/home/azureuser/snn_paper_1/atomic/sweep_results/non_cvx_side/ckpts",
+  "side": "cvx",
+  "cvx_method": "cvx",
+  "training_mode": "teacher_forcing",
+  "evaluation_mode": "autoregressive_rollout"
+}

@@ -1,0 +1,202 @@
+{
+  "lambda_carry": 2.0,
+  "ste": null,
+  "lsm": null,
+  "cvx": {
+    "selected_params": {
+      "beta": 0.01,
+      "bias": 0.0
+    },
+    "diagnostics": {
+      "primal_value": 1.2269449857710386,
+      "dual_value": NaN,
+      "gap": NaN
+    },
+    "test_metrics": {
+      "sum_token_acc": 0.787109375,
+      "carry_token_acc": 0.923828125,
+      "joint_token_acc": 0.7701822916666666,
+      "joint_seq_acc": 0.2578125,
+      "sum_seq_acc": 0.2734375,
+      "carry_seq_acc": 0.703125,
+      "mean_first_wrong_sum_among_error_seq": 2.704301075268817,
+      "mean_first_wrong_carry_among_error_seq": 2.013157894736842
+    }
+  },
+  "sg_cvx": {
+    "selected_params": {
+      "beta": 0.01,
+      "bias": 0.0
+    },
+    "diagnostics": {
+      "primal_value": 1.8647500546035507,
+      "dual_value": NaN,
+      "gap": NaN
+    },
+    "test_metrics": {
+      "sum_token_acc": 0.56591796875,
+      "carry_token_acc": 0.73681640625,
+      "joint_token_acc": 0.4034830729166667,
+      "joint_seq_acc": 0.001953125,
+      "sum_seq_acc": 0.0400390625,
+      "carry_seq_acc": 0.28125,
+      "mean_first_wrong_sum_among_error_seq": 0.8240081383519837,
+      "mean_first_wrong_carry_among_error_seq": 0.7119565217391305
+    }
+  },
+  "r_cvx": {
+    "selected_params": {
+      "beta": 0.01,
+      "bias": 0.0
+    },
+    "diagnostics": {
+      "primal_value": 1.3531168477068407,
+      "dual_value": NaN,
+      "gap": NaN
+    },
+    "test_metrics": {
+      "sum_token_acc": 0.71630859375,
+      "carry_token_acc": 0.87841796875,
+      "joint_token_acc": 0.69677734375,
+      "joint_seq_acc": 0.2021484375,
+      "sum_seq_acc": 0.2333984375,
+      "carry_seq_acc": 0.5556640625,
+      "mean_first_wrong_sum_among_error_seq": 1.805095541401274,
+      "mean_first_wrong_carry_among_error_seq": 2.074725274725275
+    }
+  },
+  "ood_eval": {
+    "cvx": {
+      "n_digits_10": {
+        "n_digits": 10,
+        "n_test": 1024,
+        "cvx": {
+          "sum_token_acc": 0.6792436079545454,
+          "carry_token_acc": 0.8848544034090909,
+          "joint_token_acc": 0.6385830965909091,
+          "joint_seq_acc": 0.0068359375,
+          "sum_seq_acc": 0.0107421875,
+          "carry_seq_acc": 0.2919921875,
+          "mean_first_wrong_sum_among_error_seq": 3.715695952615992,
+          "mean_first_wrong_carry_among_error_seq": 5.187586206896552
+        }
+      },
+      "n_digits_20": {
+        "n_digits": 20,
+        "n_test": 1024,
+        "cvx": {
+          "sum_token_acc": 0.6146763392857143,
+          "carry_token_acc": 0.8314732142857143,
+          "joint_token_acc": 0.5445963541666666,
+          "joint_seq_acc": 0.0,
+          "sum_seq_acc": 0.0,
+          "carry_seq_acc": 0.0302734375,
+          "mean_first_wrong_sum_among_error_seq": 3.712890625,
+          "mean_first_wrong_carry_among_error_seq": 7.032225579053374
+        }
+      },
+      "n_digits_50": {
+        "n_digits": 50,
+        "n_test": 1024,
+        "cvx": {
+          "sum_token_acc": 0.5683976715686274,
+          "carry_token_acc": 0.7917432598039216,
+          "joint_token_acc": 0.47087545955882354,
+          "joint_seq_acc": 0.0,
+          "sum_seq_acc": 0.0,
+          "carry_seq_acc": 0.0,
+          "mean_first_wrong_sum_among_error_seq": 3.7890625,
+          "mean_first_wrong_carry_among_error_seq": 7.8720703125
+        }
+      }
+    },
+    "sg_cvx": {
+      "n_digits_10": {
+        "n_digits": 10,
+        "n_test": 1024,
+        "sg_cvx": {
+          "sum_token_acc": 0.5432350852272727,
+          "carry_token_acc": 0.7394353693181818,
+          "joint_token_acc": 0.3984375,
+          "joint_seq_acc": 0.0,
+          "sum_seq_acc": 0.0009765625,
+          "carry_seq_acc": 0.0712890625,
+          "mean_first_wrong_sum_among_error_seq": 1.1065493646138806,
+          "mean_first_wrong_carry_among_error_seq": 1.7697160883280758
+        }
+      },
+      "n_digits_20": {
+        "n_digits": 20,
+        "n_test": 1024,
+        "sg_cvx": {
+          "sum_token_acc": 0.5388764880952381,
+          "carry_token_acc": 0.74609375,
+          "joint_token_acc": 0.4167596726190476,
+          "joint_seq_acc": 0.0,
+          "sum_seq_acc": 0.0,
+          "carry_seq_acc": 0.00390625,
+          "mean_first_wrong_sum_among_error_seq": 1.0283203125,
+          "mean_first_wrong_carry_among_error_seq": 2.6245098039215686
+        }
+      },
+      "n_digits_50": {
+        "n_digits": 50,
+        "n_test": 1024,
+        "sg_cvx": {
+          "sum_token_acc": 0.5384880514705882,
+          "carry_token_acc": 0.7547296262254902,
+          "joint_token_acc": 0.4264322916666667,
+          "joint_seq_acc": 0.0,
+          "sum_seq_acc": 0.0,
+          "carry_seq_acc": 0.0,
+          "mean_first_wrong_sum_among_error_seq": 1.103515625,
+          "mean_first_wrong_carry_among_error_seq": 2.6904296875
+        }
+      }
+    },
+    "r_cvx": {
+      "n_digits_10": {
+        "n_digits": 10,
+        "n_test": 1024,
+        "r_cvx": {
+          "sum_token_acc": 0.662109375,
+          "carry_token_acc": 0.8607954545454546,
+          "joint_token_acc": 0.6218039772727273,
+          "joint_seq_acc": 0.0107421875,
+          "sum_seq_acc": 0.0166015625,
+          "carry_seq_acc": 0.248046875,
+          "mean_first_wrong_sum_among_error_seq": 2.6703078450844093,
+          "mean_first_wrong_carry_among_error_seq": 4.275324675324676
+        }
+      },
+      "n_digits_20": {
+        "n_digits": 20,
+        "n_test": 1024,
+        "r_cvx": {
+          "sum_token_acc": 0.6302083333333334,
+          "carry_token_acc": 0.8390531994047619,
+          "joint_token_acc": 0.5705450148809523,
+          "joint_seq_acc": 0.0,
+          "sum_seq_acc": 0.0,
+          "carry_seq_acc": 0.041015625,
+          "mean_first_wrong_sum_among_error_seq": 2.904296875,
+          "mean_first_wrong_carry_among_error_seq": 6.322810590631365
+        }
+      },
+      "n_digits_50": {
+        "n_digits": 50,
+        "n_test": 1024,
+        "r_cvx": {
+          "sum_token_acc": 0.6040517769607843,
+          "carry_token_acc": 0.8198146446078431,
+          "joint_token_acc": 0.5288947610294118,
+          "joint_seq_acc": 0.0,
+          "sum_seq_acc": 0.0,
+          "carry_seq_acc": 0.0,
+          "mean_first_wrong_sum_among_error_seq": 2.814453125,
+          "mean_first_wrong_carry_among_error_seq": 7.2041015625
+        }
+      }
+    }
+  }
+}
