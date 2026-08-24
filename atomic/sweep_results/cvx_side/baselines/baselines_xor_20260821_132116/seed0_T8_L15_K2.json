@@ -1,0 +1,107 @@
+{
+  "config": {
+    "name": "xor",
+    "dataset": "dfa",
+    "T_list": [
+      6,
+      8,
+      11,
+      14
+    ],
+    "L_list": [
+      5,
+      15
+    ],
+    "K_parallel_list": [
+      2
+    ],
+    "P_rec": 500,
+    "P_last": 1000,
+    "n_train": 2000,
+    "n_val": 2000,
+    "n_test": 4000,
+    "loss_name": "hinge",
+    "last_layer_readout": "membrane",
+    "dfa_spec": "first_last_xor",
+    "arith_op": null,
+    "arith_base": null,
+    "n_digits": null,
+    "reservoir_variant": "normalized"
+  },
+  "grids": {
+    "sg_lr_grid": [
+      0.001,
+      0.005,
+      0.01,
+      0.05,
+      0.1
+    ],
+    "sg_epochs": 200,
+    "cvx_beta_grid": [
+      0.01,
+      0.1,
+      1.0
+    ],
+    "cvx_bias_grid": [
+      0.0
+    ]
+  },
+  "task": "xor",
+  "dataset": "dfa",
+  "dfa_spec": "first_last_xor",
+  "arith_op": null,
+  "arith_base": null,
+  "n_digits": null,
+  "T": 8,
+  "L": 15,
+  "K_parallel": 2,
+  "P_rec": 500,
+  "P_last": 1000,
+  "n_train": 2000,
+  "n_val": 2000,
+  "n_test": 4000,
+  "loss_name": "hinge",
+  "last_layer_readout": "membrane",
+  "seed": 0,
+  "side": "cvx",
+  "cvx_method": "cvx_lite",
+  "sg": null,
+  "cvx": {
+    "selected_params": {
+      "beta": 1.0,
+      "bias": 0.0
+    },
+    "split_accs": {
+      "train_acc": 0.52,
+      "val_acc": 0.491,
+      "test_acc": 0.50775
+    },
+    "final_losses": {
+      "train_loss": 1.9999929706105963,
+      "val_loss": 2.0000024446677087,
+      "test_loss": 1.9999965478886503,
+      "train_objective": 1.9999984294673048,
+      "val_objective": 2.000007903524417,
+      "test_objective": 2.0000020067453588
+    }
+  },
+  "sg_cvx": {
+    "selected_params": {
+      "beta": 1.0,
+      "bias": 0.0
+    },
+    "split_accs": {
+      "train_acc": 0.489,
+      "val_acc": 0.5185,
+      "test_acc": 0.49625
+    },
+    "final_losses": {
+      "train_loss": 2.0000000000000013,
+      "val_loss": 2.0,
+      "test_loss": 2.0,
+      "train_objective": 2.0000000000000013,
+      "val_objective": 2.0,
+      "test_objective": 2.0
+    }
+  }
+}

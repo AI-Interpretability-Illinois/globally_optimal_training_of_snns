@@ -1,0 +1,107 @@
+{
+  "config": {
+    "name": "xor",
+    "dataset": "dfa",
+    "T_list": [
+      6,
+      8,
+      11,
+      14
+    ],
+    "L_list": [
+      5,
+      15
+    ],
+    "K_parallel_list": [
+      2
+    ],
+    "P_rec": 500,
+    "P_last": 1000,
+    "n_train": 2000,
+    "n_val": 2000,
+    "n_test": 4000,
+    "loss_name": "hinge",
+    "last_layer_readout": "membrane",
+    "dfa_spec": "first_last_xor",
+    "arith_op": null,
+    "arith_base": null,
+    "n_digits": null,
+    "reservoir_variant": "normalized"
+  },
+  "grids": {
+    "sg_lr_grid": [
+      0.001,
+      0.005,
+      0.01,
+      0.05,
+      0.1
+    ],
+    "sg_epochs": 200,
+    "cvx_beta_grid": [
+      0.01,
+      0.1,
+      1.0
+    ],
+    "cvx_bias_grid": [
+      0.0
+    ]
+  },
+  "task": "xor",
+  "dataset": "dfa",
+  "dfa_spec": "first_last_xor",
+  "arith_op": null,
+  "arith_base": null,
+  "n_digits": null,
+  "T": 11,
+  "L": 15,
+  "K_parallel": 2,
+  "P_rec": 500,
+  "P_last": 1000,
+  "n_train": 2000,
+  "n_val": 2000,
+  "n_test": 4000,
+  "loss_name": "hinge",
+  "last_layer_readout": "membrane",
+  "seed": 0,
+  "side": "cvx",
+  "cvx_method": "cvx",
+  "sg": null,
+  "cvx": {
+    "selected_params": {
+      "beta": 0.01,
+      "bias": 0.0
+    },
+    "split_accs": {
+      "train_acc": 0.6705,
+      "val_acc": 0.512,
+      "test_acc": 0.50275
+    },
+    "final_losses": {
+      "train_loss": 1.3567818680241233,
+      "val_loss": 2.0488062179731985,
+      "test_loss": 2.0960685943722503,
+      "train_objective": 1.4759497816232818,
+      "val_objective": 2.167974131572357,
+      "test_objective": 2.215236507971409
+    }
+  },
+  "sg_cvx": {
+    "selected_params": {
+      "beta": 1.0,
+      "bias": 0.0
+    },
+    "split_accs": {
+      "train_acc": 0.492,
+      "val_acc": 0.506,
+      "test_acc": 0.501
+    },
+    "final_losses": {
+      "train_loss": 2.0000000009313292,
+      "val_loss": 1.9999999999310532,
+      "test_loss": 1.999999999988509,
+      "train_objective": 2.00000000111302,
+      "val_objective": 2.000000000112744,
+      "test_objective": 2.0000000001702
+    }
+  }
+}

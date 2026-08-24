@@ -1,0 +1,536 @@
+{
+  "task": "xor",
+  "config": {
+    "name": "xor",
+    "dataset": "dfa",
+    "T_list": [
+      6,
+      8,
+      11,
+      14
+    ],
+    "L_list": [
+      5,
+      15
+    ],
+    "K_parallel_list": [
+      2
+    ],
+    "P_rec": 500,
+    "P_last": 1000,
+    "n_train": 2000,
+    "n_val": 2000,
+    "n_test": 4000,
+    "loss_name": "hinge",
+    "last_layer_readout": "membrane",
+    "dfa_spec": "first_last_xor",
+    "arith_op": null,
+    "arith_base": null,
+    "n_digits": null,
+    "reservoir_variant": "normalized"
+  },
+  "grids": {
+    "sg_lr_grid": [
+      0.001,
+      0.005,
+      0.01,
+      0.05,
+      0.1
+    ],
+    "sg_epochs": 200,
+    "cvx_beta_grid": [
+      0.01,
+      0.1,
+      1.0
+    ],
+    "cvx_bias_grid": [
+      0.0
+    ]
+  },
+  "seeds": [
+    0
+  ],
+  "results": [
+    {
+      "task": "xor",
+      "dataset": "dfa",
+      "dfa_spec": "first_last_xor",
+      "arith_op": null,
+      "arith_base": null,
+      "n_digits": null,
+      "T": 6,
+      "L": 5,
+      "K_parallel": 2,
+      "P_rec": 500,
+      "P_last": 1000,
+      "n_train": 2000,
+      "n_val": 2000,
+      "n_test": 4000,
+      "loss_name": "hinge",
+      "last_layer_readout": "membrane",
+      "seed": 0,
+      "side": "cvx",
+      "cvx_method": "cvx",
+      "sg": null,
+      "cvx": {
+        "selected_params": {
+          "beta": 0.01,
+          "bias": 0.0
+        },
+        "split_accs": {
+          "train_acc": 1.0,
+          "val_acc": 1.0,
+          "test_acc": 1.0
+        },
+        "final_losses": {
+          "train_loss": 2.0407862899585183e-11,
+          "val_loss": 0.0,
+          "test_loss": 0.0,
+          "train_objective": 0.020480434364330707,
+          "val_objective": 0.020480434343922844,
+          "test_objective": 0.020480434343922844
+        }
+      },
+      "sg_cvx": {
+        "selected_params": {
+          "beta": 0.01,
+          "bias": 0.0
+        },
+        "split_accs": {
+          "train_acc": 0.8835,
+          "val_acc": 0.8765,
+          "test_acc": 0.87475
+        },
+        "final_losses": {
+          "train_loss": 0.46600000005461734,
+          "val_loss": 0.4939999999998185,
+          "test_loss": 0.5010000000001817,
+          "train_objective": 0.4746104168509294,
+          "val_objective": 0.5026104167961305,
+          "test_objective": 0.5096104167964938
+        }
+      }
+    },
+    {
+      "task": "xor",
+      "dataset": "dfa",
+      "dfa_spec": "first_last_xor",
+      "arith_op": null,
+      "arith_base": null,
+      "n_digits": null,
+      "T": 6,
+      "L": 15,
+      "K_parallel": 2,
+      "P_rec": 500,
+      "P_last": 1000,
+      "n_train": 2000,
+      "n_val": 2000,
+      "n_test": 4000,
+      "loss_name": "hinge",
+      "last_layer_readout": "membrane",
+      "seed": 0,
+      "side": "cvx",
+      "cvx_method": "cvx",
+      "sg": null,
+      "cvx": {
+        "selected_params": {
+          "beta": 0.01,
+          "bias": 0.0
+        },
+        "split_accs": {
+          "train_acc": 0.885,
+          "val_acc": 0.883,
+          "test_acc": 0.87575
+        },
+        "final_losses": {
+          "train_loss": 0.4600000008568473,
+          "val_loss": 0.46800000004431863,
+          "test_loss": 0.4970000000201238,
+          "train_objective": 0.4855957631857926,
+          "val_objective": 0.49359576237326397,
+          "test_objective": 0.5225957623490691
+        }
+      },
+      "sg_cvx": {
+        "selected_params": {
+          "beta": 0.01,
+          "bias": 0.0
+        },
+        "split_accs": {
+          "train_acc": 0.5145,
+          "val_acc": 0.4905,
+          "test_acc": 0.4975
+        },
+        "final_losses": {
+          "train_loss": 1.9420000001105293,
+          "val_loss": 2.0379999999846214,
+          "test_loss": 2.0099999999959532,
+          "train_objective": 1.9426324556423071,
+          "val_objective": 2.038632455516399,
+          "test_objective": 2.010632455527731
+        }
+      }
+    },
+    {
+      "task": "xor",
+      "dataset": "dfa",
+      "dfa_spec": "first_last_xor",
+      "arith_op": null,
+      "arith_base": null,
+      "n_digits": null,
+      "T": 8,
+      "L": 5,
+      "K_parallel": 2,
+      "P_rec": 500,
+      "P_last": 1000,
+      "n_train": 2000,
+      "n_val": 2000,
+      "n_test": 4000,
+      "loss_name": "hinge",
+      "last_layer_readout": "membrane",
+      "seed": 0,
+      "side": "cvx",
+      "cvx_method": "cvx",
+      "sg": null,
+      "cvx": {
+        "selected_params": {
+          "beta": 0.01,
+          "bias": 0.0
+        },
+        "split_accs": {
+          "train_acc": 1.0,
+          "val_acc": 1.0,
+          "test_acc": 1.0
+        },
+        "final_losses": {
+          "train_loss": 1.2979829711046165e-10,
+          "val_loss": 1.403384075615577e-13,
+          "test_loss": 1.9881274404554007e-13,
+          "train_objective": 0.097849017280069,
+          "val_objective": 0.09784901715041104,
+          "test_objective": 0.09784901715046952
+        }
+      },
+      "sg_cvx": {
+        "selected_params": {
+          "beta": 0.01,
+          "bias": 0.0
+        },
+        "split_accs": {
+          "train_acc": 0.9425,
+          "val_acc": 0.926,
+          "test_acc": 0.92775
+        },
+        "final_losses": {
+          "train_loss": 0.23000000004276172,
+          "val_loss": 0.2959999999960973,
+          "test_loss": 0.28900000000018766,
+          "train_objective": 0.2644041510004122,
+          "val_objective": 0.33040415095374776,
+          "test_objective": 0.32340415095783814
+        }
+      }
+    },
+    {
+      "task": "xor",
+      "dataset": "dfa",
+      "dfa_spec": "first_last_xor",
+      "arith_op": null,
+      "arith_base": null,
+      "n_digits": null,
+      "T": 8,
+      "L": 15,
+      "K_parallel": 2,
+      "P_rec": 500,
+      "P_last": 1000,
+      "n_train": 2000,
+      "n_val": 2000,
+      "n_test": 4000,
+      "loss_name": "hinge",
+      "last_layer_readout": "membrane",
+      "seed": 0,
+      "side": "cvx",
+      "cvx_method": "cvx",
+      "sg": null,
+      "cvx": {
+        "selected_params": {
+          "beta": 0.01,
+          "bias": 0.0
+        },
+        "split_accs": {
+          "train_acc": 0.7755,
+          "val_acc": 0.731,
+          "test_acc": 0.72925
+        },
+        "final_losses": {
+          "train_loss": 0.9017655901480095,
+          "val_loss": 1.0703186161239717,
+          "test_loss": 1.086683510047282,
+          "train_objective": 1.0060763870543594,
+          "val_objective": 1.1746294130303216,
+          "test_objective": 1.190994306953632
+        }
+      },
+      "sg_cvx": {
+        "selected_params": {
+          "beta": 0.01,
+          "bias": 0.0
+        },
+        "split_accs": {
+          "train_acc": 0.511,
+          "val_acc": 0.4815,
+          "test_acc": 0.50375
+        },
+        "final_losses": {
+          "train_loss": 1.9560000000961053,
+          "val_loss": 2.0739999999620937,
+          "test_loss": 1.9850000000076837,
+          "train_objective": 1.956632455627815,
+          "val_objective": 2.0746324554938034,
+          "test_objective": 1.9856324555393934
+        }
+      }
+    },
+    {
+      "task": "xor",
+      "dataset": "dfa",
+      "dfa_spec": "first_last_xor",
+      "arith_op": null,
+      "arith_base": null,
+      "n_digits": null,
+      "T": 11,
+      "L": 5,
+      "K_parallel": 2,
+      "P_rec": 500,
+      "P_last": 1000,
+      "n_train": 2000,
+      "n_val": 2000,
+      "n_test": 4000,
+      "loss_name": "hinge",
+      "last_layer_readout": "membrane",
+      "seed": 0,
+      "side": "cvx",
+      "cvx_method": "cvx",
+      "sg": null,
+      "cvx": {
+        "selected_params": {
+          "beta": 0.01,
+          "bias": 0.0
+        },
+        "split_accs": {
+          "train_acc": 0.803,
+          "val_acc": 0.6205,
+          "test_acc": 0.60975
+        },
+        "final_losses": {
+          "train_loss": 0.9841436984676963,
+          "val_loss": 1.9940694614942949,
+          "test_loss": 2.022851825565578,
+          "train_objective": 1.1678114115966098,
+          "val_objective": 2.1777371746232084,
+          "test_objective": 2.2065195386944914
+        }
+      },
+      "sg_cvx": {
+        "selected_params": {
+          "beta": 0.01,
+          "bias": 0.0
+        },
+        "split_accs": {
+          "train_acc": 0.8635,
+          "val_acc": 0.712,
+          "test_acc": 0.717
+        },
+        "final_losses": {
+          "train_loss": 0.5945210575246492,
+          "val_loss": 1.4935904432112386,
+          "test_loss": 1.449693010072187,
+          "train_objective": 0.7748657772651909,
+          "val_objective": 1.6739351629517802,
+          "test_objective": 1.6300377298127287
+        }
+      }
+    },
+    {
+      "task": "xor",
+      "dataset": "dfa",
+      "dfa_spec": "first_last_xor",
+      "arith_op": null,
+      "arith_base": null,
+      "n_digits": null,
+      "T": 11,
+      "L": 15,
+      "K_parallel": 2,
+      "P_rec": 500,
+      "P_last": 1000,
+      "n_train": 2000,
+      "n_val": 2000,
+      "n_test": 4000,
+      "loss_name": "hinge",
+      "last_layer_readout": "membrane",
+      "seed": 0,
+      "side": "cvx",
+      "cvx_method": "cvx",
+      "sg": null,
+      "cvx": {
+        "selected_params": {
+          "beta": 0.01,
+          "bias": 0.0
+        },
+        "split_accs": {
+          "train_acc": 0.6705,
+          "val_acc": 0.512,
+          "test_acc": 0.50275
+        },
+        "final_losses": {
+          "train_loss": 1.3567818680241233,
+          "val_loss": 2.0488062179731985,
+          "test_loss": 2.0960685943722503,
+          "train_objective": 1.4759497816232818,
+          "val_objective": 2.167974131572357,
+          "test_objective": 2.215236507971409
+        }
+      },
+      "sg_cvx": {
+        "selected_params": {
+          "beta": 1.0,
+          "bias": 0.0
+        },
+        "split_accs": {
+          "train_acc": 0.492,
+          "val_acc": 0.506,
+          "test_acc": 0.501
+        },
+        "final_losses": {
+          "train_loss": 2.0000000009313292,
+          "val_loss": 1.9999999999310532,
+          "test_loss": 1.999999999988509,
+          "train_objective": 2.00000000111302,
+          "val_objective": 2.000000000112744,
+          "test_objective": 2.0000000001702
+        }
+      }
+    },
+    {
+      "task": "xor",
+      "dataset": "dfa",
+      "dfa_spec": "first_last_xor",
+      "arith_op": null,
+      "arith_base": null,
+      "n_digits": null,
+      "T": 14,
+      "L": 5,
+      "K_parallel": 2,
+      "P_rec": 500,
+      "P_last": 1000,
+      "n_train": 2000,
+      "n_val": 2000,
+      "n_test": 4000,
+      "loss_name": "hinge",
+      "last_layer_readout": "membrane",
+      "seed": 0,
+      "side": "cvx",
+      "cvx_method": "cvx",
+      "sg": null,
+      "cvx": {
+        "selected_params": {
+          "beta": 0.1,
+          "bias": 0.0
+        },
+        "split_accs": {
+          "train_acc": 0.666,
+          "val_acc": 0.527,
+          "test_acc": 0.5095
+        },
+        "final_losses": {
+          "train_loss": 1.5045713695061584,
+          "val_loss": 2.0167684600806943,
+          "test_loss": 2.0397771672585856,
+          "train_objective": 1.7195043786529145,
+          "val_objective": 2.2317014692274504,
+          "test_objective": 2.2547101764053417
+        }
+      },
+      "sg_cvx": {
+        "selected_params": {
+          "beta": 0.01,
+          "bias": 0.0
+        },
+        "split_accs": {
+          "train_acc": 0.5115,
+          "val_acc": 0.4955,
+          "test_acc": 0.4965
+        },
+        "final_losses": {
+          "train_loss": 1.9540000126113597,
+          "val_loss": 2.017999998981313,
+          "test_loss": 2.0139999992076874,
+          "train_objective": 1.9546324681076004,
+          "val_objective": 2.0186324544775536,
+          "test_objective": 2.014632454703928
+        }
+      }
+    },
+    {
+      "task": "xor",
+      "dataset": "dfa",
+      "dfa_spec": "first_last_xor",
+      "arith_op": null,
+      "arith_base": null,
+      "n_digits": null,
+      "T": 14,
+      "L": 15,
+      "K_parallel": 2,
+      "P_rec": 500,
+      "P_last": 1000,
+      "n_train": 2000,
+      "n_val": 2000,
+      "n_test": 4000,
+      "loss_name": "hinge",
+      "last_layer_readout": "membrane",
+      "seed": 0,
+      "side": "cvx",
+      "cvx_method": "cvx",
+      "sg": null,
+      "cvx": {
+        "selected_params": {
+          "beta": 1.0,
+          "bias": 0.0
+        },
+        "split_accs": {
+          "train_acc": 0.5115,
+          "val_acc": 0.4955,
+          "test_acc": 0.4965
+        },
+        "final_losses": {
+          "train_loss": 1.9190000017373414,
+          "val_loss": 1.9929999999251118,
+          "test_loss": 1.9944999998592405,
+          "train_objective": 1.9822455543430193,
+          "val_objective": 2.0562455525307897,
+          "test_objective": 2.0577455524649184
+        }
+      },
+      "sg_cvx": {
+        "selected_params": {
+          "beta": 0.01,
+          "bias": 0.0
+        },
+        "split_accs": {
+          "train_acc": 0.5115,
+          "val_acc": 0.4955,
+          "test_acc": 0.4965
+        },
+        "final_losses": {
+          "train_loss": 1.954000004922546,
+          "val_loss": 2.017999999554907,
+          "test_loss": 2.0139999996538167,
+          "train_objective": 1.954632460438941,
+          "val_objective": 2.0186324550713017,
+          "test_objective": 2.0146324551702115
+        }
+      }
+    }
+  ],
+  "out_dir": "/home/azureuser/snn_paper_1/atomic/sweep_results/cvx_side/baselines/baselines_xor_20260821_132841"
+}
