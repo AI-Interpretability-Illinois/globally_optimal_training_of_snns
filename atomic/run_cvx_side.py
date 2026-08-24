@@ -44,10 +44,19 @@ def _parse_args() -> argparse.Namespace:
         help="Skip xor/mnist. Only run carry-AR Gaussian CVX + STE-CVX + R-CVX.",
     )
     ap.add_argument("--arith_bases", type=int, nargs="*", default=list(SUPPORTED_BASES))
-    ap.add_argument("--arith_L", type=int, nargs="+", default=[3, 5])
+    ap.add_argument("--arith_L", type=int, nargs="+", default=[3, 5, 10])
     ap.add_argument("--n_train", type=int, default=10000)
-    ap.add_argument("--K_parallel", type=int, default=10)
-    ap.add_argument("--seeds", type=int, nargs="+", default=[0])
+    ap.add_argument("--K_parallel", type=int, default=2)
+    ap.add_argument("--P_rec", type=int, default=256)
+    ap.add_argument("--P_last", type=int, default=512)
+    ap.add_argument(
+        "--lambda_carry_grid",
+        type=float,
+        nargs="*",
+        default=[0.125, 10.0],
+        help="Must match the STE ckpt lambda tags written by the non-CVX side.",
+    )
+    ap.add_argument("--seeds", type=int, nargs="+", default=[0, 1, 2])
     ap.add_argument("--debug", action="store_true")
     ap.add_argument("--out_root", type=str, default="sweep_results/cvx_side")
     ap.add_argument(
@@ -155,14 +164,13 @@ def main() -> None:
                 "--out_root",
                 str(out_root / "ar" / f"add_ar_b{int(base)}_L{int(L)}"),
                 "--P_rec",
-                "500",
+                str(int(args.P_rec)),
                 "--P_last",
-                "1000",
+                str(int(args.P_last)),
                 "--K_parallel",
                 str(int(args.K_parallel)),
                 "--lambda_carry_grid",
-                "2",
-                "12",
+                *[str(float(x)) for x in args.lambda_carry_grid],
             ]
             if args.debug:
                 ar_cmd.append("--debug")

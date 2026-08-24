@@ -116,7 +116,7 @@ def _aggregate_sweep_across_seeds(seed_payloads: List[Dict[str, Any]]) -> List[D
     for i, lc in enumerate(base_grid):
         ents = [sw[i] for sw in sweeps]
         row: Dict[str, Any] = {"lambda_carry": float(lc)}
-        for method in ("ste", "lsm", "cvx", "sg_cvx", "r_cvx"):
+        for method in ("ste", "ste_ft", "lsm", "cvx", "sg_cvx", "r_cvx"):
             blocks = [e.get(method) for e in ents]
             if all(b is None for b in blocks):
                 row[method] = None
@@ -126,7 +126,7 @@ def _aggregate_sweep_across_seeds(seed_payloads: List[Dict[str, Any]]) -> List[D
             payload: Dict[str, Any] = {
                 "test_metrics": _float_dict_mean_std([b["test_metrics"] for b in blocks])
             }
-            if method not in ("ste", "lsm"):
+            if method not in ("ste", "ste_ft", "lsm"):
                 payload["diagnostics"] = _float_dict_mean_std([b["diagnostics"] for b in blocks])
             row[method] = payload
         row["ood_eval"] = _aggregate_ood([e.get("ood_eval") for e in ents])
@@ -369,6 +369,7 @@ def _ood_eval(
     verify_count: int,
     add_initial_carry: str,
     cvx_tag: str = "cvx",
+    ste_tag: str = "ste",
     lsm_model=None,
     lsm_w_sum: Optional[np.ndarray] = None,
     lsm_w_carry: Optional[np.ndarray] = None,
@@ -399,7 +400,7 @@ def _ood_eval(
         block: Dict[str, Any] = {"n_digits": int(nd), "n_test": int(n_test_ood)}
         if ste_model is not None:
             sp, cp = ste_predict_sum_carry_autoregressive(ste_model, x_ood, base=arith_base)
-            block["ste"] = carry_autoregressive_metrics(sp, cp, y_s, y_c)
+            block[str(ste_tag)] = carry_autoregressive_metrics(sp, cp, y_s, y_c)
         if lsm_model is not None:
             if lsm_w_sum is None or lsm_w_carry is None:
                 raise ValueError("LSM OOD eval requires lsm_w_sum and lsm_w_carry.")
@@ -436,6 +437,18 @@ def _ar_ste_ckpt(ckpt_dir: Path, *, seed: int, T: int, L: int, K: int, base: int
         L=int(L),
         K=int(K),
         tag=f"ste_{_lc_dirname(float(lambda_carry))}",
+        task=_ar_task_name(base),
+    )
+
+
+def _ar_ste_ft_ckpt(ckpt_dir: Path, *, seed: int, T: int, L: int, K: int, base: int, lambda_carry: float) -> Path:
+    return ckpt_path(
+        ckpt_dir,
+        seed=int(seed),
+        T=int(T),
+        L=int(L),
+        K=int(K),
+        tag=f"ste_ft_from_ste_{_lc_dirname(float(lambda_carry))}",
         task=_ar_task_name(base),
     )
 
@@ -525,6 +538,13 @@ def main() -> None:
     ap.add_argument("--arith_base", type=int, default=2, choices=SUPPORTED_BASES)
     ap.add_argument("--n_digits", type=int, default=5, help="In-distribution train/val/test digit width.")
     ap.add_argument("--n_train", type=int, default=10000)
+    ap.add_argument(
+        "--n_train_ft",
+        type=int,
+        default=0,
+        help="If >0, STE-finetune-from-STE on a fresh train split (seed + --finetune_seed_offset). Writes hidden-only *_ste_ft_from_ste_*.npz. 0 skips.",
+    )
+    ap.add_argument("--finetune_seed_offset", type=int, default=1000)
     ap.add_argument("--n_val", type=int, default=512)
     ap.add_argument("--n_test", type=int, default=1024)
     ap.add_argument("--n_test_ood", type=int, default=0, help="Test samples per OOD length; 0 = use --n_test.")
@@ -540,8 +560,14 @@ def main() -> None:
     ap.add_argument("--ste_last_layer_readout", type=str, default="membrane", choices=["membrane", "spike"])
     ap.add_argument("--cvx_last_layer_readout", type=str, default="spike", choices=["membrane", "spike"])
     ap.add_argument("--ste_epochs", type=int, default=200)
+    ap.add_argument(
+        "--ste_finetune_epochs",
+        type=int,
+        default=100,
+        help="Epochs for STE-from-STE finetune when --n_train_ft > 0.",
+    )
     ap.add_argument("--optimizer_name", type=str, default="adam", choices=["adam", "sgd"])
-    ap.add_argument("--batch_size", type=int, default=256)
+    ap.add_argument("--batch_size", type=int, default=2048)
     ap.add_argument("--beta_leak", type=float, default=0.99)
     ap.add_argument("--threshold", type=float, default=1.0)
     ap.add_argument("--lambda_sum", type=float, default=1.0)
@@ -577,7 +603,7 @@ def main() -> None:
         default="all",
         help=(
             "all: STE + LSM ridge + Gaussian CVX + STE-CVX + R-CVX, AR eval. "
-            "non_cvx: STE + LSM ridge; writes *_ste.npz and *_lsm.npz. "
+            "non_cvx: STE pretrain (+ optional STE finetune) + LSM ridge; writes hidden-only *_ste.npz, *_ste_ft_from_ste.npz, *_lsm.npz. "
             "cvx: Gaussian CVX + STE-CVX + R-CVX (loads --ckpt_dir); default method is cvx_lite."
         ),
     )
@@ -611,9 +637,13 @@ def main() -> None:
         args.n_test = min(int(args.n_test), 16)
         args.debug_max_train = int(args.n_train) if int(args.debug_max_train) == 0 else min(int(args.debug_max_train), int(args.n_train))
         args.ste_epochs = min(int(args.ste_epochs), 5)
+        args.ste_finetune_epochs = min(int(args.ste_finetune_epochs), 5)
+        if int(args.n_train_ft) > 0:
+            args.n_train_ft = min(int(args.n_train_ft), 32)
         args.ste_lr_grid = [float(args.ste_lr_grid[0])]
         args.ste_beta_grid = [float(args.ste_beta_grid[0])]
         args.cvx_beta_grid = [float(args.cvx_beta_grid[0])]
+        args.lambda_carry_grid = [float(args.lambda_carry_grid[0])]
         args.lite_max_iter = min(int(args.lite_max_iter), 50)
         if args.ood_digits is None:
             args.ood_digits = []
@@ -646,6 +676,8 @@ def main() -> None:
         "arith_base": int(args.arith_base),
         "n_digits": int(args.n_digits),
         "n_train": int(args.n_train),
+        "n_train_ft": int(args.n_train_ft),
+        "finetune_seed_offset": int(args.finetune_seed_offset),
         "n_val": int(args.n_val),
         "n_test": int(args.n_test),
         "n_test_ood": n_test_ood,
@@ -656,6 +688,10 @@ def main() -> None:
         "P_rec": int(args.P_rec),
         "P_last": int(args.P_last),
         "K_parallel": int(args.K_parallel),
+        "ste_last_layer_readout": str(args.ste_last_layer_readout),
+        "ste_epochs": int(args.ste_epochs),
+        "ste_finetune_epochs": int(args.ste_finetune_epochs),
+        "batch_size": int(args.batch_size),
         "add_initial_carry": aic,
         "ste_time_loss": str(args.ste_time_loss),
         "cvx_time_loss": str(args.cvx_time_loss),
@@ -689,6 +725,35 @@ def main() -> None:
             add_initial_carry=aic,
         )
         ds = _maybe_subsample_train(ds, int(args.debug_max_train))
+        ds_ft: Optional[CarryAugmentedDataset] = None
+        ft_seed = int(run_seed) + int(args.finetune_seed_offset)
+        if run_ste and int(args.n_train_ft) > 0:
+            ds_ft_raw = build_carry_augmented_dataset(
+                base=int(args.arith_base),
+                n_digits=int(args.n_digits),
+                n_train=int(args.n_train_ft),
+                n_val=int(args.n_val),
+                n_test=int(args.n_test),
+                seed=ft_seed,
+                verify_count=int(args.verify_samples),
+                add_initial_carry=aic,
+            )
+            ds_ft_raw = _maybe_subsample_train(ds_ft_raw, int(args.debug_max_train))
+            ds_ft = CarryAugmentedDataset(
+                X_train=ds_ft_raw.X_train,
+                y_sum_train=ds_ft_raw.y_sum_train,
+                y_carry_train=ds_ft_raw.y_carry_train,
+                X_val=ds_ft_raw.X_val,
+                y_sum_val=ds_ft_raw.y_sum_val,
+                y_carry_val=ds_ft_raw.y_carry_val,
+                X_test=ds.X_test,
+                y_sum_test=ds.y_sum_test,
+                y_carry_test=ds.y_carry_test,
+                num_sum_classes=ds.num_sum_classes,
+                d_in=ds.d_in,
+                T=ds.T,
+                dataset_name=f"{ds_ft_raw.dataset_name}::ft_seed{ft_seed}::eval_from_pretrain",
+            )
 
         ste_n_sum = resolve_ste_sum_loss_name(str(args.ste_sum_loss), ds.num_sum_classes)
         ste_n_carry = resolve_ste_carry_loss_name(str(args.ste_carry_loss))
@@ -773,12 +838,14 @@ def main() -> None:
             one_entry: Dict[str, Any] = {
                 "lambda_carry": float(lc),
                 "ste": None,
+                "ste_ft": None,
                 "lsm": lsm_block,
                 "cvx": None,
                 "sg_cvx": None,
                 "r_cvx": None,
                 "ood_eval": None,
             }
+            ste_ft_model: Optional[CarryAugmentedSNN] = None
 
             if run_ste:
                 ste_model, ste_sel, _ = ste_sweep_and_train(
@@ -836,6 +903,77 @@ def main() -> None:
                 )
                 ste_test = carry_autoregressive_metrics(sp, cp, ds.y_sum_test, ds.y_carry_test)
                 one_entry["ste"] = {"selected_params": ste_sel, "test_metrics": ste_test}
+
+                if ds_ft is not None:
+                    if ste_model is None:
+                        raise RuntimeError("STE finetune requires a trained STE pretrain model.")
+                    print(
+                        f"[ste-ft] seed={run_seed} ft_seed={ft_seed} lambda_carry={lc} "
+                        f"n_train_ft={int(ds_ft.X_train.shape[0])}",
+                        flush=True,
+                    )
+                    ste_ft_model, ste_ft_sel, _ = ste_sweep_and_train(
+                        ds=ds_ft,
+                        L=int(args.L),
+                        P_rec=int(args.P_rec),
+                        P_last=int(args.P_last),
+                        K_parallel=int(args.K_parallel),
+                        ste_last_layer_readout=str(args.ste_last_layer_readout),
+                        ste_epochs=int(args.ste_finetune_epochs),
+                        batch_size=int(args.batch_size),
+                        optimizer_name=str(args.optimizer_name),
+                        beta_leak=float(args.beta_leak),
+                        threshold=float(args.threshold),
+                        seed=ft_seed,
+                        ste_lr_grid=args.ste_lr_grid,
+                        ste_beta_grid=args.ste_beta_grid,
+                        lambda_sum=float(args.lambda_sum),
+                        lambda_carry=float(lc),
+                        ste_sum_loss=str(args.ste_sum_loss),
+                        ste_carry_loss=str(args.ste_carry_loss),
+                        tf_objective=str(args.tf_objective),
+                        ste_time_loss=str(args.ste_time_loss),
+                        pretrained_weights=ste_model.trainable_weight_list(),
+                    )
+                    ste_ft_hidden = ste_ft_model.hidden_weight_list()
+                    ste_ft_ckpt = _ar_ste_ft_ckpt(
+                        ckpt_dir,
+                        seed=run_seed,
+                        T=int(ds.T),
+                        L=int(args.L),
+                        K=int(args.K_parallel),
+                        base=int(args.arith_base),
+                        lambda_carry=float(lc),
+                    )
+                    save_weight_list(
+                        ste_ft_ckpt,
+                        ste_ft_hidden,
+                        meta={
+                            "tag": f"ste_ft_from_ste_{_lc_dirname(float(lc))}",
+                            "task": _ar_task_name(int(args.arith_base)),
+                            "arith_base": int(args.arith_base),
+                            "n_digits": int(args.n_digits),
+                            "T": int(ds.T),
+                            "L": int(args.L),
+                            "K_parallel": int(args.K_parallel),
+                            "P_rec": int(args.P_rec),
+                            "P_last": int(args.P_last),
+                            "seed": int(run_seed),
+                            "ft_seed": int(ft_seed),
+                            "lambda_carry": float(lc),
+                            "init_from": "ste_pretrain_hidden_and_heads",
+                            "selected_params": ste_ft_sel,
+                        },
+                    )
+                    sp_ft, cp_ft = ste_predict_sum_carry_autoregressive(
+                        ste_ft_model, ds.X_test, base=int(args.arith_base)
+                    )
+                    ste_ft_test = carry_autoregressive_metrics(sp_ft, cp_ft, ds.y_sum_test, ds.y_carry_test)
+                    one_entry["ste_ft"] = {
+                        "selected_params": ste_ft_sel,
+                        "test_metrics": ste_ft_test,
+                        "ft_seed": int(ft_seed),
+                    }
 
             if run_cvx:
                 cvx_bundle, cvx_sel, cvx_test = _cvx_ar_fit_and_eval(
@@ -910,6 +1048,22 @@ def main() -> None:
                         add_initial_carry=aic,
                     )
                     ood_report["ste"] = ood_ste
+                    if ste_ft_model is not None:
+                        ood_ste_ft = _ood_eval(
+                            ds=ds,
+                            arith_base=int(args.arith_base),
+                            ste_model=ste_ft_model,
+                            init_cfg=None,
+                            w_sum=None,
+                            w_carry=None,
+                            ood_digits=ood_digits,
+                            n_test_ood=n_test_ood,
+                            seed=run_seed,
+                            verify_count=int(args.verify_samples),
+                            add_initial_carry=aic,
+                            ste_tag="ste_ft",
+                        )
+                        ood_report["ste_ft"] = ood_ste_ft
                 if run_lsm:
                     if lsm_result is None:
                         raise RuntimeError("run_lsm is set but lsm_result is missing.")
@@ -999,6 +1153,8 @@ def main() -> None:
                 "arith_base": int(args.arith_base),
                 "n_digits": int(args.n_digits),
                 "n_train": int(args.n_train),
+                "n_train_ft": int(args.n_train_ft),
+                "finetune_seed_offset": int(args.finetune_seed_offset),
                 "n_val": int(args.n_val),
                 "n_test": int(args.n_test),
                 "n_test_ood": n_test_ood,
@@ -1032,6 +1188,7 @@ def main() -> None:
         }
         if len(sweep_out) == 1:
             seed_payload["ste"] = sweep_out[0]["ste"]
+            seed_payload["ste_ft"] = sweep_out[0].get("ste_ft")
             seed_payload["lsm"] = sweep_out[0].get("lsm")
             seed_payload["cvx"] = sweep_out[0]["cvx"]
             seed_payload["sg_cvx"] = sweep_out[0].get("sg_cvx")

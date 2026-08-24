@@ -166,6 +166,27 @@ TASK_PRESETS: Dict[str, TaskPreset] = {"xor": XOR_PRESET, "mnist": MNIST_PRESET,
 TASK_NAMES: Tuple[str, ...] = tuple(TASK_PRESETS.keys())
 
 
+def override_preset_grid(
+    preset: TaskPreset,
+    *,
+    T: Optional[Sequence[int]] = None,
+    L: Optional[Sequence[int]] = None,
+) -> TaskPreset:
+    """Replace T_list / L_list when the CLI passes an explicit grid."""
+    d = asdict(preset)
+    if T is not None:
+        ts = tuple(int(t) for t in T)
+        if len(ts) == 0:
+            raise ValueError("T override is empty.")
+        d["T_list"] = ts
+    if L is not None:
+        ls = tuple(int(x) for x in L)
+        if len(ls) == 0:
+            raise ValueError("L override is empty.")
+        d["L_list"] = ls
+    return TaskPreset(**d)
+
+
 # ---------------------------------------------------------------------------#
 # Data loading
 # ---------------------------------------------------------------------------#
@@ -812,6 +833,8 @@ def _parse_args() -> argparse.Namespace:
         default=None,
         help="Override preset readout mode.",
     )
+    ap.add_argument("--T", type=int, nargs="+", default=None, help="Override preset T_list.")
+    ap.add_argument("--L", type=int, nargs="+", default=None, help="Override preset L_list.")
     ap.add_argument("--debug", action="store_true", help="Tiny caps + shrunk grids for smoke tests.")
     ap.add_argument("--out_root", type=str, default="sweep_results/lsm_xor_mnist")
     return ap.parse_args()
@@ -846,6 +869,7 @@ def main() -> None:
     }
     for task in args.tasks:
         preset = TASK_PRESETS[task]
+        preset = override_preset_grid(preset, T=args.T, L=args.L)
         if args.reservoir_variant is not None:
             preset = TaskPreset(**{**asdict(preset), "reservoir_variant": args.reservoir_variant})
         if args.last_layer_readout is not None:

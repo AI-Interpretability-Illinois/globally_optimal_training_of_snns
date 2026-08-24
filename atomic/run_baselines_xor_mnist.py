@@ -44,7 +44,7 @@ import torch
 if __package__ in (None, ""):
     from cvx_side_ckpt import ckpt_path, load_weight_list, require_ckpt_task, save_weight_list
     from fine_tune import _extract_weight_list, _last_step_acc
-    from run_lsm_xor_mnist import TASK_NAMES, TASK_PRESETS, TaskPreset, _load_task_data
+    from run_lsm_xor_mnist import TASK_NAMES, TASK_PRESETS, TaskPreset, _load_task_data, override_preset_grid
     from solvers.cvx_solve import InitializationConfig, SolveConfig, cvx_solve
     from solvers.cvx_solve import _build_feature_map as _build_feature_map_k1
     from solvers.cvx_parallel_Solve import _build_feature_map as _build_feature_map_kp
@@ -52,7 +52,7 @@ if __package__ in (None, ""):
 else:
     from .cvx_side_ckpt import ckpt_path, load_weight_list, require_ckpt_task, save_weight_list
     from .fine_tune import _extract_weight_list, _last_step_acc
-    from .run_lsm_xor_mnist import TASK_NAMES, TASK_PRESETS, TaskPreset, _load_task_data
+    from .run_lsm_xor_mnist import TASK_NAMES, TASK_PRESETS, TaskPreset, _load_task_data, override_preset_grid
     from .solvers.cvx_solve import InitializationConfig, SolveConfig, cvx_solve
     from .solvers.cvx_solve import _build_feature_map as _build_feature_map_k1
     from .solvers.cvx_parallel_Solve import _build_feature_map as _build_feature_map_kp
@@ -601,6 +601,8 @@ def _parse_args() -> argparse.Namespace:
     ap.add_argument("--lite_max_iter", type=int, default=5000)
     ap.add_argument("--lite_tol", type=float, default=1e-6)
 
+    ap.add_argument("--T", type=int, nargs="+", default=None, help="Override preset T_list.")
+    ap.add_argument("--L", type=int, nargs="+", default=None, help="Override preset L_list.")
     ap.add_argument("--debug", action="store_true", help="Tiny caps + shrunk grids for smoke tests.")
     ap.add_argument("--out_root", type=str, default="sweep_results/baselines_xor_mnist")
     return ap.parse_args()
@@ -631,7 +633,7 @@ def main() -> None:
 
     all_payloads: Dict[str, Any] = {"tasks": {}, "side": args.side, "which": which, "ckpt_dir": str(ckpt_dir)}
     for task in args.tasks:
-        preset = TASK_PRESETS[task]
+        preset = override_preset_grid(TASK_PRESETS[task], T=args.T, L=args.L)
         payload = _run_task(
             preset=preset, args=args, seeds=args.seeds, out_root=out_root, which=which, ckpt_dir=ckpt_dir,
         )

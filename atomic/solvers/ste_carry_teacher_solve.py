@@ -107,6 +107,13 @@ class CarryAugmentedSNN(nn.Module):
             raise RuntimeError("CarryAugmentedSNN has no hidden Linear layers.")
         return weights
 
+    def trainable_weight_list(self) -> List[np.ndarray]:
+        """Hidden stack plus sum/carry heads. Used to resume STE, not for CVX ckpts."""
+        return self.hidden_weight_list() + [
+            self.sum_head.weight.detach().cpu().numpy().copy(),
+            self.carry_head.weight.detach().cpu().numpy().copy(),
+        ]
+
     def forward(self, x_seq: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
         _, steps, _ = x_seq.shape
         branch_mems = [
@@ -135,6 +142,32 @@ class CarryAugmentedSNN(nn.Module):
             sum_logits_seq.append(self.sum_head(h_cat))
             carry_logits_seq.append(self.carry_head(h_cat))
         return torch.stack(sum_logits_seq, dim=1), torch.stack(carry_logits_seq, dim=1)
+
+
+def load_pretrained_carry_weights_(model: CarryAugmentedSNN, weights: Sequence[np.ndarray]) -> None:
+    hidden_params: List[nn.Parameter] = []
+    for br in model.branches:
+        for fc in br.fcs:
+            hidden_params.append(fc.weight)
+    n_hidden = len(hidden_params)
+    if len(weights) not in (n_hidden, n_hidden + 2):
+        raise ValueError(
+            f"pretrained weight count {len(weights)} must be {n_hidden} (hidden) or {n_hidden + 2} (hidden+heads)."
+        )
+    for param, src in zip(hidden_params, weights[:n_hidden]):
+        t = torch.as_tensor(src, dtype=param.dtype, device=param.device)
+        if tuple(t.shape) != tuple(param.shape):
+            raise ValueError(f"Hidden weight shape {tuple(t.shape)} != {tuple(param.shape)}.")
+        param.data.copy_(t)
+    if len(weights) == n_hidden + 2:
+        for param, src in (
+            (model.sum_head.weight, weights[n_hidden]),
+            (model.carry_head.weight, weights[n_hidden + 1]),
+        ):
+            t = torch.as_tensor(src, dtype=param.dtype, device=param.device)
+            if tuple(t.shape) != tuple(param.shape):
+                raise ValueError(f"Head weight shape {tuple(t.shape)} != {tuple(param.shape)}.")
+            param.data.copy_(t)
 
 
 def carry_snn_path_reg(model: CarryAugmentedSNN) -> torch.Tensor:
@@ -312,6 +345,7 @@ def ste_sweep_and_train(
     ste_carry_loss: str = "auto",
     tf_objective: str = "joint",
     ste_time_loss: str = "ramp",
+    pretrained_weights: Optional[Sequence[np.ndarray]] = None,
 ) -> Tuple[CarryAugmentedSNN, Dict[str, float], Dict[str, float]]:
     device = (
         torch.device("cuda")
@@ -346,12 +380,14 @@ def ste_sweep_and_train(
                 threshold=threshold,
                 last_layer_readout=ste_last_layer_readout,
             ).to(device)
+            if pretrained_weights is not None:
+                load_pretrained_carry_weights_(model, pretrained_weights)
             params = list(model.parameters())
             if optimizer_name.lower() == "sgd":
                 opt = torch.optim.SGD(params, lr=float(lr))
             else:
                 opt = torch.optim.Adam(params, lr=float(lr))
-            sched = ReduceLROnPlateau(opt, mode="min", factor=0.5, patience=10)
+            sched = ReduceLROnPlateau(opt, mode="min", factor=0.5, patience=20)
             n = ds.X_train.shape[0]
             if batch_size is None or int(batch_size) <= 0 or int(batch_size) >= n:
                 bs = n
