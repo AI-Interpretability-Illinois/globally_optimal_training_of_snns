@@ -292,6 +292,75 @@ def _set_seed(seed: int) -> None:
         torch.cuda.manual_seed_all(seed)
 
 
+def _slice_debug_n(data: Dict[str, Any], debug_n: int) -> Dict[str, Any]:
+    """Keep the first ``debug_n`` rows of every split. Empty/too-small splits raise."""
+    if int(debug_n) == 0:
+        return data
+    if int(debug_n) < 0:
+        raise ValueError(f"debug_n must be >= 0, got {debug_n}.")
+    out = dict(data)
+    for xk, yk in (("x_train", "y_train"), ("x_val", "y_val"), ("x_test", "y_test")):
+        n = int(out[xk].shape[0])
+        if n < int(debug_n):
+            raise ValueError(f"{xk} has n={n} < debug_n={debug_n}.")
+        out[xk] = out[xk][: int(debug_n)]
+        out[yk] = out[yk][: int(debug_n)]
+    return out
+
+
+def _lsm_analog_last_step_features(tuned_model: LSMBaselineSeq, x_np: np.ndarray) -> np.ndarray:
+    """Last-timestep analog LSM readout, the same tensor ridge regresses on."""
+    if str(tuned_model.last_layer_readout) != "membrane":
+        raise ValueError(
+            "Analog R-CVX requires last_layer_readout='membrane', "
+            f"got {tuned_model.last_layer_readout!r}."
+        )
+    device = next(tuned_model.parameters()).device
+    x_t = torch.tensor(x_np, dtype=torch.float32, device=device)
+    with torch.no_grad():
+        feats = _reservoir_features(tuned_model, x_t)
+    d = feats[:, -1, :].detach().cpu().numpy().astype(np.float64)
+    if d.ndim != 2:
+        raise ValueError(f"Expected (N, P_last) analog features, got shape={d.shape}.")
+    if not np.isfinite(d).all():
+        raise FloatingPointError(
+            f"Non-finite analog LSM features: nan={int(np.isnan(d).sum())} inf={int(np.isinf(d).sum())}."
+        )
+    return d
+
+
+def _cvx_split_accs_analog_membrane(
+    tuned_model: LSMBaselineSeq,
+    cvx_weights: np.ndarray,
+    *,
+    data: Dict[str, Any],
+) -> Dict[str, float]:
+    """Score CVX ``W`` on the same analog last-step membrane ridge uses. No ``1[mem>=bias]``."""
+    if str(tuned_model.last_layer_readout) != "membrane":
+        raise ValueError(
+            "Analog R-CVX eval requires last_layer_readout='membrane', "
+            f"got {tuned_model.last_layer_readout!r}."
+        )
+    W = np.asarray(cvx_weights, dtype=np.float64)
+
+    def _acc_for_split(x_np: np.ndarray, y_np: np.ndarray) -> float:
+        if y_np.ndim != 1:
+            raise ValueError(
+                f"Analog last-step R-CVX expects rank-1 labels, got rank {y_np.ndim} shape={y_np.shape}."
+            )
+        d_last = _lsm_analog_last_step_features(tuned_model, x_np)
+        if d_last.shape[1] != W.shape[0]:
+            raise ValueError(f"Feature dim {d_last.shape[1]} != W rows {W.shape[0]}.")
+        preds = np.argmax(d_last @ W, axis=1)
+        return float(np.mean(preds == y_np))
+
+    return {
+        "train_acc": _acc_for_split(data["x_train"], data["y_train"]),
+        "val_acc": _acc_for_split(data["x_val"], data["y_val"]),
+        "test_acc": _acc_for_split(data["x_test"], data["y_test"]),
+    }
+
+
 def _cvx_split_accs(
     tuned_model: LSMBaselineSeq,
     cvx_weights: np.ndarray,
@@ -363,24 +432,42 @@ def _r_cvx_from_tuned_lsm(
     compute_ce_dual: bool,
     lite_max_iter: int,
     lite_tol: float,
+    analog_membrane: bool,
 ) -> Dict[str, Any]:
     """R-CVX: sweep CVX (beta, bias) on the same criticality-tuned reservoir.
 
-    The tuned model already has the input-scale multiplier folded into
-    ``fc.weight`` (courtesy of :func:`_scaled_model`), so exporting the weight
-    list gives CVX the exact same W_in the ridge readout saw. CVX rebuilds its
-    own thresholded feature map from these weights and solves the convex readout.
-    Model-level LIF knobs (``beta_leak``, ``threshold``) are threaded through
-    :class:`InitializationConfig` so CVX's LIF stack matches the tuned reservoir.
+    Default (``analog_membrane=False``): export ``W_in``, rebuild a numpy LIF
+    stack, binarize membrane ``1[mem-bias>=0]``, solve, score on LSM bits.
+
+    ``analog_membrane=True``: skip the numpy rebuild. Solve L1-hinge on the
+    last-step analog LSM membrane (same ``Phi`` as ridge) and score ``W`` on
+    that ``Phi``. Requires ``last_layer_readout='membrane'``.
     """
-    pretrained = extract_lsm_weight_list(tuned_model)
-    tuned_cfg = tuned_model.cfg  # tuned beta_leak and threshold
+    if analog_membrane and str(tuned_model.last_layer_readout) != "membrane":
+        raise ValueError(
+            "analog_membrane R-CVX requires last_layer_readout='membrane', "
+            f"got {tuned_model.last_layer_readout!r}."
+        )
+    pretrained = None if analog_membrane else extract_lsm_weight_list(tuned_model)
+    tuned_cfg = tuned_model.cfg
+    analog_features = None
+    if analog_membrane:
+        analog_features = (
+            _lsm_analog_last_step_features(tuned_model, data["x_train"]),
+            _lsm_analog_last_step_features(tuned_model, data["x_val"]),
+            _lsm_analog_last_step_features(tuned_model, data["x_test"]),
+        )
+        if analog_features[0].shape[1] != int(P_last):
+            raise ValueError(
+                f"Analog feature dim {analog_features[0].shape[1]} != P_last={P_last}."
+            )
 
     best_r_cvx = None
     best_val_acc = -1.0
     best_params: Dict[str, float] = {}
     best_split_accs: Dict[str, float] = {}
-    for bias in grids.cvx_bias_grid:
+    bias_grid = (0.0,) if analog_membrane else grids.cvx_bias_grid
+    for bias in bias_grid:
         for beta in grids.cvx_beta_grid:
             init_cfg = InitializationConfig(
                 mode="pretraining",
@@ -391,7 +478,7 @@ def _r_cvx_from_tuned_lsm(
                 L=int(L),
                 P_rec=int(P_rec),
                 P_last=int(P_last),
-                K_parallel=int(K_parallel),
+                K_parallel=1 if analog_membrane else int(K_parallel),
                 beta_leak=float(tuned_cfg.beta_leak),
                 threshold=float(tuned_cfg.threshold),
                 last_layer_readout=str(tuned_cfg.last_layer_readout),
@@ -415,9 +502,13 @@ def _r_cvx_from_tuned_lsm(
                     lite_max_iter=int(lite_max_iter),
                     lite_tol=float(lite_tol),
                 ),
+                precomputed_features=analog_features,
             )
-            cvx_weights = out.trained_model["weights"]  # (P_last, num_classes)
-            split_accs = _cvx_split_accs(tuned_model, cvx_weights, data=data, bias=float(bias))
+            cvx_weights = out.trained_model["weights"]
+            if analog_membrane:
+                split_accs = _cvx_split_accs_analog_membrane(tuned_model, cvx_weights, data=data)
+            else:
+                split_accs = _cvx_split_accs(tuned_model, cvx_weights, data=data, bias=float(bias))
             if split_accs["val_acc"] > best_val_acc:
                 best_val_acc = float(split_accs["val_acc"])
                 best_r_cvx = out
@@ -427,6 +518,7 @@ def _r_cvx_from_tuned_lsm(
         raise RuntimeError("R-CVX sweep produced no candidates.")
     return {
         "selected_params": best_params,
+        "feature_map": "analog_membrane" if analog_membrane else "thresholded_numpy_lif",
         "split_accs": {k: float(v) for k, v in best_split_accs.items()},
         "final_losses": {k: float(v) for k, v in best_r_cvx.final_losses.items()},
         "diagnostics": {
@@ -456,6 +548,7 @@ def _run_R_and_R_CVX_single(
     compute_ce_dual: bool,
     lite_max_iter: int,
     lite_tol: float,
+    analog_membrane: bool,
 ) -> Dict[str, Any]:
     """R pipeline: criticality tune -> ridge readout, then optional R-CVX.
 
@@ -608,11 +701,13 @@ def _run_R_and_R_CVX_single(
             compute_ce_dual=compute_ce_dual,
             lite_max_iter=lite_max_iter,
             lite_tol=lite_tol,
+            analog_membrane=bool(analog_membrane),
         )
         print(
             (
                 f"[lsm-xor-mnist] task={preset.name} T={T} L={L} K={K_parallel} seed={seed} "
-                f"R-CVX best_params={r_cvx_block['selected_params']} "
+                f"R-CVX feature_map={r_cvx_block['feature_map']} "
+                f"best_params={r_cvx_block['selected_params']} "
                 f"train_acc={r_cvx_block['split_accs']['train_acc']:.4f} "
                 f"val_acc={r_cvx_block['split_accs']['val_acc']:.4f} "
                 f"test_acc={r_cvx_block['split_accs']['test_acc']:.4f}"
@@ -714,7 +809,7 @@ def _run_task(
     for seed in seeds:
         _set_seed(int(seed))
         for T in eff_preset.T_list:
-            data = _load_task_data(eff_preset, T=int(T), seed=int(seed))
+            data = _slice_debug_n(_load_task_data(eff_preset, T=int(T), seed=int(seed)), int(args.debug_n))
             for L in eff_preset.L_list:
                 for K in eff_preset.K_parallel_list:
                     if eff_preset.P_rec % int(K) != 0 or eff_preset.P_last % int(K) != 0:
@@ -740,6 +835,7 @@ def _run_task(
                         compute_ce_dual=bool(args.cvx_ce_dual),
                         lite_max_iter=int(args.lite_max_iter),
                         lite_tol=float(args.lite_tol),
+                        analog_membrane=bool(args.r_cvx_analog_membrane),
                     )
                     results.append(entry)
                     _write_json(
@@ -804,6 +900,20 @@ def _parse_args() -> argparse.Namespace:
     # R-CVX
     ap.add_argument("--r_cvx", action="store_true", help="With --side all, also run R-CVX after ridge.")
     ap.add_argument(
+        "--r_cvx_analog_membrane",
+        action="store_true",
+        help=(
+            "R-CVX on last-step analog LSM membrane (same Phi as ridge), not numpy "
+            "LIF + 1[mem>=bias]. Requires last_layer_readout=membrane."
+        ),
+    )
+    ap.add_argument(
+        "--debug_n",
+        type=int,
+        default=0,
+        help="If >0, use only the first N rows of train/val/test. Raises if any split is smaller.",
+    )
+    ap.add_argument(
         "--cvx_method",
         choices=["cvx", "cvx_lite", "sgd"],
         default="cvx",
@@ -852,10 +962,23 @@ def main() -> None:
         run_ridge, run_r_cvx = True, False
     else:
         run_ridge, run_r_cvx = True, bool(args.r_cvx)
+    if args.r_cvx_analog_membrane:
+        for task in args.tasks:
+            preset_ro = (
+                args.last_layer_readout
+                if args.last_layer_readout is not None
+                else TASK_PRESETS[task].last_layer_readout
+            )
+            if preset_ro != "membrane":
+                raise ValueError(
+                    f"--r_cvx_analog_membrane requires last_layer_readout='membrane' "
+                    f"for task={task}, got {preset_ro!r}."
+                )
     print(
         (
             f"[lsm-xor-mnist] side={args.side} run_ridge={run_ridge} run_r_cvx={run_r_cvx} "
-            f"cvx_method={args.cvx_method} ckpt_dir={ckpt_dir}"
+            f"cvx_method={args.cvx_method} analog_membrane={bool(args.r_cvx_analog_membrane)} "
+            f"debug_n={int(args.debug_n)} ckpt_dir={ckpt_dir}"
         ),
         flush=True,
     )

@@ -1,0 +1,381 @@
+\documentclass[11pt]{article}
+\usepackage[margin=0.6in]{geometry}
+\usepackage{booktabs}
+\usepackage{array}
+\usepackage{url}
+\usepackage[T1]{fontenc}
+
+\title{XOR cone results: default half-space features vs analog membrane}
+\author{}
+\date{}
+\begin{document}
+\maketitle
+
+\noindent Last-step accuracies on \texttt{first\_last\_xor}. Mean $\pm$ sample standard deviation over seeds $\{0,1,2\}$ (\%).
+All cone solves use \texttt{--cvx\_method cvx}. $K_{\mathrm{parallel}}=2$, \texttt{last\_layer\_readout=membrane}, normalized reservoir.
+CVX grids: $\beta\in\{0.01,0.1,1.0\}$, bias $=0$. SG: $200$ epochs, lr $\in\{10^{-3},5\cdot10^{-3},10^{-2},5\cdot10^{-2},10^{-1}\}$.
+
+\paragraph{Default (bits).}
+\texttt{analog\_membrane=False}: last-layer membrane is still binarized,
+$D=\mathbf{1}[\mathrm{mem}-\mathrm{bias}\ge 0]$, then L1-hinge. This is the original cone column.
+
+\paragraph{Analog.}
+\texttt{--cvx\_analog\_membrane} / \texttt{--r\_cvx\_analog\_membrane}: $D$ is the analog last-layer membrane (no extra $1[\cdot]$).
+R (ridge) and SG are unchanged across the two blocks: they already read analog snntorch membrane.
+
+\begin{table}[t]
+\centering
+\caption{Shared architecture hyperparameters.}
+\label{tab:arch}
+\begin{tabular}{lcccccccl}
+\toprule
+task & $T$ & $L$ & $P_{\mathrm{rec}}$ & $P_{\mathrm{last}}$ & $n_{\mathrm{train}}$ & $n_{\mathrm{val}}$ & $n_{\mathrm{test}}$ & loss \\
+\midrule
+xor (first\_last\_xor) & $\{6,8,11,14\}$ & $\{5,15\}$ & $500$ & $1000$ & $2000$ & $2000$ & $4000$ & hinge \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\begin{table}[t]
+\centering
+\small
+\caption{XOR last-step \textbf{test} accuracy (\%), seeds $0,1,2$.
+R and SG are analog snntorch membrane. CVX / SG-CVX / R-CVX: default $1[\mathrm{mem}\ge\mathrm{bias}]$ vs analog membrane (\texttt{-an}).}
+\label{tab:xor-test-mean}
+\begin{tabular}{rrcccccccc}
+\toprule
+$T$ & $L$ & R & SG & CVX & CVX-an & SG-CVX & SG-CVX-an & R-CVX & R-CVX-an \\
+\midrule
+6 & 5 & 100.0 $\pm$ 0.0 & 73.7 $\pm$ 2.2 & 100.0 $\pm$ 0.0 & 100.0 $\pm$ 0.0 & 80.3 $\pm$ 6.4 & 80.1 $\pm$ 6.6 & 63.6 $\pm$ 2.2 & 100.0 $\pm$ 0.0 \\
+6 & 15 & 100.0 $\pm$ 0.0 & 50.4 $\pm$ 0.2 & 86.6 $\pm$ 2.4 & 86.6 $\pm$ 2.4 & 49.6 $\pm$ 0.2 & 50.4 $\pm$ 0.2 & 50.0 $\pm$ 6.0 & 100.0 $\pm$ 0.0 \\
+8 & 5 & 98.4 $\pm$ 1.9 & 68.9 $\pm$ 1.9 & 100.0 $\pm$ 0.0 & 100.0 $\pm$ 0.0 & 86.5 $\pm$ 9.0 & 75.4 $\pm$ 4.8 & 55.1 $\pm$ 4.0 & 100.0 $\pm$ 0.0 \\
+8 & 15 & 92.7 $\pm$ 7.7 & 49.9 $\pm$ 0.3 & 69.2 $\pm$ 3.2 & 70.1 $\pm$ 2.9 & 50.0 $\pm$ 0.3 & 49.9 $\pm$ 0.3 & 49.6 $\pm$ 0.9 & 98.8 $\pm$ 1.1 \\
+11 & 5 & 53.7 $\pm$ 3.5 & 59.7 $\pm$ 2.2 & 61.4 $\pm$ 0.5 & 66.8 $\pm$ 1.2 & 76.0 $\pm$ 4.3 & 61.3 $\pm$ 1.1 & 51.4 $\pm$ 0.5 & 63.2 $\pm$ 1.1 \\
+11 & 15 & 52.8 $\pm$ 2.1 & 50.1 $\pm$ 0.2 & 51.1 $\pm$ 1.1 & 51.8 $\pm$ 0.5 & 49.9 $\pm$ 0.2 & 50.1 $\pm$ 0.2 & 49.8 $\pm$ 0.3 & 58.3 $\pm$ 2.9 \\
+14 & 5 & 50.2 $\pm$ 0.3 & 51.6 $\pm$ 1.1 & 51.3 $\pm$ 0.8 & 50.8 $\pm$ 0.3 & 55.0 $\pm$ 4.7 & 53.4 $\pm$ 3.3 & 51.3 $\pm$ 0.3 & 50.8 $\pm$ 1.4 \\
+14 & 15 & 50.5 $\pm$ 0.7 & 49.7 $\pm$ 0.3 & 50.6 $\pm$ 0.8 & 50.1 $\pm$ 0.3 & 49.7 $\pm$ 0.3 & 49.7 $\pm$ 0.3 & 50.9 $\pm$ 0.3 & 49.5 $\pm$ 1.3 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\begin{table}[t]
+\centering
+\caption{XOR last-step \textbf{train} accuracy (\%), seeds $0,1,2$. Same columns as Table~\ref{tab:xor-test-mean}.}
+\label{tab:xor-train-mean}
+\small
+\begin{tabular}{rrcccccccc}
+\toprule
+$T$ & $L$ & R & SG & CVX & CVX-an & SG-CVX & SG-CVX-an & R-CVX & R-CVX-an \\
+\midrule
+6 & 5 & 100.0 $\pm$ 0.0 & 73.0 $\pm$ 3.1 & 100.0 $\pm$ 0.0 & 100.0 $\pm$ 0.0 & 80.8 $\pm$ 6.7 & 79.5 $\pm$ 7.4 & 64.0 $\pm$ 1.8 & 100.0 $\pm$ 0.0 \\
+6 & 15 & 100.0 $\pm$ 0.0 & 49.4 $\pm$ 0.7 & 88.1 $\pm$ 2.8 & 88.1 $\pm$ 2.8 & 50.6 $\pm$ 0.7 & 49.4 $\pm$ 0.7 & 51.4 $\pm$ 6.8 & 100.0 $\pm$ 0.0 \\
+8 & 5 & 99.1 $\pm$ 1.2 & 70.7 $\pm$ 3.1 & 100.0 $\pm$ 0.0 & 100.0 $\pm$ 0.0 & 88.2 $\pm$ 8.8 & 78.0 $\pm$ 6.1 & 55.6 $\pm$ 3.9 & 100.0 $\pm$ 0.0 \\
+8 & 15 & 94.3 $\pm$ 6.7 & 49.8 $\pm$ 0.9 & 74.8 $\pm$ 2.4 & 75.5 $\pm$ 2.1 & 50.1 $\pm$ 0.9 & 49.8 $\pm$ 0.9 & 51.1 $\pm$ 1.3 & 99.3 $\pm$ 0.6 \\
+11 & 5 & 64.4 $\pm$ 9.2 & 62.8 $\pm$ 2.2 & 80.4 $\pm$ 1.0 & 88.9 $\pm$ 1.1 & 91.5 $\pm$ 4.5 & 66.5 $\pm$ 1.8 & 54.1 $\pm$ 1.5 & 83.7 $\pm$ 1.9 \\
+11 & 15 & 63.2 $\pm$ 10.1 & 50.3 $\pm$ 0.5 & 62.4 $\pm$ 9.4 & 70.9 $\pm$ 1.1 & 49.7 $\pm$ 0.5 & 50.3 $\pm$ 0.5 & 50.3 $\pm$ 1.2 & 80.2 $\pm$ 3.8 \\
+14 & 5 & 61.5 $\pm$ 1.9 & 55.4 $\pm$ 5.7 & 65.6 $\pm$ 11.5 & 74.1 $\pm$ 9.9 & 72.2 $\pm$ 19.1 & 59.3 $\pm$ 7.1 & 56.0 $\pm$ 2.1 & 70.9 $\pm$ 0.9 \\
+14 & 15 & 59.4 $\pm$ 2.5 & 50.4 $\pm$ 0.7 & 54.9 $\pm$ 4.3 & 67.1 $\pm$ 7.8 & 50.2 $\pm$ 0.8 & 50.4 $\pm$ 0.7 & 49.7 $\pm$ 1.4 & 68.0 $\pm$ 12.3 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\begin{table}[t]
+\centering
+\caption{XOR last-step \textbf{validation} accuracy (\%), seeds $0,1,2$. Same columns as Table~\ref{tab:xor-test-mean}.}
+\label{tab:xor-val-mean}
+\small
+\begin{tabular}{rrcccccccc}
+\toprule
+$T$ & $L$ & R & SG & CVX & CVX-an & SG-CVX & SG-CVX-an & R-CVX & R-CVX-an \\
+\midrule
+6 & 5 & 100.0 $\pm$ 0.0 & 74.7 $\pm$ 1.0 & 100.0 $\pm$ 0.0 & 100.0 $\pm$ 0.0 & 80.2 $\pm$ 6.8 & 79.6 $\pm$ 6.9 & 62.9 $\pm$ 2.7 & 100.0 $\pm$ 0.0 \\
+6 & 15 & 100.0 $\pm$ 0.0 & 49.9 $\pm$ 0.9 & 87.1 $\pm$ 2.7 & 87.1 $\pm$ 2.7 & 50.1 $\pm$ 0.9 & 49.9 $\pm$ 0.9 & 50.7 $\pm$ 6.1 & 100.0 $\pm$ 0.0 \\
+8 & 5 & 98.1 $\pm$ 2.4 & 69.0 $\pm$ 1.5 & 100.0 $\pm$ 0.0 & 100.0 $\pm$ 0.0 & 87.4 $\pm$ 9.1 & 75.5 $\pm$ 5.6 & 54.3 $\pm$ 3.3 & 100.0 $\pm$ 0.0 \\
+8 & 15 & 92.7 $\pm$ 7.8 & 50.4 $\pm$ 1.5 & 69.1 $\pm$ 3.5 & 70.8 $\pm$ 2.8 & 49.9 $\pm$ 1.6 & 50.4 $\pm$ 1.5 & 50.0 $\pm$ 1.3 & 98.8 $\pm$ 1.1 \\
+11 & 5 & 54.0 $\pm$ 4.0 & 61.0 $\pm$ 1.7 & 61.9 $\pm$ 1.3 & 66.5 $\pm$ 1.8 & 75.5 $\pm$ 4.0 & 61.6 $\pm$ 1.0 & 52.9 $\pm$ 0.6 & 62.6 $\pm$ 2.1 \\
+11 & 15 & 53.5 $\pm$ 3.3 & 49.5 $\pm$ 0.2 & 52.2 $\pm$ 1.2 & 51.0 $\pm$ 1.7 & 50.4 $\pm$ 0.2 & 49.5 $\pm$ 0.2 & 51.5 $\pm$ 1.2 & 58.1 $\pm$ 1.4 \\
+14 & 5 & 50.8 $\pm$ 0.7 & 52.2 $\pm$ 1.9 & 51.0 $\pm$ 1.5 & 50.6 $\pm$ 1.1 & 54.6 $\pm$ 4.5 & 52.7 $\pm$ 2.8 & 51.1 $\pm$ 1.6 & 51.1 $\pm$ 0.9 \\
+14 & 15 & 50.1 $\pm$ 1.3 & 50.2 $\pm$ 0.9 & 50.2 $\pm$ 0.8 & 49.8 $\pm$ 1.3 & 50.3 $\pm$ 0.9 & 50.2 $\pm$ 0.9 & 51.0 $\pm$ 1.5 & 50.1 $\pm$ 2.4 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\begin{table}[p]
+\centering
+\caption{Per-seed last-step \textbf{test} accuracy (\%): \textbf{default} half-space $D=\mathbf{1}[\mathrm{mem}-\mathrm{bias}\ge 0]$.}
+\label{tab:xor-test-perseed-default}
+\begin{tabular}{rrrccccc}
+\toprule
+seed & $T$ & $L$ & R & SG & CVX & SG-CVX & R-CVX \\
+\midrule
+0 & 6 & 5 & 100.0 & 72.7 & 100.0 & 87.5 & 61.4 \\
+1 & 6 & 5 & 100.0 & 76.2 & 100.0 & 75.2 & 63.5 \\
+2 & 6 & 5 & 100.0 & 72.2 & 100.0 & 78.3 & 65.7 \\
+\addlinespace
+0 & 6 & 15 & 100.0 & 50.2 & 87.6 & 49.8 & 46.1 \\
+1 & 6 & 15 & 100.0 & 50.2 & 88.3 & 49.8 & 56.9 \\
+2 & 6 & 15 & 100.0 & 50.6 & 83.9 & 49.4 & 47.1 \\
+\addlinespace
+0 & 8 & 5 & 99.7 & 71.0 & 100.0 & 92.8 & 56.1 \\
+1 & 8 & 5 & 99.3 & 67.2 & 100.0 & 90.5 & 58.5 \\
+2 & 8 & 5 & 96.3 & 68.5 & 100.0 & 76.2 & 50.7 \\
+\addlinespace
+0 & 8 & 15 & 83.8 & 49.6 & 72.9 & 50.4 & 48.6 \\
+1 & 8 & 15 & 96.9 & 49.8 & 67.5 & 49.8 & 49.9 \\
+2 & 8 & 15 & 97.3 & 50.2 & 67.2 & 49.8 & 50.4 \\
+\addlinespace
+0 & 11 & 5 & 53.9 & 59.2 & 61.0 & 71.7 & 52.0 \\
+1 & 11 & 5 & 57.1 & 57.7 & 62.0 & 76.2 & 51.2 \\
+2 & 11 & 5 & 50.2 & 62.1 & 61.3 & 80.2 & 51.0 \\
+\addlinespace
+0 & 11 & 15 & 52.2 & 49.9 & 50.3 & 50.1 & 49.6 \\
+1 & 11 & 15 & 55.1 & 50.0 & 52.4 & 50.0 & 50.1 \\
+2 & 11 & 15 & 51.0 & 50.3 & 50.6 & 49.7 & 49.7 \\
+\addlinespace
+0 & 14 & 5 & 50.2 & 50.3 & 50.9 & 49.6 & 51.1 \\
+1 & 14 & 5 & 50.4 & 51.8 & 50.7 & 57.7 & 51.4 \\
+2 & 14 & 5 & 49.8 & 52.6 & 52.2 & 57.7 & 51.6 \\
+\addlinespace
+0 & 14 & 15 & 51.0 & 49.6 & 49.6 & 49.6 & 51.3 \\
+1 & 14 & 15 & 50.6 & 50.0 & 51.0 & 50.0 & 50.6 \\
+2 & 14 & 15 & 49.7 & 49.5 & 51.1 & 49.5 & 50.8 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\begin{table}[p]
+\centering
+\caption{Per-seed last-step \textbf{test} accuracy (\%): \textbf{analog} last-layer membrane $D$ (no extra $1[\cdot]$). R and SG omitted (identical to Table~\ref{tab:xor-test-perseed-default}).}
+\label{tab:xor-test-perseed-analog}
+\begin{tabular}{rrrccc}
+\toprule
+seed & $T$ & $L$ & CVX & SG-CVX & R-CVX \\
+\midrule
+0 & 6 & 5 & 100.0 & 87.4 & 100.0 \\
+1 & 6 & 5 & 100.0 & 74.6 & 100.0 \\
+2 & 6 & 5 & 100.0 & 78.5 & 100.0 \\
+\addlinespace
+0 & 6 & 15 & 87.6 & 50.2 & 100.0 \\
+1 & 6 & 15 & 88.3 & 50.2 & 100.0 \\
+2 & 6 & 15 & 83.9 & 50.6 & 100.0 \\
+\addlinespace
+0 & 8 & 5 & 100.0 & 79.9 & 100.0 \\
+1 & 8 & 5 & 100.0 & 76.0 & 100.0 \\
+2 & 8 & 5 & 100.0 & 70.3 & 100.0 \\
+\addlinespace
+0 & 8 & 15 & 73.4 & 49.6 & 97.8 \\
+1 & 8 & 15 & 68.3 & 49.8 & 98.6 \\
+2 & 8 & 15 & 68.5 & 50.2 & 100.0 \\
+\addlinespace
+0 & 11 & 5 & 66.6 & 60.5 & 63.1 \\
+1 & 11 & 5 & 65.8 & 60.8 & 64.3 \\
+2 & 11 & 5 & 68.1 & 62.5 & 62.1 \\
+\addlinespace
+0 & 11 & 15 & 51.7 & 49.9 & 55.0 \\
+1 & 11 & 15 & 52.4 & 50.0 & 60.5 \\
+2 & 11 & 15 & 51.4 & 50.3 & 59.4 \\
+\addlinespace
+0 & 14 & 5 & 50.5 & 49.6 & 51.9 \\
+1 & 14 & 5 & 51.1 & 54.9 & 51.2 \\
+2 & 14 & 5 & 50.6 & 55.8 & 49.3 \\
+\addlinespace
+0 & 14 & 15 & 50.0 & 49.6 & 49.5 \\
+1 & 14 & 15 & 50.5 & 50.0 & 48.2 \\
+2 & 14 & 15 & 49.9 & 49.5 & 50.8 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\begin{table}[p]
+\centering
+\caption{Per-seed last-step \textbf{train} accuracy (\%): default half-space features.}
+\label{tab:xor-train-perseed-default}
+\begin{tabular}{rrrccccc}
+\toprule
+seed & $T$ & $L$ & R & SG & CVX & SG-CVX & R-CVX \\
+\midrule
+0 & 6 & 5 & 100.0 & 73.2 & 100.0 & 88.3 & 62.3 \\
+1 & 6 & 5 & 100.0 & 76.0 & 100.0 & 75.8 & 63.7 \\
+2 & 6 & 5 & 100.0 & 69.8 & 100.0 & 78.0 & 66.0 \\
+\addlinespace
+0 & 6 & 15 & 100.0 & 48.5 & 88.5 & 51.4 & 48.5 \\
+1 & 6 & 15 & 100.0 & 50.0 & 90.6 & 50.0 & 59.1 \\
+2 & 6 & 15 & 100.0 & 49.5 & 85.1 & 50.5 & 46.5 \\
+\addlinespace
+0 & 8 & 5 & 99.8 & 74.3 & 100.0 & 94.2 & 56.0 \\
+1 & 8 & 5 & 99.8 & 69.3 & 100.0 & 92.2 & 59.2 \\
+2 & 8 & 5 & 97.8 & 68.5 & 100.0 & 78.1 & 51.5 \\
+\addlinespace
+0 & 8 & 15 & 86.6 & 48.9 & 77.5 & 51.1 & 50.1 \\
+1 & 8 & 15 & 98.2 & 49.8 & 73.3 & 49.8 & 52.6 \\
+2 & 8 & 15 & 98.2 & 50.6 & 73.7 & 49.4 & 50.5 \\
+\addlinespace
+0 & 11 & 5 & 63.7 & 62.0 & 80.3 & 86.4 & 55.7 \\
+1 & 11 & 5 & 73.9 & 61.2 & 81.3 & 93.3 & 53.6 \\
+2 & 11 & 5 & 55.5 & 65.3 & 79.5 & 94.7 & 52.8 \\
+\addlinespace
+0 & 11 & 15 & 61.9 & 50.8 & 67.0 & 49.2 & 49.1 \\
+1 & 11 & 15 & 73.8 & 50.3 & 68.7 & 49.6 & 51.6 \\
+2 & 11 & 15 & 53.8 & 49.9 & 51.5 & 50.1 & 50.1 \\
+\addlinespace
+0 & 14 & 5 & 63.2 & 48.9 & 66.6 & 51.1 & 58.4 \\
+1 & 14 & 5 & 62.1 & 58.7 & 53.6 & 76.8 & 54.5 \\
+2 & 14 & 5 & 59.4 & 58.7 & 76.5 & 88.6 & 55.1 \\
+\addlinespace
+0 & 14 & 15 & 61.3 & 51.1 & 51.1 & 51.1 & 49.4 \\
+1 & 14 & 15 & 60.3 & 50.2 & 59.6 & 49.8 & 51.2 \\
+2 & 14 & 15 & 56.6 & 49.9 & 53.8 & 49.9 & 48.4 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\begin{table}[p]
+\centering
+\caption{Per-seed last-step \textbf{train} accuracy (\%): analog membrane features.}
+\label{tab:xor-train-perseed-analog}
+\begin{tabular}{rrrccc}
+\toprule
+seed & $T$ & $L$ & CVX & SG-CVX & R-CVX \\
+\midrule
+0 & 6 & 5 & 100.0 & 87.9 & 100.0 \\
+1 & 6 & 5 & 100.0 & 73.9 & 100.0 \\
+2 & 6 & 5 & 100.0 & 76.7 & 100.0 \\
+\addlinespace
+0 & 6 & 15 & 88.5 & 48.5 & 100.0 \\
+1 & 6 & 15 & 90.6 & 50.0 & 100.0 \\
+2 & 6 & 15 & 85.1 & 49.5 & 100.0 \\
+\addlinespace
+0 & 8 & 5 & 100.0 & 83.4 & 100.0 \\
+1 & 8 & 5 & 100.0 & 79.1 & 100.0 \\
+2 & 8 & 5 & 100.0 & 71.5 & 100.0 \\
+\addlinespace
+0 & 8 & 15 & 78.0 & 48.9 & 98.8 \\
+1 & 8 & 15 & 74.1 & 49.8 & 99.1 \\
+2 & 8 & 15 & 74.5 & 50.6 & 100.0 \\
+\addlinespace
+0 & 11 & 5 & 88.6 & 64.5 & 84.5 \\
+1 & 11 & 5 & 88.0 & 66.9 & 85.0 \\
+2 & 11 & 5 & 90.1 & 68.0 & 81.5 \\
+\addlinespace
+0 & 11 & 15 & 70.5 & 50.8 & 75.9 \\
+1 & 11 & 15 & 72.2 & 50.3 & 83.0 \\
+2 & 11 & 15 & 70.2 & 49.9 & 81.6 \\
+\addlinespace
+0 & 14 & 5 & 64.3 & 51.1 & 71.5 \\
+1 & 14 & 5 & 74.0 & 63.1 & 71.3 \\
+2 & 14 & 5 & 84.2 & 63.7 & 69.9 \\
+\addlinespace
+0 & 14 & 15 & 62.0 & 51.1 & 58.8 \\
+1 & 14 & 15 & 76.0 & 50.2 & 63.3 \\
+2 & 14 & 15 & 63.3 & 49.9 & 82.0 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\begin{table}[p]
+\centering
+\caption{Per-seed last-step \textbf{validation} accuracy (\%): default half-space features.}
+\label{tab:xor-val-perseed-default}
+\begin{tabular}{rrrccccc}
+\toprule
+seed & $T$ & $L$ & R & SG & CVX & SG-CVX & R-CVX \\
+\midrule
+0 & 6 & 5 & 100.0 & 75.7 & 100.0 & 87.6 & 59.9 \\
+1 & 6 & 5 & 100.0 & 74.7 & 100.0 & 74.4 & 64.8 \\
+2 & 6 & 5 & 100.0 & 73.7 & 100.0 & 78.5 & 63.9 \\
+\addlinespace
+0 & 6 & 15 & 100.0 & 50.9 & 88.3 & 49.0 & 46.2 \\
+1 & 6 & 15 & 100.0 & 49.5 & 89.1 & 50.4 & 57.6 \\
+2 & 6 & 15 & 100.0 & 49.2 & 84.0 & 50.8 & 48.2 \\
+\addlinespace
+0 & 8 & 5 & 99.7 & 70.7 & 100.0 & 92.6 & 54.1 \\
+1 & 8 & 5 & 99.3 & 67.9 & 100.0 & 92.7 & 57.7 \\
+2 & 8 & 5 & 95.3 & 68.4 & 100.0 & 76.9 & 51.1 \\
+\addlinespace
+0 & 8 & 15 & 83.6 & 51.8 & 73.1 & 48.1 & 48.6 \\
+1 & 8 & 15 & 97.0 & 50.6 & 66.6 & 50.6 & 50.7 \\
+2 & 8 & 15 & 97.5 & 48.9 & 67.5 & 51.1 & 50.8 \\
+\addlinespace
+0 & 11 & 5 & 54.4 & 60.2 & 62.1 & 71.2 & 52.4 \\
+1 & 11 & 5 & 57.8 & 59.9 & 63.0 & 76.2 & 52.7 \\
+2 & 11 & 5 & 49.8 & 63.0 & 60.5 & 79.1 & 53.5 \\
+\addlinespace
+0 & 11 & 15 & 53.4 & 49.4 & 51.2 & 50.6 & 52.8 \\
+1 & 11 & 15 & 56.7 & 49.7 & 51.7 & 50.3 & 51.4 \\
+2 & 11 & 15 & 50.2 & 49.5 & 53.5 & 50.4 & 50.4 \\
+\addlinespace
+0 & 14 & 5 & 50.7 & 50.4 & 52.7 & 49.5 & 52.7 \\
+1 & 14 & 5 & 51.6 & 52.0 & 50.2 & 58.1 & 50.9 \\
+2 & 14 & 5 & 50.1 & 54.2 & 50.0 & 56.3 & 49.5 \\
+\addlinespace
+0 & 14 & 15 & 48.8 & 49.5 & 49.5 & 49.5 & 52.6 \\
+1 & 14 & 15 & 51.3 & 49.8 & 51.1 & 50.2 & 49.6 \\
+2 & 14 & 15 & 50.2 & 51.2 & 50.0 & 51.2 & 50.7 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\begin{table}[p]
+\centering
+\caption{Per-seed last-step \textbf{validation} accuracy (\%): analog membrane features.}
+\label{tab:xor-val-perseed-analog}
+\begin{tabular}{rrrccc}
+\toprule
+seed & $T$ & $L$ & CVX & SG-CVX & R-CVX \\
+\midrule
+0 & 6 & 5 & 100.0 & 87.0 & 100.0 \\
+1 & 6 & 5 & 100.0 & 73.2 & 100.0 \\
+2 & 6 & 5 & 100.0 & 78.8 & 100.0 \\
+\addlinespace
+0 & 6 & 15 & 88.3 & 50.9 & 100.0 \\
+1 & 6 & 15 & 89.1 & 49.5 & 100.0 \\
+2 & 6 & 15 & 84.0 & 49.2 & 100.0 \\
+\addlinespace
+0 & 8 & 5 & 100.0 & 80.4 & 100.0 \\
+1 & 8 & 5 & 100.0 & 76.8 & 100.0 \\
+2 & 8 & 5 & 100.0 & 69.5 & 100.0 \\
+\addlinespace
+0 & 8 & 15 & 74.0 & 51.8 & 98.0 \\
+1 & 8 & 15 & 68.7 & 50.6 & 98.5 \\
+2 & 8 & 15 & 69.7 & 48.9 & 100.0 \\
+\addlinespace
+0 & 11 & 5 & 66.5 & 60.7 & 64.6 \\
+1 & 11 & 5 & 64.6 & 62.6 & 62.6 \\
+2 & 11 & 5 & 68.2 & 61.6 & 60.5 \\
+\addlinespace
+0 & 11 & 15 & 49.9 & 49.4 & 56.8 \\
+1 & 11 & 15 & 52.9 & 49.7 & 59.6 \\
+2 & 11 & 15 & 50.1 & 49.5 & 58.0 \\
+\addlinespace
+0 & 14 & 5 & 51.4 & 49.5 & 51.0 \\
+1 & 14 & 5 & 51.1 & 53.6 & 52.0 \\
+2 & 14 & 5 & 49.4 & 54.8 & 50.2 \\
+\addlinespace
+0 & 14 & 15 & 49.3 & 49.5 & 51.8 \\
+1 & 14 & 15 & 51.2 & 49.8 & 51.1 \\
+2 & 14 & 15 & 48.8 & 51.2 & 47.4 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\begin{table}[p]
+\centering
+\caption{Exact source paths, relative to \texttt{atomic/}.}
+\label{tab:paths}
+\begin{tabular}{@{}p{0.38\linewidth}p{0.58\linewidth}@{}}
+\toprule
+content & path \\
+\midrule
+SG metadata, seeds $0$--$2$ & \path{sweep_results/non_cvx_side/ckpts/seed*_T*_L*_K2_xor_sg.meta.json} \\
+R / LSM metadata, seeds $0$--$2$ & \path{sweep_results/non_cvx_side/ckpts/seed*_T*_L*_K2_xor_lsm.meta.json} \\
+default CVX / SG-CVX seed $0$ & \path{sweep_results/cvx_side/baselines/baselines_xor_20260821_132841/} \\
+default CVX / SG-CVX seeds $1,2$ & \path{sweep_results/cvx_side/baselines/baselines_xor_20260824_081232/} \\
+default R-CVX seed $0$ & \path{sweep_results/cvx_side/lsm/lsm_xor_20260824_065244/} \\
+default R-CVX seeds $1,2$ & \path{sweep_results/cvx_side/lsm/lsm_xor_20260824_083356/} \\
+analog CVX / SG-CVX seeds $0$--$2$ & \path{sweep_results/cvx_side/xor_analog_membrane_baselines/baselines_xor_20260824_170200/} \\
+analog R-CVX seeds $0$--$2$ & \path{sweep_results/cvx_side/lsm/xor_analog_membrane/lsm_xor_20260824_162416/} \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\end{document}

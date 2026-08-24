@@ -25,8 +25,9 @@ For SG we use :func:`fine_tune._last_step_acc` on the trained model for rank-1 l
 (identical to what the LSM ridge and R-CVX pipelines report). Rank-2 arithmetic
 labels use mean token accuracy over all timesteps. For CVX / SG-CVX the solver
 returns ``trained_model["weights"]`` shape ``(P_last, num_classes)``, which operates
-on the CVX-internal thresholded features (``1[mem - bias >= 0]`` for membrane, raw
-spikes for spike). We reproduce that path via :func:`_cvx_split_accs_from_config`.
+on the CVX-internal features (``1[mem - bias >= 0]`` for membrane, analog last-layer
+membrane when ``--cvx_analog_membrane``, raw spikes for spike). We reproduce that path via
+:func:`_cvx_split_accs_from_config`.
 """
 
 from __future__ import annotations
@@ -44,7 +45,7 @@ import torch
 if __package__ in (None, ""):
     from cvx_side_ckpt import ckpt_path, load_weight_list, require_ckpt_task, save_weight_list
     from fine_tune import _extract_weight_list, _last_step_acc
-    from run_lsm_xor_mnist import TASK_NAMES, TASK_PRESETS, TaskPreset, _load_task_data, override_preset_grid
+    from run_lsm_xor_mnist import TASK_NAMES, TASK_PRESETS, TaskPreset, _load_task_data, _slice_debug_n, override_preset_grid
     from solvers.cvx_solve import InitializationConfig, SolveConfig, cvx_solve
     from solvers.cvx_solve import _build_feature_map as _build_feature_map_k1
     from solvers.cvx_parallel_Solve import _build_feature_map as _build_feature_map_kp
@@ -52,7 +53,7 @@ if __package__ in (None, ""):
 else:
     from .cvx_side_ckpt import ckpt_path, load_weight_list, require_ckpt_task, save_weight_list
     from .fine_tune import _extract_weight_list, _last_step_acc
-    from .run_lsm_xor_mnist import TASK_NAMES, TASK_PRESETS, TaskPreset, _load_task_data, override_preset_grid
+    from .run_lsm_xor_mnist import TASK_NAMES, TASK_PRESETS, TaskPreset, _load_task_data, _slice_debug_n, override_preset_grid
     from .solvers.cvx_solve import InitializationConfig, SolveConfig, cvx_solve
     from .solvers.cvx_solve import _build_feature_map as _build_feature_map_k1
     from .solvers.cvx_parallel_Solve import _build_feature_map as _build_feature_map_kp
@@ -252,6 +253,7 @@ def run_cvx(
     compute_ce_dual: bool,
     lite_max_iter: int,
     lite_tol: float,
+    analog_membrane: bool,
     pretrained_weights: Optional[List[np.ndarray]] = None,
     method_tag: str = "CVX",
 ) -> Dict[str, Any]:
@@ -260,6 +262,10 @@ def run_cvx(
     :func:`_cvx_split_accs_from_config`; report train/val/test accs.
     """
     mode = "gaussian" if pretrained_weights is None else "pretraining"
+    if analog_membrane and str(preset.last_layer_readout) != "membrane":
+        raise ValueError(
+            f"analog_membrane requires last_layer_readout='membrane', got {preset.last_layer_readout!r}."
+        )
 
     best_val_acc = -1.0
     best_params: Dict[str, float] = {}
@@ -281,6 +287,7 @@ def run_cvx(
                 beta_leak=0.99,
                 threshold=1.0,
                 last_layer_readout=str(preset.last_layer_readout),
+                analog_membrane=bool(analog_membrane),
             )
             out = cvx_solve(
                 x_train=data["x_train"], y_train=data["y_train"],
@@ -318,7 +325,7 @@ def run_cvx(
     print(
         (
             f"[baselines] task={preset.name} T={T} L={L} K={K_parallel} seed={seed} "
-            f"{method_tag} best_params={best_params} "
+            f"{method_tag} analog_membrane={bool(analog_membrane)} best_params={best_params} "
             f"train_acc={best_accs['train_acc']:.4f} val_acc={best_accs['val_acc']:.4f} test_acc={best_accs['test_acc']:.4f}"
         ),
         flush=True,
@@ -353,6 +360,7 @@ def _run_cell(
     compute_ce_dual: bool,
     lite_max_iter: int,
     lite_tol: float,
+    analog_membrane: bool,
 ) -> Dict[str, Any]:
     """Run the requested subset of {sg, cvx, sg_cvx} on one (T, L, K, seed) cell.
 
@@ -379,6 +387,7 @@ def _run_cell(
         "seed": int(seed),
         "side": str(side),
         "cvx_method": str(cvx_method),
+        "analog_membrane": bool(analog_membrane),
     }
 
     sg_ckpt = ckpt_path(ckpt_dir, seed=seed, T=T, L=L, K=K_parallel, tag="sg", task=preset.name)
@@ -443,6 +452,7 @@ def _run_cell(
         cvx_method=cvx_method, cvx_ovr_workers=cvx_ovr_workers,
         compute_ce_dual=compute_ce_dual,
         lite_max_iter=lite_max_iter, lite_tol=lite_tol,
+        analog_membrane=bool(analog_membrane),
     )
     if "cvx" in which:
         entry["cvx"] = run_cvx(**cvx_kw, pretrained_weights=None, method_tag="CVX")
@@ -512,7 +522,7 @@ def _run_task(
     for seed in seeds:
         _set_seed(int(seed))
         for T in eff_preset.T_list:
-            data = _load_task_data(eff_preset, T=int(T), seed=int(seed))
+            data = _slice_debug_n(_load_task_data(eff_preset, T=int(T), seed=int(seed)), int(args.debug_n))
             for L in eff_preset.L_list:
                 for K in eff_preset.K_parallel_list:
                     if eff_preset.P_rec % int(K) != 0 or eff_preset.P_last % int(K) != 0:
@@ -530,6 +540,7 @@ def _run_task(
                         compute_ce_dual=bool(args.cvx_ce_dual),
                         lite_max_iter=int(args.lite_max_iter),
                         lite_tol=float(args.lite_tol),
+                        analog_membrane=bool(args.cvx_analog_membrane),
                     )
                     results.append(entry)
                     _write_json(
@@ -594,6 +605,26 @@ def _parse_args() -> argparse.Namespace:
     ap.add_argument("--cvx_beta_grid", type=float, nargs="+", default=[1e-2, 1e-1, 1.0])
     ap.add_argument("--cvx_bias_grid", type=float, nargs="+", default=[0.0])
     ap.add_argument(
+        "--cvx_analog_membrane",
+        action="store_true",
+        help=(
+            "Use analog last-layer membrane as D (no 1[mem-bias>=0]). "
+            "Requires last_layer_readout=membrane and --cvx_bias_grid 0."
+        ),
+    )
+    ap.add_argument(
+        "--last_layer_readout",
+        choices=["membrane", "spike"],
+        default=None,
+        help="Override preset last_layer_readout. XOR/MNIST default is membrane.",
+    )
+    ap.add_argument(
+        "--debug_n",
+        type=int,
+        default=0,
+        help="If >0, use only the first N rows of train/val/test. Raises if any split is smaller.",
+    )
+    ap.add_argument(
         "--cvx_ce_dual",
         action="store_true",
         help="Also solve the CVXPY dual after the primal (gap diagnostics). Off by default; never used by cvx_lite.",
@@ -626,14 +657,43 @@ def main() -> None:
     ckpt_dir = Path(args.ckpt_dir).expanduser().resolve() if args.ckpt_dir else (out_root / "ckpts")
     ckpt_dir.mkdir(parents=True, exist_ok=True)
     which = _resolve_which(args)
+    if args.cvx_analog_membrane:
+        if any(float(b) != 0.0 for b in args.cvx_bias_grid):
+            raise ValueError(
+                "--cvx_analog_membrane does not apply bias thresholding; pass --cvx_bias_grid 0."
+            )
+        for task in args.tasks:
+            preset_ro = (
+                args.last_layer_readout
+                if args.last_layer_readout is not None
+                else TASK_PRESETS[task].last_layer_readout
+            )
+            if preset_ro != "membrane":
+                raise ValueError(
+                    f"--cvx_analog_membrane requires last_layer_readout='membrane' "
+                    f"for task={task}, got {preset_ro!r}."
+                )
     print(
-        f"[baselines] side={args.side} which={which} cvx_method={args.cvx_method} ckpt_dir={ckpt_dir}",
+        (
+            f"[baselines] side={args.side} which={which} cvx_method={args.cvx_method} "
+            f"analog_membrane={bool(args.cvx_analog_membrane)} debug_n={int(args.debug_n)} "
+            f"ckpt_dir={ckpt_dir}"
+        ),
         flush=True,
     )
 
-    all_payloads: Dict[str, Any] = {"tasks": {}, "side": args.side, "which": which, "ckpt_dir": str(ckpt_dir)}
+    all_payloads: Dict[str, Any] = {
+        "tasks": {},
+        "side": args.side,
+        "which": which,
+        "ckpt_dir": str(ckpt_dir),
+        "analog_membrane": bool(args.cvx_analog_membrane),
+        "debug_n": int(args.debug_n),
+    }
     for task in args.tasks:
         preset = override_preset_grid(TASK_PRESETS[task], T=args.T, L=args.L)
+        if args.last_layer_readout is not None:
+            preset = TaskPreset(**{**asdict(preset), "last_layer_readout": args.last_layer_readout})
         payload = _run_task(
             preset=preset, args=args, seeds=args.seeds, out_root=out_root, which=which, ckpt_dir=ckpt_dir,
         )

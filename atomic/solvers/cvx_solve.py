@@ -38,6 +38,7 @@ class InitializationConfig:
     beta_leak: float = 0.99
     threshold: float = 1.0
     last_layer_readout: str = "membrane"
+    analog_membrane: bool = False
 
 
 @dataclass
@@ -250,13 +251,15 @@ def _readouts_to_thresholded_features(
     p_last: int,
     feature_count: int,
     last_layer_readout: str,
+    analog_membrane: bool = False,
 ) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
     """
     Map last LIF readout to convex inputs D. No extra linear U_last.
 
-    - membrane: D = 𝟙(h - bias >= 0) (half-space indicators; ``bias`` is the CVX threshold).
-    - spike: last hidden output is already {0,1} from the LIF; use it as D with **no** second
-      thresholding on ``bias`` (avoids degenerate double-quantization / neuron collapse).
+    - membrane + analog_membrane=False: D = 𝟙(h - bias >= 0) (half-space indicators).
+    - membrane + analog_membrane=True: D = analog last-layer membrane. ``bias`` must be 0.
+    - spike: last hidden output is already {0,1}; pass through with **no** second
+      thresholding on ``bias``. analog_membrane is illegal with spike.
     """
     if int(feature_count) != int(p_last):
         raise ValueError(
@@ -266,6 +269,16 @@ def _readouts_to_thresholded_features(
     for r in (readout_tr, readout_va, readout_te):
         if int(r.shape[-1]) != int(p_last):
             raise ValueError(f"Readout trailing dim {r.shape[-1]} != P_last {p_last}.")
+    if analog_membrane:
+        if last_layer_readout != "membrane":
+            raise ValueError(
+                f"analog_membrane requires last_layer_readout='membrane', got {last_layer_readout!r}."
+            )
+        if float(bias) != 0.0:
+            raise ValueError(
+                f"analog_membrane does not apply bias thresholding; got bias={bias}. Pass bias=0."
+            )
+        last_layer_readout = "spike"  # passthrough flatten of analog membrane
     if last_layer_readout == "spike":
         if all_timesteps:
             d_train = readout_tr.astype(np.float64, copy=False).reshape(
@@ -349,6 +362,7 @@ def _build_feature_map(
             p_last=int(hidden_dims[-1]),
             feature_count=int(init_cfg.feature_count),
             last_layer_readout=str(init_cfg.last_layer_readout),
+            analog_membrane=bool(init_cfg.analog_membrane),
         )
         return d_train, d_val, d_test, {"U_in_list": np.array([], dtype=np.float64), "U_last": np.zeros((0, 0), dtype=np.float64)}
 
@@ -395,6 +409,7 @@ def _build_feature_map(
             p_last=int(hidden_dims[-1]),
             feature_count=int(init_cfg.feature_count),
             last_layer_readout=str(init_cfg.last_layer_readout),
+            analog_membrane=bool(init_cfg.analog_membrane),
         )
         return d_train, d_val, d_test, {"pretrained_weights": np.array([], dtype=np.float64), "U_last": np.zeros((0, 0), dtype=np.float64)}
 
@@ -916,6 +931,7 @@ def cvx_solve(
                 beta_leak=init_cfg.beta_leak,
                 threshold=init_cfg.threshold,
                 last_layer_readout=init_cfg.last_layer_readout,
+                analog_membrane=bool(init_cfg.analog_membrane),
             ),
             solve_cfg=p.SolveConfig(
                 loss_name=solve_cfg.loss_name,
