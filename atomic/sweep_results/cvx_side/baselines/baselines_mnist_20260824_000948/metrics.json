@@ -1,0 +1,173 @@
+{
+  "task": "mnist",
+  "config": {
+    "name": "mnist",
+    "dataset": "mnist_seq",
+    "T_list": [
+      4
+    ],
+    "L_list": [
+      3,
+      10
+    ],
+    "K_parallel_list": [
+      2
+    ],
+    "P_rec": 512,
+    "P_last": 1024,
+    "n_train": 6000,
+    "n_val": 2000,
+    "n_test": 2000,
+    "loss_name": "ce",
+    "last_layer_readout": "membrane",
+    "dfa_spec": null,
+    "arith_op": null,
+    "arith_base": null,
+    "n_digits": null,
+    "reservoir_variant": "normalized"
+  },
+  "grids": {
+    "sg_lr_grid": [
+      0.001,
+      0.005,
+      0.01,
+      0.05,
+      0.1
+    ],
+    "sg_epochs": 200,
+    "cvx_beta_grid": [
+      0.01,
+      0.1,
+      1.0
+    ],
+    "cvx_bias_grid": [
+      0.0
+    ]
+  },
+  "seeds": [
+    0
+  ],
+  "results": [
+    {
+      "task": "mnist",
+      "dataset": "mnist_seq",
+      "dfa_spec": null,
+      "arith_op": null,
+      "arith_base": null,
+      "n_digits": null,
+      "T": 4,
+      "L": 3,
+      "K_parallel": 2,
+      "P_rec": 512,
+      "P_last": 1024,
+      "n_train": 6000,
+      "n_val": 2000,
+      "n_test": 2000,
+      "loss_name": "ce",
+      "last_layer_readout": "membrane",
+      "seed": 0,
+      "side": "cvx",
+      "cvx_method": "cvx",
+      "sg": null,
+      "cvx": {
+        "selected_params": {
+          "beta": 0.01,
+          "bias": 0.0
+        },
+        "split_accs": {
+          "train_acc": 0.9291666666666667,
+          "val_acc": 0.715,
+          "test_acc": 0.706
+        },
+        "final_losses": {
+          "train_loss": 0.31923958822493786,
+          "val_loss": 0.9430045485496521,
+          "test_loss": 0.951441764831543,
+          "train_objective": 0.6032973076864541,
+          "val_objective": 1.2270622680111682,
+          "test_objective": 1.2354994842930591
+        }
+      },
+      "sg_cvx": {
+        "selected_params": {
+          "beta": 0.01,
+          "bias": 0.0
+        },
+        "split_accs": {
+          "train_acc": 0.9976666666666667,
+          "val_acc": 0.867,
+          "test_acc": 0.8575
+        },
+        "final_losses": {
+          "train_loss": 0.044408920500758134,
+          "val_loss": 0.4895800054073334,
+          "test_loss": 0.5435158610343933,
+          "train_objective": 0.1392869950707437,
+          "val_objective": 0.5844580799773189,
+          "test_objective": 0.6383939356043788
+        }
+      }
+    },
+    {
+      "task": "mnist",
+      "dataset": "mnist_seq",
+      "dfa_spec": null,
+      "arith_op": null,
+      "arith_base": null,
+      "n_digits": null,
+      "T": 4,
+      "L": 10,
+      "K_parallel": 2,
+      "P_rec": 512,
+      "P_last": 1024,
+      "n_train": 6000,
+      "n_val": 2000,
+      "n_test": 2000,
+      "loss_name": "ce",
+      "last_layer_readout": "membrane",
+      "seed": 0,
+      "side": "cvx",
+      "cvx_method": "cvx",
+      "sg": null,
+      "cvx": {
+        "selected_params": {
+          "beta": 0.01,
+          "bias": 0.0
+        },
+        "split_accs": {
+          "train_acc": 0.447,
+          "val_acc": 0.1955,
+          "test_acc": 0.166
+        },
+        "final_losses": {
+          "train_loss": 1.649964174965655,
+          "val_loss": 2.4344255924224854,
+          "test_loss": 2.5022549629211426,
+          "train_objective": 1.8614748574036457,
+          "val_objective": 2.645936274860476,
+          "test_objective": 2.7137656453591332
+        }
+      },
+      "sg_cvx": {
+        "selected_params": {
+          "beta": 0.01,
+          "bias": 0.0
+        },
+        "split_accs": {
+          "train_acc": 0.1125,
+          "val_acc": 0.105,
+          "test_acc": 0.113
+        },
+        "final_losses": {
+          "train_loss": 2.300315310872168,
+          "val_loss": 2.301039218902588,
+          "test_loss": 2.301997423171997,
+          "train_objective": 2.3004606902452593,
+          "val_objective": 2.3011845982756793,
+          "test_objective": 2.3021428025450885
+        }
+      }
+    }
+  ],
+  "out_dir": "/home/azureuser/snn_paper_1/atomic/sweep_results/cvx_side/baselines/baselines_mnist_20260824_000948"
+}
