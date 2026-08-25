@@ -1,0 +1,22 @@
+{
+  "tag": "sg",
+  "task": "mnist",
+  "dataset": "mnist_seq",
+  "arith_op": null,
+  "arith_base": null,
+  "n_digits": null,
+  "T": 4,
+  "L": 10,
+  "K_parallel": 2,
+  "P_rec": 512,
+  "P_last": 1024,
+  "seed": 1,
+  "selected_params": {
+    "lr": 0.001
+  },
+  "split_accs": {
+    "train_acc": 0.1005,
+    "val_acc": 0.096,
+    "test_acc": 0.099
+  }
+}
