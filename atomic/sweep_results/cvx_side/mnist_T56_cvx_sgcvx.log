@@ -1,0 +1,18 @@
+nohup: ignoring input
+usage: run_baselines_xor_mnist.py [-h]
+                                  [--tasks {xor,mnist,add_b2,add_b3,add_b5,add_b7,add_b10} [{xor,mnist,add_b2,add_b3,add_b5,add_b7,add_b10} ...]]
+                                  [--seeds SEEDS [SEEDS ...]]
+                                  [--which {sg,cvx,sg_cvx} [{sg,cvx,sg_cvx} ...]]
+                                  [--side {all,cvx,non_cvx}]
+                                  [--ckpt_dir CKPT_DIR]
+                                  [--sg_lr_grid SG_LR_GRID [SG_LR_GRID ...]]
+                                  [--sg_epochs SG_EPOCHS]
+                                  [--cvx_method {cvx,cvx_lite,sgd}]
+                                  [--cvx_ovr_workers CVX_OVR_WORKERS]
+                                  [--cvx_beta_grid CVX_BETA_GRID [CVX_BETA_GRID ...]]
+                                  [--cvx_bias_grid CVX_BIAS_GRID [CVX_BIAS_GRID ...]]
+                                  [--cvx_ce_dual]
+                                  [--lite_max_iter LITE_MAX_ITER]
+                                  [--lite_tol LITE_TOL] [--debug]
+                                  [--out_root OUT_ROOT]
+run_baselines_xor_mnist.py: error: unrecognized arguments: --T 56 --L 3
