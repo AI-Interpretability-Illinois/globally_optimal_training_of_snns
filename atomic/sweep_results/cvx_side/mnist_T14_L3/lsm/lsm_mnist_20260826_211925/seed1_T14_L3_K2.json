@@ -1,0 +1,122 @@
+{
+  "config": {
+    "name": "mnist",
+    "dataset": "mnist_seq",
+    "T_list": [
+      14
+    ],
+    "L_list": [
+      3
+    ],
+    "K_parallel_list": [
+      2
+    ],
+    "P_rec": 512,
+    "P_last": 1024,
+    "n_train": 6000,
+    "n_val": 2000,
+    "n_test": 2000,
+    "loss_name": "ce",
+    "last_layer_readout": "membrane",
+    "dfa_spec": null,
+    "arith_op": null,
+    "arith_base": null,
+    "n_digits": null,
+    "reservoir_variant": "normalized"
+  },
+  "grids": {
+    "beta_leak_grid": [
+      0.9,
+      0.95,
+      0.99,
+      0.995
+    ],
+    "threshold_grid": [
+      0.5,
+      1.0,
+      1.5,
+      2.0
+    ],
+    "input_scale_grid": [
+      0.5,
+      1.0,
+      2.0,
+      4.0
+    ],
+    "ridge_lambdas": [
+      0.001,
+      0.01,
+      0.1,
+      1.0,
+      10.0
+    ],
+    "cvx_beta_grid": [
+      0.01,
+      0.1,
+      1.0
+    ],
+    "cvx_bias_grid": [
+      0.0
+    ]
+  },
+  "task": "mnist",
+  "dataset": "mnist_seq",
+  "dfa_spec": null,
+  "arith_op": null,
+  "arith_base": null,
+  "n_digits": null,
+  "T": 14,
+  "L": 3,
+  "K_parallel": 2,
+  "P_rec": 512,
+  "P_last": 1024,
+  "n_train": 6000,
+  "n_val": 2000,
+  "n_test": 2000,
+  "loss_name": "ce",
+  "last_layer_readout": "membrane",
+  "reservoir_variant": "normalized",
+  "seed": 1,
+  "reservoir_seed": 100004,
+  "criticality": {
+    "beta_leak": 0.995,
+    "threshold": 0.5,
+    "input_scale": 1.0,
+    "branching_ratio": 0.9998431277976478,
+    "table": null,
+    "loaded_from": "/home/azureuser/snn_paper_1_t14/atomic/sweep_results/non_cvx_side/ckpts/seed1_T14_L3_K2_mnist_lsm.npz"
+  },
+  "ridge": {
+    "best_losses": {
+      "ridge_lambda": 10.0,
+      "val_mse": 0.17351526021957397,
+      "train_acc": 0.925000011920929,
+      "val_acc": 0.8220000267028809,
+      "test_acc": 0.8180000185966492
+    }
+  },
+  "r_cvx": {
+    "selected_params": {
+      "beta": 0.01,
+      "bias": 0.0
+    },
+    "split_accs": {
+      "train_acc": 0.7965,
+      "val_acc": 0.6815,
+      "test_acc": 0.651
+    },
+    "final_losses": {
+      "train_loss": 0.3784045886658888,
+      "val_loss": 1.0092897415161133,
+      "test_loss": 1.0583033561706543,
+      "train_objective": 0.6732640802957583,
+      "val_objective": 1.3041492331459827,
+      "test_objective": 1.3531628478005238
+    },
+    "diagnostics": {
+      "primal_value": 0.6732640802957583,
+      "dual_value": NaN,
+      "gap": NaN
+    }
+  }
+}

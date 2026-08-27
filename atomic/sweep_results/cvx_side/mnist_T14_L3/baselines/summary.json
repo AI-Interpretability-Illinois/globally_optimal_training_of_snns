@@ -1,0 +1,244 @@
+{
+  "tasks": {
+    "mnist": {
+      "task": "mnist",
+      "config": {
+        "name": "mnist",
+        "dataset": "mnist_seq",
+        "T_list": [
+          14
+        ],
+        "L_list": [
+          3
+        ],
+        "K_parallel_list": [
+          2
+        ],
+        "P_rec": 512,
+        "P_last": 1024,
+        "n_train": 6000,
+        "n_val": 2000,
+        "n_test": 2000,
+        "loss_name": "ce",
+        "last_layer_readout": "membrane",
+        "dfa_spec": null,
+        "arith_op": null,
+        "arith_base": null,
+        "n_digits": null,
+        "reservoir_variant": "normalized"
+      },
+      "grids": {
+        "sg_lr_grid": [
+          0.001,
+          0.005,
+          0.01,
+          0.05,
+          0.1
+        ],
+        "sg_epochs": 200,
+        "cvx_beta_grid": [
+          0.01,
+          0.1,
+          1.0
+        ],
+        "cvx_bias_grid": [
+          0.0
+        ]
+      },
+      "seeds": [
+        0,
+        1,
+        2
+      ],
+      "results": [
+        {
+          "task": "mnist",
+          "dataset": "mnist_seq",
+          "dfa_spec": null,
+          "arith_op": null,
+          "arith_base": null,
+          "n_digits": null,
+          "T": 14,
+          "L": 3,
+          "K_parallel": 2,
+          "P_rec": 512,
+          "P_last": 1024,
+          "n_train": 6000,
+          "n_val": 2000,
+          "n_test": 2000,
+          "loss_name": "ce",
+          "last_layer_readout": "membrane",
+          "seed": 0,
+          "side": "cvx",
+          "cvx_method": "cvx",
+          "sg": null,
+          "cvx": {
+            "selected_params": {
+              "beta": 0.01,
+              "bias": 0.0
+            },
+            "split_accs": {
+              "train_acc": 0.862,
+              "val_acc": 0.689,
+              "test_acc": 0.683
+            },
+            "final_losses": {
+              "train_loss": 0.48111277556908477,
+              "val_loss": 0.9564889073371887,
+              "test_loss": 0.9576463103294373,
+              "train_objective": 0.7554507127622976,
+              "val_objective": 1.2308268445304016,
+              "test_objective": 1.2319842475226501
+            }
+          },
+          "sg_cvx": {
+            "selected_params": {
+              "beta": 0.01,
+              "bias": 0.0
+            },
+            "split_accs": {
+              "train_acc": 0.978,
+              "val_acc": 0.7945,
+              "test_acc": 0.77
+            },
+            "final_losses": {
+              "train_loss": 0.15230009409384332,
+              "val_loss": 0.7150841951370239,
+              "test_loss": 0.797143816947937,
+              "train_objective": 0.3494523385763181,
+              "val_objective": 0.9122364396194986,
+              "test_objective": 0.9942960614304117
+            }
+          }
+        },
+        {
+          "task": "mnist",
+          "dataset": "mnist_seq",
+          "dfa_spec": null,
+          "arith_op": null,
+          "arith_base": null,
+          "n_digits": null,
+          "T": 14,
+          "L": 3,
+          "K_parallel": 2,
+          "P_rec": 512,
+          "P_last": 1024,
+          "n_train": 6000,
+          "n_val": 2000,
+          "n_test": 2000,
+          "loss_name": "ce",
+          "last_layer_readout": "membrane",
+          "seed": 1,
+          "side": "cvx",
+          "cvx_method": "cvx",
+          "sg": null,
+          "cvx": {
+            "selected_params": {
+              "beta": 0.01,
+              "bias": 0.0
+            },
+            "split_accs": {
+              "train_acc": 0.8541666666666666,
+              "val_acc": 0.681,
+              "test_acc": 0.6815
+            },
+            "final_losses": {
+              "train_loss": 0.499051244192074,
+              "val_loss": 0.9869037866592407,
+              "test_loss": 0.9859846830368042,
+              "train_objective": 0.7710748301288197,
+              "val_objective": 1.2589273725959864,
+              "test_objective": 1.25800826897355
+            }
+          },
+          "sg_cvx": {
+            "selected_params": {
+              "beta": 0.01,
+              "bias": 0.0
+            },
+            "split_accs": {
+              "train_acc": 0.9858333333333333,
+              "val_acc": 0.787,
+              "test_acc": 0.773
+            },
+            "final_losses": {
+              "train_loss": 0.13327577104432817,
+              "val_loss": 0.7286103963851929,
+              "test_loss": 0.7657701373100281,
+              "train_objective": 0.328489246408304,
+              "val_objective": 0.9238238717491687,
+              "test_objective": 0.9609836126740039
+            }
+          }
+        },
+        {
+          "task": "mnist",
+          "dataset": "mnist_seq",
+          "dfa_spec": null,
+          "arith_op": null,
+          "arith_base": null,
+          "n_digits": null,
+          "T": 14,
+          "L": 3,
+          "K_parallel": 2,
+          "P_rec": 512,
+          "P_last": 1024,
+          "n_train": 6000,
+          "n_val": 2000,
+          "n_test": 2000,
+          "loss_name": "ce",
+          "last_layer_readout": "membrane",
+          "seed": 2,
+          "side": "cvx",
+          "cvx_method": "cvx",
+          "sg": null,
+          "cvx": {
+            "selected_params": {
+              "beta": 0.01,
+              "bias": 0.0
+            },
+            "split_accs": {
+              "train_acc": 0.8541666666666666,
+              "val_acc": 0.6735,
+              "test_acc": 0.6725
+            },
+            "final_losses": {
+              "train_loss": 0.499038105538163,
+              "val_loss": 1.0233526229858398,
+              "test_loss": 1.033715009689331,
+              "train_objective": 0.7762916331709077,
+              "val_objective": 1.3006061506185844,
+              "test_objective": 1.3109685373220756
+            }
+          },
+          "sg_cvx": {
+            "selected_params": {
+              "beta": 0.01,
+              "bias": 0.0
+            },
+            "split_accs": {
+              "train_acc": 0.9873333333333333,
+              "val_acc": 0.7945,
+              "test_acc": 0.7895
+            },
+            "final_losses": {
+              "train_loss": 0.12150256302825616,
+              "val_loss": 0.690791666507721,
+              "test_loss": 0.7386214733123779,
+              "train_objective": 0.30628868254209757,
+              "val_objective": 0.8755777860215623,
+              "test_objective": 0.9234075928262193
+            }
+          }
+        }
+      ],
+      "out_dir": "/home/azureuser/snn_paper_1_t14/atomic/sweep_results/cvx_side/mnist_T14_L3/baselines/baselines_mnist_20260825_185914"
+    }
+  },
+  "side": "cvx",
+  "which": [
+    "cvx",
+    "sg_cvx"
+  ],
+  "ckpt_dir": "/home/azureuser/snn_paper_1_t14/atomic/sweep_results/non_cvx_side/ckpts"
+}
