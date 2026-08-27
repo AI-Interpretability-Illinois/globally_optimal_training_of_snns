@@ -1,0 +1,319 @@
+{
+  "task": "mnist",
+  "config": {
+    "name": "mnist",
+    "dataset": "mnist_seq",
+    "T_list": [
+      4
+    ],
+    "L_list": [
+      3,
+      10
+    ],
+    "K_parallel_list": [
+      2
+    ],
+    "P_rec": 512,
+    "P_last": 1024,
+    "n_train": 6000,
+    "n_val": 2000,
+    "n_test": 2000,
+    "loss_name": "ce",
+    "last_layer_readout": "membrane",
+    "dfa_spec": null,
+    "arith_op": null,
+    "arith_base": null,
+    "n_digits": null,
+    "reservoir_variant": "normalized"
+  },
+  "grids": {
+    "beta_leak_grid": [
+      0.9,
+      0.95,
+      0.99,
+      0.995
+    ],
+    "threshold_grid": [
+      0.5,
+      1.0,
+      1.5,
+      2.0
+    ],
+    "input_scale_grid": [
+      0.5,
+      1.0,
+      2.0,
+      4.0
+    ],
+    "ridge_lambdas": [
+      0.001,
+      0.01,
+      0.1,
+      1.0,
+      10.0
+    ],
+    "cvx_beta_grid": [
+      0.01,
+      0.1,
+      1.0
+    ],
+    "cvx_bias_grid": [
+      0.0
+    ]
+  },
+  "seeds": [
+    1,
+    2
+  ],
+  "results": [
+    {
+      "task": "mnist",
+      "dataset": "mnist_seq",
+      "dfa_spec": null,
+      "arith_op": null,
+      "arith_base": null,
+      "n_digits": null,
+      "T": 4,
+      "L": 3,
+      "K_parallel": 2,
+      "P_rec": 512,
+      "P_last": 1024,
+      "n_train": 6000,
+      "n_val": 2000,
+      "n_test": 2000,
+      "loss_name": "ce",
+      "last_layer_readout": "membrane",
+      "reservoir_variant": "normalized",
+      "seed": 1,
+      "reservoir_seed": 100004,
+      "criticality": {
+        "beta_leak": 0.95,
+        "threshold": 1.5,
+        "input_scale": 2.0,
+        "branching_ratio": 1.0317432390544634,
+        "table": null,
+        "loaded_from": "/home/azureuser/snn_paper_1/atomic/sweep_results/non_cvx_side/ckpts/seed1_T4_L3_K2_mnist_lsm.npz"
+      },
+      "ridge": {
+        "best_losses": {
+          "ridge_lambda": 10.0,
+          "val_mse": 0.24170446395874023,
+          "train_acc": 0.8553333282470703,
+          "val_acc": 0.718500018119812,
+          "test_acc": 0.7064999938011169
+        }
+      },
+      "r_cvx": {
+        "selected_params": {
+          "beta": 0.01,
+          "bias": 0.0
+        },
+        "split_accs": {
+          "train_acc": 0.8446666666666667,
+          "val_acc": 0.651,
+          "test_acc": 0.6235
+        },
+        "final_losses": {
+          "train_loss": 0.3010734940884417,
+          "val_loss": 1.1550254821777344,
+          "test_loss": 1.2766766548156738,
+          "train_objective": 0.6128565965792638,
+          "val_objective": 1.4668085846685566,
+          "test_objective": 1.588459757306496
+        },
+        "diagnostics": {
+          "primal_value": 0.6128565965792638,
+          "dual_value": NaN,
+          "gap": NaN
+        }
+      }
+    },
+    {
+      "task": "mnist",
+      "dataset": "mnist_seq",
+      "dfa_spec": null,
+      "arith_op": null,
+      "arith_base": null,
+      "n_digits": null,
+      "T": 4,
+      "L": 10,
+      "K_parallel": 2,
+      "P_rec": 512,
+      "P_last": 1024,
+      "n_train": 6000,
+      "n_val": 2000,
+      "n_test": 2000,
+      "loss_name": "ce",
+      "last_layer_readout": "membrane",
+      "reservoir_variant": "normalized",
+      "seed": 1,
+      "reservoir_seed": 100004,
+      "criticality": {
+        "beta_leak": 0.9,
+        "threshold": 0.5,
+        "input_scale": 4.0,
+        "branching_ratio": 1.06304068149878,
+        "table": null,
+        "loaded_from": "/home/azureuser/snn_paper_1/atomic/sweep_results/non_cvx_side/ckpts/seed1_T4_L10_K2_mnist_lsm.npz"
+      },
+      "ridge": {
+        "best_losses": {
+          "ridge_lambda": 10.0,
+          "val_mse": 0.38090962171554565,
+          "train_acc": 0.5730000138282776,
+          "val_acc": 0.2639999985694885,
+          "test_acc": 0.2214999943971634
+        }
+      },
+      "r_cvx": {
+        "selected_params": {
+          "beta": 0.1,
+          "bias": 0.0
+        },
+        "split_accs": {
+          "train_acc": 0.20783333333333334,
+          "val_acc": 0.1865,
+          "test_acc": 0.187
+        },
+        "final_losses": {
+          "train_loss": 2.1517412065432997,
+          "val_loss": 2.2262637615203857,
+          "test_loss": 2.2375991344451904,
+          "train_objective": 2.2539889670016215,
+          "val_objective": 2.3285115219787076,
+          "test_objective": 2.3398468949035123
+        },
+        "diagnostics": {
+          "primal_value": 2.2539889670016215,
+          "dual_value": NaN,
+          "gap": NaN
+        }
+      }
+    },
+    {
+      "task": "mnist",
+      "dataset": "mnist_seq",
+      "dfa_spec": null,
+      "arith_op": null,
+      "arith_base": null,
+      "n_digits": null,
+      "T": 4,
+      "L": 3,
+      "K_parallel": 2,
+      "P_rec": 512,
+      "P_last": 1024,
+      "n_train": 6000,
+      "n_val": 2000,
+      "n_test": 2000,
+      "loss_name": "ce",
+      "last_layer_readout": "membrane",
+      "reservoir_variant": "normalized",
+      "seed": 2,
+      "reservoir_seed": 200007,
+      "criticality": {
+        "beta_leak": 0.95,
+        "threshold": 1.5,
+        "input_scale": 2.0,
+        "branching_ratio": 0.9829297592132371,
+        "table": null,
+        "loaded_from": "/home/azureuser/snn_paper_1/atomic/sweep_results/non_cvx_side/ckpts/seed2_T4_L3_K2_mnist_lsm.npz"
+      },
+      "ridge": {
+        "best_losses": {
+          "ridge_lambda": 10.0,
+          "val_mse": 0.24600285291671753,
+          "train_acc": 0.8556666374206543,
+          "val_acc": 0.7070000171661377,
+          "test_acc": 0.703000009059906
+        }
+      },
+      "r_cvx": {
+        "selected_params": {
+          "beta": 0.01,
+          "bias": 0.0
+        },
+        "split_accs": {
+          "train_acc": 0.8438333333333333,
+          "val_acc": 0.634,
+          "test_acc": 0.6445
+        },
+        "final_losses": {
+          "train_loss": 0.2888700023930602,
+          "val_loss": 1.2658802270889282,
+          "test_loss": 1.2218453884124756,
+          "train_objective": 0.607738857469529,
+          "val_objective": 1.5847490821653971,
+          "test_objective": 1.5407142434889445
+        },
+        "diagnostics": {
+          "primal_value": 0.607738857469529,
+          "dual_value": NaN,
+          "gap": NaN
+        }
+      }
+    },
+    {
+      "task": "mnist",
+      "dataset": "mnist_seq",
+      "dfa_spec": null,
+      "arith_op": null,
+      "arith_base": null,
+      "n_digits": null,
+      "T": 4,
+      "L": 10,
+      "K_parallel": 2,
+      "P_rec": 512,
+      "P_last": 1024,
+      "n_train": 6000,
+      "n_val": 2000,
+      "n_test": 2000,
+      "loss_name": "ce",
+      "last_layer_readout": "membrane",
+      "reservoir_variant": "normalized",
+      "seed": 2,
+      "reservoir_seed": 200007,
+      "criticality": {
+        "beta_leak": 0.9,
+        "threshold": 0.5,
+        "input_scale": 4.0,
+        "branching_ratio": 1.0538576086692653,
+        "table": null,
+        "loaded_from": "/home/azureuser/snn_paper_1/atomic/sweep_results/non_cvx_side/ckpts/seed2_T4_L10_K2_mnist_lsm.npz"
+      },
+      "ridge": {
+        "best_losses": {
+          "ridge_lambda": 10.0,
+          "val_mse": 0.38962993025779724,
+          "train_acc": 0.565500020980835,
+          "val_acc": 0.2329999953508377,
+          "test_acc": 0.21299999952316284
+        }
+      },
+      "r_cvx": {
+        "selected_params": {
+          "beta": 0.01,
+          "bias": 0.0
+        },
+        "split_accs": {
+          "train_acc": 0.242,
+          "val_acc": 0.1725,
+          "test_acc": 0.1685
+        },
+        "final_losses": {
+          "train_loss": 1.5857380494877074,
+          "val_loss": 2.4971935749053955,
+          "test_loss": 2.5919697284698486,
+          "train_objective": 1.8058320126881453,
+          "val_objective": 2.7172875381058335,
+          "test_objective": 2.8120636916702866
+        },
+        "diagnostics": {
+          "primal_value": 1.8058320126881453,
+          "dual_value": NaN,
+          "gap": NaN
+        }
+      }
+    }
+  ],
+  "out_dir": "/home/azureuser/snn_paper_1/atomic/sweep_results/cvx_side/lsm/mnist_T4_seeds12/lsm_mnist_20260825_185853"
+}
