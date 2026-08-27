@@ -1,0 +1,31 @@
+{
+  "tag": "lsm",
+  "task": "mnist",
+  "dataset": "mnist_seq",
+  "arith_op": null,
+  "arith_base": null,
+  "n_digits": null,
+  "d_in": 28,
+  "num_classes": 10,
+  "T": 28,
+  "L": 3,
+  "K_parallel": 2,
+  "P_rec": 512,
+  "P_last": 1024,
+  "last_layer_readout": "membrane",
+  "reservoir_seed": 1,
+  "reservoir_variant": "normalized",
+  "beta_leak": 0.9,
+  "threshold": 1.5,
+  "input_scale": 4.0,
+  "branching_ratio": 0.9997566143605983,
+  "ridge": {
+    "best_losses": {
+      "ridge_lambda": 10.0,
+      "val_mse": 0.16018976271152496,
+      "train_acc": 0.9348333477973938,
+      "val_acc": 0.8554999828338623,
+      "test_acc": 0.8169999718666077
+    }
+  }
+}
